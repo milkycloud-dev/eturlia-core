@@ -1,0 +1,59 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 16:17:15 +0000
+Subject: [PATCH] Eturlia: tolerate null BlockState property maps for
+ Create/Catnip
+
+Catnip IPlacementHelper uses new BlockState(Blocks.AIR, null, null) as a
+sentinel. Paper's ZeroCollidingReferenceStateTable NPEs on null.keySet(),
+aborting BLOCK RegisterEvent so Create DeferredHolders stay unbound for
+BlockItems. Treat null property maps as empty.
+
+diff --git a/src/main/java/io/papermc/paper/util/table/ZeroCollidingReferenceStateTable.java b/src/main/java/io/papermc/paper/util/table/ZeroCollidingReferenceStateTable.java
+index 57d0cd3ad6f972e986c72a57f1a6e36003f190c2..08b056625240e28a9d41d31abb227acfeab6bee6 100644
+--- a/src/main/java/io/papermc/paper/util/table/ZeroCollidingReferenceStateTable.java
++++ b/src/main/java/io/papermc/paper/util/table/ZeroCollidingReferenceStateTable.java
+@@ -21,10 +21,12 @@ public final class ZeroCollidingReferenceStateTable {
+ 
+     public ZeroCollidingReferenceStateTable(final StateHolder<?, ?> state, final Map<Property<?>, Comparable<?>> this_map) {
+         this.this_state = state;
+-        this.this_index_table = this.create_table(this_map.keySet());
++        // Eturlia: tolerate null/empty property maps (Create/Catnip sentinel BlockStates).
++        final Map<Property<?>, Comparable<?>> map = this_map != null ? this_map : Map.of();
++        this.this_index_table = this.create_table(map.keySet());
+ 
+         int max_id = -1;
+-        for (final Property<?> property : this_map.keySet()) {
++        for (final Property<?> property : map.keySet()) {
+             final int id = lookup_vindex(property, this.this_index_table);
+             if (id > max_id) {
+                 max_id = id;
+@@ -32,7 +34,7 @@ public final class ZeroCollidingReferenceStateTable {
+         }
+ 
+         this.this_table = new Comparable[max_id + 1];
+-        for (final Map.Entry<Property<?>, Comparable<?>> entry : this_map.entrySet()) {
++        for (final Map.Entry<Property<?>, Comparable<?>> entry : map.entrySet()) {
+             this.this_table[lookup_vindex(entry.getKey(), this.this_index_table)] = entry.getValue();
+         }
+     }
+diff --git a/src/main/java/net/minecraft/world/level/block/state/StateHolder.java b/src/main/java/net/minecraft/world/level/block/state/StateHolder.java
+index 45744d86e9582a93a0cec26009deea091080fbbe..4f68d7809179fa52f4f878d7eb1d9849dba742c4 100644
+--- a/src/main/java/net/minecraft/world/level/block/state/StateHolder.java
++++ b/src/main/java/net/minecraft/world/level/block/state/StateHolder.java
+@@ -43,9 +43,13 @@ public abstract class StateHolder<O, S> {
+ 
+     protected StateHolder(O owner, Reference2ObjectArrayMap<Property<?>, Comparable<?>> propertyMap, MapCodec<S> codec) {
+         this.owner = owner;
+-        this.values = propertyMap;
++        // Eturlia/NeoForge: Create/Catnip builds sentinel states with null propertyMap
++        // (e.g. IPlacementHelper.ID). Paper's ZeroCollidingReferenceStateTable NPEs on
++        // null.keySet(); treat null as empty so BLOCK RegisterEvent can finish and
++        // DeferredHolders bind before ITEM BlockItem registration.
++        this.values = propertyMap != null ? propertyMap : new Reference2ObjectArrayMap<>();
+         this.propertiesCodec = codec;
+-        this.optimisedTable = new io.papermc.paper.util.table.ZeroCollidingReferenceStateTable(this, propertyMap); // Paper - optimise state lookup
++        this.optimisedTable = new io.papermc.paper.util.table.ZeroCollidingReferenceStateTable(this, this.values); // Paper - optimise state lookup
+     }
+ 
+     public <T extends Comparable<T>> S cycle(Property<T> property) {
