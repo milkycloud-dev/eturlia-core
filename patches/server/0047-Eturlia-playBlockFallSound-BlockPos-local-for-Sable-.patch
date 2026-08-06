@@ -1,0 +1,21 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 20:17:27 +0000
+Subject: [PATCH] Eturlia: playBlockFallSound BlockPos local for Sable @Local
+
+
+diff --git a/src/main/java/net/minecraft/world/entity/LivingEntity.java b/src/main/java/net/minecraft/world/entity/LivingEntity.java
+index 348ad90adc788457604f0f6f097cac9685119de4..cf2ba18d6ac95961059e01093f018c5fe2530049 100644
+--- a/src/main/java/net/minecraft/world/entity/LivingEntity.java
++++ b/src/main/java/net/minecraft/world/entity/LivingEntity.java
+@@ -2183,7 +2183,9 @@ public abstract class LivingEntity extends Entity implements Attackable {
+             int i = Mth.floor(this.getX());
+             int j = Mth.floor(this.getY() - 0.20000000298023224D);
+             int k = Mth.floor(this.getZ());
+-            BlockState iblockdata = this.level().getBlockState(new BlockPos(i, j, k));
++            // Eturlia: local BlockPos for Sable LivingEntityMixin @Local capture
++            BlockPos blockposition = new BlockPos(i, j, k);
++            BlockState iblockdata = this.level().getBlockState(blockposition);
+ 
+             if (!iblockdata.isAir()) {
+                 SoundType soundeffecttype = iblockdata.getSoundType();

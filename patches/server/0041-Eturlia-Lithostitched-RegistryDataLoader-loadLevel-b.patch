@@ -1,0 +1,99 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 20:02:24 +0000
+Subject: [PATCH] Eturlia: Lithostitched RegistryDataLoader + loadLevel()
+ bridges
+
+Paper's Conversions param broke Lithostitched RegistryDataLoaderMixin
+(vanilla 6-arg target). Restore 6-arg body with Decoder.parse and thread
+Conversions from 7-arg callers. Restore no-arg loadLevel() for
+DedicatedServerMixin At-target on Folia/CraftBukkit.
+
+diff --git a/src/main/java/net/minecraft/resources/RegistryDataLoader.java b/src/main/java/net/minecraft/resources/RegistryDataLoader.java
+index f1a5ffcf9eef3db38bd17bc2d2cfa9d02c5755fc..239e977689a9e973d71e1d4290501c07cc9e1bb4 100644
+--- a/src/main/java/net/minecraft/resources/RegistryDataLoader.java
++++ b/src/main/java/net/minecraft/resources/RegistryDataLoader.java
+@@ -194,16 +194,38 @@ public class RegistryDataLoader {
+         LOGGER.error("Registry loading errors:\n{}", stringWriter);
+     }
+ 
++    // Eturlia start - Lithostitched RegistryDataLoaderMixin targets the vanilla 6-arg signature
++    // (Paper added Conversions as a 7th param). Keep Decoder.parse in the 6-arg body so the
++    // mixin can inject/cancel load predicates, and thread Conversions from the 7-arg callers.
++    private static final ThreadLocal<io.papermc.paper.registry.data.util.Conversions> ETURLIA$LOAD_ELEMENT_CONVERSIONS = new ThreadLocal<>();
++
+     private static <E> void loadElementFromResource(
+-        WritableRegistry<E> registry, Decoder<E> decoder, RegistryOps<JsonElement> ops, ResourceKey<E> key, Resource resource, RegistrationInfo entryInfo, io.papermc.paper.registry.data.util.Conversions conversions
++        WritableRegistry<E> registry, Decoder<E> decoder, RegistryOps<JsonElement> ops, ResourceKey<E> key, Resource resource, RegistrationInfo entryInfo
+     ) throws IOException {
+         try (Reader reader = resource.openAsReader()) {
+             JsonElement jsonElement = JsonParser.parseReader(reader);
+             DataResult<E> dataResult = decoder.parse(ops, jsonElement);
+             E object = dataResult.getOrThrow();
+-            io.papermc.paper.registry.PaperRegistryListenerManager.INSTANCE.registerWithListeners(registry, key, object, entryInfo, conversions); // Paper - register with listeners
++            io.papermc.paper.registry.data.util.Conversions conversions = ETURLIA$LOAD_ELEMENT_CONVERSIONS.get();
++            if (conversions != null) {
++                io.papermc.paper.registry.PaperRegistryListenerManager.INSTANCE.registerWithListeners(registry, key, object, entryInfo, conversions); // Paper - register with listeners
++            } else {
++                registry.register(key, object, entryInfo);
++            }
++        }
++    }
++
++    private static <E> void loadElementFromResource(
++        WritableRegistry<E> registry, Decoder<E> decoder, RegistryOps<JsonElement> ops, ResourceKey<E> key, Resource resource, RegistrationInfo entryInfo, io.papermc.paper.registry.data.util.Conversions conversions
++    ) throws IOException {
++        ETURLIA$LOAD_ELEMENT_CONVERSIONS.set(conversions);
++        try {
++            loadElementFromResource(registry, decoder, ops, key, resource, entryInfo);
++        } finally {
++            ETURLIA$LOAD_ELEMENT_CONVERSIONS.remove();
+         }
+     }
++    // Eturlia end - Lithostitched RegistryDataLoaderMixin
+ 
+     static <E> void loadContentsFromManager(
+         ResourceManager resourceManager,
+diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
+index 746fab1c7ca3374450a86620fef8a0f523e0e88e..5c9d0a486b2b6c0b75b44caad57c159abc61def5 100644
+--- a/src/main/java/net/minecraft/server/MinecraftServer.java
++++ b/src/main/java/net/minecraft/server/MinecraftServer.java
+@@ -520,6 +520,12 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+ 
+     protected abstract boolean initServer() throws IOException;
+ 
++    // Eturlia: vanilla-shaped no-arg loadLevel for Lithostitched DedicatedServer/GameTest mixins
++    // (CraftBukkit widened the signature to loadLevel(String)).
++    protected void loadLevel() {
++        this.loadLevel(this.storageSource.getLevelId());
++    }
++
+     protected void loadLevel(String s) { // CraftBukkit
+         if (!JvmProfiler.INSTANCE.isRunning()) {
+             ;
+diff --git a/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java b/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
+index 301d7fa29fce2997a5881b3852896eff5af33672..56d9cc67b428a12364110d23aee1ae3e0b767fbc 100644
+--- a/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
++++ b/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
+@@ -105,6 +105,12 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+         this.serverLinks = DedicatedServer.createServerLinks(dedicatedserversettings);
+     }
+ 
++    // Eturlia: override so Lithostitched DedicatedServerMixin At-target DedicatedServer.loadLevel()V matches
++    @Override
++    protected void loadLevel() {
++        super.loadLevel();
++    }
++
+     @Override
+     public boolean initServer() throws IOException {
+         Thread thread = new Thread("Server console handler") {
+@@ -326,7 +332,7 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+             SkullBlockEntity.setup(this.services, this);
+             GameProfileCache.setUsesAuthentication(this.usesAuthentication());
+             DedicatedServer.LOGGER.info("Preparing level \"{}\"", this.getLevelIdName());
+-            this.loadLevel(this.storageSource.getLevelId()); // CraftBukkit
++            this.loadLevel(); // Eturlia: no-arg so Lithostitched DedicatedServerMixin finds DedicatedServer.loadLevel()V
+             long j = Util.getNanos() - i;
+             String s = String.format(Locale.ROOT, "%.3fs", (double) j / 1.0E9D);
+ 

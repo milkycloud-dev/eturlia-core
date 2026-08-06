@@ -1,0 +1,27 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 20:21:14 +0000
+Subject: [PATCH] Eturlia: restore ServerLevel.tick(BooleanSupplier) for Sable
+ plots
+
+Folia only has tick(BooleanSupplier, TickRegionData). Add vanilla-shaped
+1-arg overload and invoke it from the region tick so Sable HEAD inject runs.
+
+diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
+index 2c14e60ac28837a26b881c9be8edbaf38d60a0c4..289297a762c731eb2a50d89e7b362a7c2ca42302 100644
+--- a/src/main/java/net/minecraft/server/level/ServerLevel.java
++++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
+@@ -744,7 +744,13 @@ public class ServerLevel extends Level implements WorldGenLevel, ca.spottedleaf.
+         return this.structureManager;
+     }
+ 
++    // Eturlia: vanilla-shaped tick for NeoForge mixins (Sable plot.ServerLevelMixin @Inject HEAD).
++    // Folia region ticking uses the 2-arg overload below.
++    public void tick(BooleanSupplier shouldKeepTicking) {
++    }
++
+     public void tick(BooleanSupplier shouldKeepTicking, io.papermc.paper.threadedregions.TickRegions.TickRegionData region) { // Folia - regionised ticking
++        this.tick(shouldKeepTicking); // Eturlia: invoke vanilla-shaped tick so Sable mixins run
+         final io.papermc.paper.threadedregions.RegionizedWorldData regionizedWorldData = this.getCurrentWorldData(); // Folia - regionised ticking
+         EventHooks.fireLevelTickPre(this, shouldKeepTicking); // NeoForge - fire LevelTickEvent.Pre
+         final ca.spottedleaf.leafprofiler.RegionizedProfiler.Handle profiler = io.papermc.paper.threadedregions.TickRegionScheduler.getProfiler(); // Folia - profiler
