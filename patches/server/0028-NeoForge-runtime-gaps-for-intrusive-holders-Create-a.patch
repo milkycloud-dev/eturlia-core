@@ -1,0 +1,1540 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 14:05:48 +0000
+Subject: [PATCH] NeoForge runtime gaps for intrusive holders, Create, and FD
+
+Keep MappedRegistry intrusive holders across freeze/unfreeze, add Folia-safe
+ServerLevel.entityTickList facade, Moonlight ContextAware reload path, extensible
+Rarity, FoodProperties.effect(Supplier), Item.modifyDefaultComponentsFrom,
+RegistryOps copy ctor, and related FD block/loot APIs.
+
+diff --git a/src/main/java/net/minecraft/core/MappedRegistry.java b/src/main/java/net/minecraft/core/MappedRegistry.java
+index 545ee62ebb9ce9bfc28428f98ae116c415f373c1..a140189f9d90c39fc03fdd91c6dfc4238328af6d 100644
+--- a/src/main/java/net/minecraft/core/MappedRegistry.java
++++ b/src/main/java/net/minecraft/core/MappedRegistry.java
+@@ -45,6 +45,8 @@ public class MappedRegistry<T> extends net.neoforged.neoforge.registries.BaseMap
+     private boolean frozen;
+     @Nullable
+     private Map<T, Holder.Reference<T>> unregisteredIntrusiveHolders;
++    /** Neo: remember whether this registry was constructed for intrusive holders (survives freeze/clear). */
++    private final boolean intrusiveHolders;
+     private final HolderLookup.RegistryLookup<T> lookup = new HolderLookup.RegistryLookup<T>() {
+         @Override
+         public ResourceKey<? extends Registry<? extends T>> key() {
+@@ -85,6 +87,7 @@ public class MappedRegistry<T> extends net.neoforged.neoforge.registries.BaseMap
+     public MappedRegistry(ResourceKey<? extends Registry<T>> key, Lifecycle lifecycle, boolean intrusive) {
+         this.key = key;
+         this.registryLifecycle = lifecycle;
++        this.intrusiveHolders = intrusive;
+         if (intrusive) {
+             this.unregisteredIntrusiveHolders = new IdentityHashMap<>();
+         }
+@@ -114,15 +117,25 @@ public class MappedRegistry<T> extends net.neoforged.neoforge.registries.BaseMap
+ 
+     @Override
+     public Holder.Reference<T> register(ResourceKey<T> key, T value, RegistrationInfo info) {
++        return this.register(this.byId.size(), key, value, info);
++    }
++
++    public Holder.Reference<T> register(int id, ResourceKey<T> key, T value, RegistrationInfo info) {
+         this.validateWrite(key);
+         Objects.requireNonNull(key);
+         Objects.requireNonNull(value);
++        int i = id;
++        if (i > this.getMaxId()) {
++            throw new IllegalStateException(String.format(java.util.Locale.ENGLISH, "Invalid id %d - maximum id range of %d exceeded.", i, this.getMaxId()));
++        }
++
+         if (this.byLocation.containsKey(key.location())) {
+-            Util.pauseInIde(new IllegalStateException("Adding duplicate key '" + key + "' to registry"));
++            // Neo: throw on duplicate (vanilla pauseInIde alone is not enough)
++            throw Util.pauseInIde(new IllegalStateException("Adding duplicate key '" + key + "' to registry"));
+         }
+ 
+         if (this.byValue.containsKey(value)) {
+-            Util.pauseInIde(new IllegalStateException("Adding duplicate value '" + value + "' to registry"));
++            throw Util.pauseInIde(new IllegalStateException("Adding duplicate value '" + value + "' to registry"));
+         }
+ 
+         Holder.Reference<T> reference;
+@@ -135,16 +148,21 @@ public class MappedRegistry<T> extends net.neoforged.neoforge.registries.BaseMap
+             reference.bindKey(key);
+         } else {
+             reference = this.byKey.computeIfAbsent(key, k -> Holder.Reference.createStandAlone(this.holderOwner(), (ResourceKey<T>)k));
++            // Neo: bind immediately so DeferredHolders resolve while the registry is unfrozen
++            reference.bindValue(value);
+         }
+ 
+         this.byKey.put(key, reference);
+         this.byLocation.put(key.location(), reference);
+         this.byValue.put(value, reference);
+-        int i = this.byId.size();
+-        this.byId.add(reference);
++        while (this.byId.size() < (i + 1)) {
++            this.byId.add(null);
++        }
++        this.byId.set(i, reference);
+         this.toId.put(value, i);
+         this.registrationInfos.put(key, info);
+         this.registryLifecycle = this.registryLifecycle.add(info.lifecycle());
++        this.addCallbacks.forEach(addCallback -> addCallback.onAdd(this, i, key, value));
+         return reference;
+     }
+ 
+@@ -168,7 +186,7 @@ public class MappedRegistry<T> extends net.neoforged.neoforge.registries.BaseMap
+     @Nullable
+     @Override
+     public T get(@Nullable ResourceKey<T> key) {
+-        return getValueFromNullable(this.byKey.get(key));
++        return getValueFromNullable(this.byKey.get(key != null ? this.resolve(key) : null));
+     }
+ 
+     @Nullable
+@@ -184,12 +202,12 @@ public class MappedRegistry<T> extends net.neoforged.neoforge.registries.BaseMap
+ 
+     @Override
+     public Optional<Holder.Reference<T>> getHolder(ResourceLocation id) {
+-        return Optional.ofNullable(this.byLocation.get(id));
++        return Optional.ofNullable(this.byLocation.get(this.resolve(id)));
+     }
+ 
+     @Override
+     public Optional<Holder.Reference<T>> getHolder(ResourceKey<T> key) {
+-        return Optional.ofNullable(this.byKey.get(key));
++        return Optional.ofNullable(this.byKey.get(this.resolve(key)));
+     }
+ 
+     @Override
+@@ -204,7 +222,7 @@ public class MappedRegistry<T> extends net.neoforged.neoforge.registries.BaseMap
+     }
+ 
+     Holder.Reference<T> getOrCreateHolderOrThrow(ResourceKey<T> key) {
+-        return this.byKey.computeIfAbsent(key, key2 -> {
++        return this.byKey.computeIfAbsent(this.resolve(key), key2 -> {
+             if (this.unregisteredIntrusiveHolders != null) {
+                 throw new IllegalStateException("This registry can't create new holders without value");
+             } else {
+@@ -237,7 +255,7 @@ public class MappedRegistry<T> extends net.neoforged.neoforge.registries.BaseMap
+     @Nullable
+     @Override
+     public T get(@Nullable ResourceLocation id) {
+-        Holder.Reference<T> reference = this.byLocation.get(id);
++        Holder.Reference<T> reference = this.byLocation.get(id != null ? this.resolve(id) : null);
+         return getValueFromNullable(reference);
+     }
+ 
+@@ -343,8 +361,10 @@ public class MappedRegistry<T> extends net.neoforged.neoforge.registries.BaseMap
+                         throw new IllegalStateException("Some intrusive holders were not registered: " + this.unregisteredIntrusiveHolders.values());
+                     }
+ 
+-                    this.unregisteredIntrusiveHolders = null;
++                    // Neo: freeze/unfreeze vanilla registries more than once — keep the map for RegisterEvent intrusive holders
++                    // this.unregisteredIntrusiveHolders = null;
+                 }
++                this.bakeCallbacks.forEach(bakeCallback -> bakeCallback.onBake(this));
+ 
+                 return this;
+             }
+@@ -354,11 +374,14 @@ public class MappedRegistry<T> extends net.neoforged.neoforge.registries.BaseMap
+     @Override
+     public Holder.Reference<T> createIntrusiveHolder(T value) {
+         if (this.unregisteredIntrusiveHolders == null) {
+-            throw new IllegalStateException("This registry can't create intrusive holders");
+-        } else {
+-            this.validateWrite();
+-            return this.unregisteredIntrusiveHolders.computeIfAbsent(value, valuex -> Holder.Reference.createIntrusive(this.asLookup(), (T)valuex));
++            if (!this.intrusiveHolders) {
++                throw new IllegalStateException("This registry can't create intrusive holders");
++            }
++            // Neo/Crelia: map may have been cleared on full clear(); recreate for RegisterEvent after unfreeze
++            this.unregisteredIntrusiveHolders = new IdentityHashMap<>();
+         }
++        this.validateWrite();
++        return this.unregisteredIntrusiveHolders.computeIfAbsent(value, valuex -> Holder.Reference.createIntrusive(this.asLookup(), (T)valuex));
+     }
+ 
+     @Override
+@@ -482,6 +505,28 @@ public class MappedRegistry<T> extends net.neoforged.neoforge.registries.BaseMap
+         return this.byValue.containsKey(value);
+     }
+ 
++    @Override
++    protected void clear(boolean full) {
++        this.validateWrite();
++        this.clearCallbacks.forEach(clearCallback -> clearCallback.onClear(this, full));
++        super.clear(full);
++        this.byId.clear();
++        this.toId.clear();
++        if (full) {
++            this.byLocation.clear();
++            this.byKey.clear();
++            this.byValue.clear();
++            this.tags = new IdentityHashMap<>();
++            if (this.unregisteredIntrusiveHolders != null) {
++                this.unregisteredIntrusiveHolders.clear();
++                // Keep map when registry supports intrusive holders so RegisterEvent can recreate holders after unfreeze
++                if (!this.intrusiveHolders) {
++                    this.unregisteredIntrusiveHolders = null;
++                }
++            }
++        }
++    }
++
+     // Paper start
+     // used to clear intrusive holders from GameEvent, Item, Block, EntityType, and Fluid from unused instances of those types
+     public void clearIntrusiveHolder(final T instance) {
+diff --git a/src/main/java/net/minecraft/resources/RegistryOps.java b/src/main/java/net/minecraft/resources/RegistryOps.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..be5165a33ce55463df40e18cdd8250f1ba5da801
+--- /dev/null
++++ b/src/main/java/net/minecraft/resources/RegistryOps.java
+@@ -0,0 +1,160 @@
++package net.minecraft.resources;
++
++import com.mojang.serialization.DataResult;
++import com.mojang.serialization.Dynamic;
++import com.mojang.serialization.DynamicOps;
++import com.mojang.serialization.Lifecycle;
++import com.mojang.serialization.codecs.RecordCodecBuilder;
++import java.util.Map;
++import java.util.Optional;
++import java.util.concurrent.ConcurrentHashMap;
++import net.minecraft.core.Holder;
++import net.minecraft.core.HolderGetter;
++import net.minecraft.core.HolderLookup;
++import net.minecraft.core.HolderOwner;
++import net.minecraft.core.Registry;
++import net.minecraft.util.ExtraCodecs;
++
++public class RegistryOps<T> extends DelegatingOps<T> {
++    public final RegistryOps.RegistryInfoLookup lookupProvider;
++
++    public static <T> RegistryOps<T> create(DynamicOps<T> delegate, HolderLookup.Provider wrapperLookup) {
++        return create(delegate, new RegistryOps.HolderLookupAdapter(wrapperLookup));
++    }
++
++    public static <T> RegistryOps<T> create(DynamicOps<T> delegate, RegistryOps.RegistryInfoLookup registryInfoGetter) {
++        return new RegistryOps<>(delegate, registryInfoGetter);
++    }
++
++    public static <T> Dynamic<T> injectRegistryContext(Dynamic<T> dynamic, HolderLookup.Provider registryLookup) {
++        return new Dynamic<>(registryLookup.createSerializationContext(dynamic.getOps()), dynamic.getValue());
++    }
++
++    private RegistryOps(DynamicOps<T> delegate, RegistryOps.RegistryInfoLookup registryInfoGetter) {
++        super(delegate);
++        this.lookupProvider = registryInfoGetter;
++    }
++
++    // NeoForge: used by ConditionalOps / ContextAwareReloadListener
++    protected RegistryOps(RegistryOps<T> other) {
++        super(other.delegate);
++        this.lookupProvider = other.lookupProvider;
++    }
++
++    public <U> RegistryOps<U> withParent(DynamicOps<U> delegate) {
++        return (RegistryOps<U>)(delegate == this.delegate ? this : new RegistryOps<>(delegate, this.lookupProvider));
++    }
++
++    public <E> Optional<HolderOwner<E>> owner(ResourceKey<? extends Registry<? extends E>> registryRef) {
++        return this.lookupProvider.lookup(registryRef).map(RegistryOps.RegistryInfo::owner);
++    }
++
++    public <E> Optional<HolderGetter<E>> getter(ResourceKey<? extends Registry<? extends E>> registryRef) {
++        return this.lookupProvider.lookup(registryRef).map(RegistryOps.RegistryInfo::getter);
++    }
++
++    @Override
++    public boolean equals(Object object) {
++        if (this == object) {
++            return true;
++        } else if (object != null && this.getClass() == object.getClass()) {
++            RegistryOps<?> registryOps = (RegistryOps<?>)object;
++            return this.delegate.equals(registryOps.delegate) && this.lookupProvider.equals(registryOps.lookupProvider);
++        } else {
++            return false;
++        }
++    }
++
++    @Override
++    public int hashCode() {
++        return this.delegate.hashCode() * 31 + this.lookupProvider.hashCode();
++    }
++
++    public static <E, O> RecordCodecBuilder<O, HolderGetter<E>> retrieveGetter(ResourceKey<? extends Registry<? extends E>> registryRef) {
++        return ExtraCodecs.retrieveContext(
++                ops -> ops instanceof RegistryOps<?> registryOps
++                        ? registryOps.lookupProvider
++                            .lookup(registryRef)
++                            .map(info -> DataResult.success(info.getter(), info.elementsLifecycle()))
++                            .orElseGet(() -> DataResult.error(() -> "Unknown registry: " + registryRef))
++                        : DataResult.error(() -> "Not a registry ops")
++            )
++            .forGetter(object -> null);
++    }
++
++    public static <E> com.mojang.serialization.MapCodec<HolderLookup.RegistryLookup<E>> retrieveRegistryLookup(ResourceKey<? extends Registry<? extends E>> resourceKey) {
++        return ExtraCodecs.retrieveContext(ops -> {
++            if (!(ops instanceof RegistryOps<?> registryOps)) {
++                return DataResult.error(() -> "Not a registry ops");
++            }
++
++            return registryOps.lookupProvider.lookup(resourceKey).map(registryInfo -> {
++                if (!(registryInfo.owner() instanceof HolderLookup.RegistryLookup<E> registryLookup)) {
++                    return DataResult.<HolderLookup.RegistryLookup<E>>error(() -> "Found holder getter but was not a registry lookup for " + resourceKey);
++                }
++
++                return DataResult.success(registryLookup, registryInfo.elementsLifecycle());
++            }).orElseGet(() -> DataResult.error(() -> "Unknown registry: " + resourceKey));
++        });
++    }
++
++    public static <E, O> RecordCodecBuilder<O, Holder.Reference<E>> retrieveElement(ResourceKey<E> key) {
++        ResourceKey<? extends Registry<E>> resourceKey = ResourceKey.createRegistryKey(key.registry());
++        return ExtraCodecs.retrieveContext(
++                ops -> ops instanceof RegistryOps<?> registryOps
++                        ? registryOps.lookupProvider
++                            .lookup(resourceKey)
++                            .flatMap(info -> info.getter().get(key))
++                            .map(DataResult::success)
++                            .orElseGet(() -> DataResult.error(() -> "Can't find value: " + key))
++                        : DataResult.error(() -> "Not a registry ops")
++            )
++            .forGetter(object -> null);
++    }
++
++    public static final class HolderLookupAdapter implements RegistryOps.RegistryInfoLookup {
++        private final HolderLookup.Provider lookupProvider;
++        private final Map<ResourceKey<? extends Registry<?>>, Optional<? extends RegistryOps.RegistryInfo<?>>> lookups = new ConcurrentHashMap<>();
++
++        public HolderLookupAdapter(HolderLookup.Provider registriesLookup) {
++            this.lookupProvider = registriesLookup;
++        }
++
++        @Override
++        public <E> Optional<RegistryOps.RegistryInfo<E>> lookup(ResourceKey<? extends Registry<? extends E>> registryRef) {
++            return (Optional<RegistryOps.RegistryInfo<E>>)this.lookups.computeIfAbsent(registryRef, this::createLookup);
++        }
++
++        private Optional<RegistryOps.RegistryInfo<Object>> createLookup(ResourceKey<? extends Registry<?>> registryRef) {
++            return this.lookupProvider.lookup(registryRef).map(RegistryOps.RegistryInfo::fromRegistryLookup);
++        }
++
++        @Override
++        public boolean equals(Object object) {
++            if (this == object) {
++                return true;
++            } else {
++                if (object instanceof RegistryOps.HolderLookupAdapter holderLookupAdapter && this.lookupProvider.equals(holderLookupAdapter.lookupProvider)) {
++                    return true;
++                }
++
++                return false;
++            }
++        }
++
++        @Override
++        public int hashCode() {
++            return this.lookupProvider.hashCode();
++        }
++    }
++
++    public static record RegistryInfo<T>(HolderOwner<T> owner, HolderGetter<T> getter, Lifecycle elementsLifecycle) {
++        public static <T> RegistryOps.RegistryInfo<T> fromRegistryLookup(HolderLookup.RegistryLookup<T> wrapper) {
++            return new RegistryOps.RegistryInfo<>(wrapper, wrapper, wrapper.registryLifecycle());
++        }
++    }
++
++    public interface RegistryInfoLookup {
++        <T> Optional<RegistryOps.RegistryInfo<T>> lookup(ResourceKey<? extends Registry<? extends T>> registryRef);
++    }
++}
+diff --git a/src/main/java/net/minecraft/server/ReloadableServerResources.java b/src/main/java/net/minecraft/server/ReloadableServerResources.java
+index 6de563b7adea957a7ead1c00c4900060fa5df277..f18908fc81307d2761957ded08a4903cdc1f1fec 100644
+--- a/src/main/java/net/minecraft/server/ReloadableServerResources.java
++++ b/src/main/java/net/minecraft/server/ReloadableServerResources.java
+@@ -51,6 +51,8 @@ public class ReloadableServerResources {
+         io.papermc.paper.command.brigadier.PaperCommands.INSTANCE.setDispatcher(this.commands, CommandBuildContext.simple(this.registryLookup, enabledFeatures)); // Paper - Brigadier Command API
+         this.advancements = new ServerAdvancementManager(this.registryLookup);
+         this.functionLibrary = new ServerFunctionLibrary(functionPermissionLevel, this.commands.getDispatcher());
++        // Neo: Create context object for conditional datapack loading (Moonlight/Create recipes)
++        this.context = new net.neoforged.neoforge.common.conditions.ConditionContext(this.tagManager);
+     }
+ 
+     public ServerFunctionLibrary getFunctionLibrary() {
+@@ -77,6 +79,21 @@ public class ReloadableServerResources {
+         return List.of(this.tagManager, this.recipes, this.functionLibrary, this.advancements);
+     }
+ 
++    private final net.neoforged.neoforge.common.conditions.ICondition.IContext context;
++
++    /**
++     * Exposes the current condition context for usage in other reload listeners.
++     * Not useful outside the reloading stage.
++     */
++    public net.neoforged.neoforge.common.conditions.ICondition.IContext getConditionContext() {
++        return this.context;
++    }
++
++    /** {@return the lookup provider access for the currently active reload} */
++    public HolderLookup.Provider getRegistryLookup() {
++        return this.registryLookup;
++    }
++
+     public static CompletableFuture<ReloadableServerResources> loadResources(
+         ResourceManager manager,
+         LayeredRegistryAccess<RegistryLayer> dynamicRegistries,
+@@ -100,14 +117,33 @@ public class ReloadableServerResources {
+                         io.papermc.paper.plugin.bootstrap.BootstrapContext.class,
+                         MinecraftServer.getServer() == null ? io.papermc.paper.plugin.lifecycle.event.registrar.ReloadableRegistrarEvent.Cause.INITIAL : io.papermc.paper.plugin.lifecycle.event.registrar.ReloadableRegistrarEvent.Cause.RELOAD);
+                     // Paper end - call commands event
++                    List<PreparableReloadListener> listeners = new java.util.ArrayList<>(reloadableServerResources.listeners());
++                    listeners.addAll(net.neoforged.neoforge.event.EventHooks.onResourceReload(
++                        reloadableServerResources, reloadedDynamicRegistries.compositeAccess()
++                    ));
++                    listeners.forEach(rl -> {
++                        if (rl instanceof net.neoforged.neoforge.resource.ContextAwareReloadListener carl) {
++                            carl.injectContext(reloadableServerResources.context, reloadableServerResources.registryLookup);
++                        }
++                    });
+                     return SimpleReloadInstance.create(
+-                            manager, reloadableServerResources.listeners(), prepareExecutor, applyExecutor, DATA_RELOAD_INITIAL_TASK, LOGGER.isDebugEnabled()
++                            manager, listeners, prepareExecutor, applyExecutor, DATA_RELOAD_INITIAL_TASK, LOGGER.isDebugEnabled()
+                         )
+                         .done()
+                         .whenComplete(
+                             (void_, throwable) -> reloadableServerResources.registryLookup
+                                     .missingTagAccessPolicy(ReloadableServerResources.MissingTagAccessPolicy.FAIL)
+                         )
++                        .thenRun(() -> {
++                            listeners.forEach(rl -> {
++                                if (rl instanceof net.neoforged.neoforge.resource.ContextAwareReloadListener carl) {
++                                    carl.injectContext(
++                                        net.neoforged.neoforge.common.conditions.ICondition.IContext.EMPTY,
++                                        RegistryAccess.EMPTY
++                                    );
++                                }
++                            });
++                        })
+                         .thenApply(void_ -> reloadableServerResources);
+                 }
+             );
+@@ -117,6 +153,9 @@ public class ReloadableServerResources {
+         this.tagManager.getResult().forEach(tags -> updateRegistryTags(this.fullRegistryHolder.get(), (TagManager.LoadResult<?>)tags));
+         AbstractFurnaceBlockEntity.invalidateCache();
+         Blocks.rebuildCache();
++        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.post(
++            new net.neoforged.neoforge.event.TagsUpdatedEvent(this.fullRegistryHolder.get(), false, false)
++        );
+     }
+ 
+     private static <T> void updateRegistryTags(RegistryAccess dynamicRegistryManager, TagManager.LoadResult<T> tags) {
+diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
+index b7283958d50d2d7a9007df0e1c69c652046084f1..c80208c1da49dcaf0bc51a4b2e06dae0dd2c52ba 100644
+--- a/src/main/java/net/minecraft/server/level/ServerLevel.java
++++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
+@@ -201,7 +201,28 @@ public class ServerLevel extends Level implements WorldGenLevel, ca.spottedleaf.
+     private final MinecraftServer server;
+     public final PrimaryLevelData serverLevelData; // CraftBukkit - type
+     private int lastSpawnChunkRadius;
+-    //final EntityTickList entityTickList; // Folia - region threading
++    // Folia: real tick list lives in RegionizedWorldData. Facade keeps NeoForge/Create field access working.
++    public final EntityTickList entityTickList = new EntityTickList() {
++        @Override
++        public void add(Entity entity) {
++            ServerLevel.this.getCurrentWorldData().addEntityTickingEntity(entity);
++        }
++
++        @Override
++        public void remove(Entity entity) {
++            ServerLevel.this.getCurrentWorldData().removeEntityTickingEntity(entity);
++        }
++
++        @Override
++        public boolean contains(Entity entity) {
++            return ServerLevel.this.getCurrentWorldData().hasEntityTickingEntity(entity);
++        }
++
++        @Override
++        public void forEach(java.util.function.Consumer<Entity> action) {
++            ServerLevel.this.getCurrentWorldData().forEachTickingEntity(action);
++        }
++    };
+     // Paper - rewrite chunk system
+     private final GameEventDispatcher gameEventDispatcher;
+     public boolean noSave;
+diff --git a/src/main/java/net/minecraft/server/packs/resources/SimplePreparableReloadListener.java b/src/main/java/net/minecraft/server/packs/resources/SimplePreparableReloadListener.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..23e4df7222f3695656339da222ac32117bb492f8
+--- /dev/null
++++ b/src/main/java/net/minecraft/server/packs/resources/SimplePreparableReloadListener.java
+@@ -0,0 +1,25 @@
++package net.minecraft.server.packs.resources;
++
++import java.util.concurrent.CompletableFuture;
++import java.util.concurrent.Executor;
++import net.minecraft.util.profiling.ProfilerFiller;
++
++public abstract class SimplePreparableReloadListener<T> extends net.neoforged.neoforge.resource.ContextAwareReloadListener implements PreparableReloadListener {
++    @Override
++    public final CompletableFuture<Void> reload(
++        PreparableReloadListener.PreparationBarrier synchronizer,
++        ResourceManager manager,
++        ProfilerFiller prepareProfiler,
++        ProfilerFiller applyProfiler,
++        Executor prepareExecutor,
++        Executor applyExecutor
++    ) {
++        return CompletableFuture.<T>supplyAsync(() -> this.prepare(manager, prepareProfiler), prepareExecutor)
++            .thenCompose(synchronizer::wait)
++            .thenAcceptAsync(prepared -> this.apply((T)prepared, manager, applyProfiler), applyExecutor);
++    }
++
++    protected abstract T prepare(ResourceManager manager, ProfilerFiller profiler);
++
++    protected abstract void apply(T prepared, ResourceManager manager, ProfilerFiller profiler);
++}
+diff --git a/src/main/java/net/minecraft/world/food/FoodProperties.java b/src/main/java/net/minecraft/world/food/FoodProperties.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..3451dc035d2b631bc79340fc46f6a1e84afa6c2b
+--- /dev/null
++++ b/src/main/java/net/minecraft/world/food/FoodProperties.java
+@@ -0,0 +1,127 @@
++package net.minecraft.world.food;
++
++import com.google.common.collect.ImmutableList;
++import com.mojang.serialization.Codec;
++import com.mojang.serialization.codecs.RecordCodecBuilder;
++import java.util.List;
++import java.util.Optional;
++import net.minecraft.network.RegistryFriendlyByteBuf;
++import net.minecraft.network.codec.ByteBufCodecs;
++import net.minecraft.network.codec.StreamCodec;
++import net.minecraft.util.ExtraCodecs;
++import net.minecraft.world.effect.MobEffectInstance;
++import net.minecraft.world.item.ItemStack;
++import net.minecraft.world.level.ItemLike;
++
++public record FoodProperties(
++    int nutrition, float saturation, boolean canAlwaysEat, float eatSeconds, Optional<ItemStack> usingConvertsTo, List<FoodProperties.PossibleEffect> effects
++) {
++    public static final float DEFAULT_EAT_SECONDS = 1.6F;
++    public static final Codec<FoodProperties> DIRECT_CODEC = RecordCodecBuilder.create(
++        instance -> instance.group(
++                    ExtraCodecs.NON_NEGATIVE_INT.fieldOf("nutrition").forGetter(FoodProperties::nutrition),
++                    Codec.FLOAT.fieldOf("saturation").forGetter(FoodProperties::saturation),
++                    Codec.BOOL.optionalFieldOf("can_always_eat", Boolean.valueOf(false)).forGetter(FoodProperties::canAlwaysEat),
++                    ExtraCodecs.POSITIVE_FLOAT.optionalFieldOf("eat_seconds", 1.6F).forGetter(FoodProperties::eatSeconds),
++                    ItemStack.SINGLE_ITEM_CODEC.optionalFieldOf("using_converts_to").forGetter(FoodProperties::usingConvertsTo),
++                    FoodProperties.PossibleEffect.CODEC.listOf().optionalFieldOf("effects", List.of()).forGetter(FoodProperties::effects)
++                )
++                .apply(instance, FoodProperties::new)
++    );
++    public static final StreamCodec<RegistryFriendlyByteBuf, FoodProperties> DIRECT_STREAM_CODEC = StreamCodec.composite(
++        ByteBufCodecs.VAR_INT,
++        FoodProperties::nutrition,
++        ByteBufCodecs.FLOAT,
++        FoodProperties::saturation,
++        ByteBufCodecs.BOOL,
++        FoodProperties::canAlwaysEat,
++        ByteBufCodecs.FLOAT,
++        FoodProperties::eatSeconds,
++        ItemStack.STREAM_CODEC.apply(ByteBufCodecs::optional),
++        FoodProperties::usingConvertsTo,
++        FoodProperties.PossibleEffect.STREAM_CODEC.apply(ByteBufCodecs.list()),
++        FoodProperties::effects,
++        FoodProperties::new
++    );
++
++    public int eatDurationTicks() {
++        return (int)(this.eatSeconds * 20.0F);
++    }
++
++    public static class Builder {
++        private int nutrition;
++        private float saturationModifier;
++        private boolean canAlwaysEat;
++        private float eatSeconds = 1.6F;
++        private Optional<ItemStack> usingConvertsTo = Optional.empty();
++        private final ImmutableList.Builder<FoodProperties.PossibleEffect> effects = ImmutableList.builder();
++
++        public FoodProperties.Builder nutrition(int nutrition) {
++            this.nutrition = nutrition;
++            return this;
++        }
++
++        public FoodProperties.Builder saturationModifier(float saturationModifier) {
++            this.saturationModifier = saturationModifier;
++            return this;
++        }
++
++        public FoodProperties.Builder alwaysEdible() {
++            this.canAlwaysEat = true;
++            return this;
++        }
++
++        public FoodProperties.Builder fast() {
++            this.eatSeconds = 0.8F;
++            return this;
++        }
++
++        /** @deprecated NeoForge: Prefer {@link #effect(java.util.function.Supplier, float)} for DeferredRegister effects */
++        @Deprecated
++        public FoodProperties.Builder effect(MobEffectInstance effect, float chance) {
++            this.effects.add(new FoodProperties.PossibleEffect(effect, chance));
++            return this;
++        }
++
++        public FoodProperties.Builder effect(java.util.function.Supplier<MobEffectInstance> effectIn, float probability) {
++            this.effects.add(new FoodProperties.PossibleEffect(effectIn, probability));
++            return this;
++        }
++
++        public FoodProperties.Builder usingConvertsTo(ItemLike item) {
++            this.usingConvertsTo = Optional.of(new ItemStack(item));
++            return this;
++        }
++
++        public FoodProperties build() {
++            float f = FoodConstants.saturationByModifier(this.nutrition, this.saturationModifier);
++            return new FoodProperties(this.nutrition, f, this.canAlwaysEat, this.eatSeconds, this.usingConvertsTo, this.effects.build());
++        }
++    }
++
++    public static record PossibleEffect(java.util.function.Supplier<MobEffectInstance> effectSupplier, float probability) {
++        public static final Codec<FoodProperties.PossibleEffect> CODEC = RecordCodecBuilder.create(
++            instance -> instance.group(
++                        MobEffectInstance.CODEC.fieldOf("effect").forGetter(FoodProperties.PossibleEffect::effect),
++                        Codec.floatRange(0.0F, 1.0F).optionalFieldOf("probability", 1.0F).forGetter(FoodProperties.PossibleEffect::probability)
++                    )
++                    .apply(instance, FoodProperties.PossibleEffect::new)
++        );
++        public static final StreamCodec<RegistryFriendlyByteBuf, FoodProperties.PossibleEffect> STREAM_CODEC = StreamCodec.composite(
++            MobEffectInstance.STREAM_CODEC,
++            FoodProperties.PossibleEffect::effect,
++            ByteBufCodecs.FLOAT,
++            FoodProperties.PossibleEffect::probability,
++            FoodProperties.PossibleEffect::new
++        );
++
++        // Public for CraftBukkit + codec constructors that pass a concrete MobEffectInstance.
++        public PossibleEffect(MobEffectInstance effect, float probability) {
++            this(() -> effect, probability);
++        }
++
++        public MobEffectInstance effect() {
++            return new MobEffectInstance(this.effectSupplier.get());
++        }
++    }
++}
+diff --git a/src/main/java/net/minecraft/world/item/Item.java b/src/main/java/net/minecraft/world/item/Item.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..a8d97662db9bb77f160a43d69e3f121b4f054aec
+--- /dev/null
++++ b/src/main/java/net/minecraft/world/item/Item.java
+@@ -0,0 +1,499 @@
++package net.minecraft.world.item;
++
++import com.google.common.collect.Interner;
++import com.google.common.collect.Interners;
++import com.google.common.collect.Maps;
++import com.mojang.logging.LogUtils;
++import java.util.List;
++import java.util.Map;
++import java.util.Optional;
++import javax.annotation.Nullable;
++import net.minecraft.SharedConstants;
++import net.minecraft.Util;
++import net.minecraft.core.BlockPos;
++import net.minecraft.core.Holder;
++import net.minecraft.core.HolderLookup;
++import net.minecraft.core.component.DataComponentMap;
++import net.minecraft.core.component.DataComponentPatch;
++import net.minecraft.core.component.DataComponentType;
++import net.minecraft.core.component.DataComponents;
++import net.minecraft.core.registries.BuiltInRegistries;
++import net.minecraft.network.chat.Component;
++import net.minecraft.resources.ResourceKey;
++import net.minecraft.resources.ResourceLocation;
++import net.minecraft.sounds.SoundEvent;
++import net.minecraft.sounds.SoundEvents;
++import net.minecraft.util.Mth;
++import net.minecraft.util.Unit;
++import net.minecraft.world.InteractionHand;
++import net.minecraft.world.InteractionResult;
++import net.minecraft.world.InteractionResultHolder;
++import net.minecraft.world.damagesource.DamageSource;
++import net.minecraft.world.entity.Entity;
++import net.minecraft.world.entity.EquipmentSlot;
++import net.minecraft.world.entity.LivingEntity;
++import net.minecraft.world.entity.SlotAccess;
++import net.minecraft.world.entity.item.ItemEntity;
++import net.minecraft.world.entity.player.Player;
++import net.minecraft.world.flag.FeatureElement;
++import net.minecraft.world.flag.FeatureFlag;
++import net.minecraft.world.flag.FeatureFlagSet;
++import net.minecraft.world.flag.FeatureFlags;
++import net.minecraft.world.food.FoodProperties;
++import net.minecraft.world.inventory.ClickAction;
++import net.minecraft.world.inventory.Slot;
++import net.minecraft.world.inventory.tooltip.TooltipComponent;
++import net.minecraft.world.item.component.ItemAttributeModifiers;
++import net.minecraft.world.item.component.Tool;
++import net.minecraft.world.item.context.UseOnContext;
++import net.minecraft.world.level.ClipContext;
++import net.minecraft.world.level.ItemLike;
++import net.minecraft.world.level.Level;
++import net.minecraft.world.level.block.Block;
++import net.minecraft.world.level.block.state.BlockState;
++import net.minecraft.world.level.saveddata.maps.MapId;
++import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
++import net.minecraft.world.phys.BlockHitResult;
++import net.minecraft.world.phys.Vec3;
++import org.slf4j.Logger;
++
++public class Item implements FeatureElement, ItemLike {
++    private static final Logger LOGGER = LogUtils.getLogger();
++    public static final Map<Block, Item> BY_BLOCK = Maps.newHashMap();
++    public static final ResourceLocation BASE_ATTACK_DAMAGE_ID = ResourceLocation.withDefaultNamespace("base_attack_damage");
++    public static final ResourceLocation BASE_ATTACK_SPEED_ID = ResourceLocation.withDefaultNamespace("base_attack_speed");
++    public static final int DEFAULT_MAX_STACK_SIZE = 64;
++    public static final int ABSOLUTE_MAX_STACK_SIZE = 99;
++    public static final int MAX_BAR_WIDTH = 13;
++    private final Holder.Reference<Item> builtInRegistryHolder = BuiltInRegistries.ITEM.createIntrusiveHolder(this);
++    // NeoForge AT: private-f — mutable so ModifyDefaultComponentsEvent can rewrite defaults
++    private DataComponentMap components;
++    @Nullable
++    private final Item craftingRemainingItem;
++    @Nullable
++    private String descriptionId;
++    private final FeatureFlagSet requiredFeatures;
++
++    public static int getId(Item item) {
++        return item == null ? 0 : BuiltInRegistries.ITEM.getId(item);
++    }
++
++    public static Item byId(int id) {
++        return BuiltInRegistries.ITEM.byId(id);
++    }
++
++    @Deprecated
++    public static Item byBlock(Block block) {
++        return BY_BLOCK.getOrDefault(block, Items.AIR);
++    }
++
++    public Item(Item.Properties settings) {
++        this.components = settings.buildAndValidateComponents();
++        this.craftingRemainingItem = settings.craftingRemainingItem;
++        this.requiredFeatures = settings.requiredFeatures;
++        if (SharedConstants.IS_RUNNING_IN_IDE) {
++            String string = this.getClass().getSimpleName();
++            if (!string.endsWith("Item")) {
++                LOGGER.error("Item classes should end with Item and {} doesn't.", string);
++            }
++        }
++    }
++
++    @Deprecated
++    public Holder.Reference<Item> builtInRegistryHolder() {
++        return this.builtInRegistryHolder;
++    }
++
++    public DataComponentMap components() {
++        return this.components;
++    }
++
++    /** @deprecated Neo: do not use, use {@link net.neoforged.neoforge.event.ModifyDefaultComponentsEvent} instead */
++    @org.jetbrains.annotations.ApiStatus.Internal
++    @Deprecated
++    public void modifyDefaultComponentsFrom(DataComponentPatch patch) {
++        if (!net.neoforged.neoforge.internal.RegistrationEvents.canModifyComponents()) {
++            throw new IllegalStateException("Default components cannot be modified now!");
++        }
++        DataComponentMap.Builder builder = DataComponentMap.builder().addAll(this.components);
++        patch.entrySet().forEach(entry -> builder.set((DataComponentType) entry.getKey(), entry.getValue().orElse(null)));
++        this.components = Properties.COMPONENT_INTERNER.intern(Properties.validateComponents(builder.build()));
++    }
++
++    public int getDefaultMaxStackSize() {
++        return this.components.getOrDefault(DataComponents.MAX_STACK_SIZE, 1);
++    }
++
++    public void onUseTick(Level world, LivingEntity user, ItemStack stack, int remainingUseTicks) {
++    }
++
++    public void onDestroyed(ItemEntity entity) {
++    }
++
++    public void verifyComponentsAfterLoad(ItemStack stack) {
++    }
++
++    public boolean canAttackBlock(BlockState state, Level world, BlockPos pos, Player miner) {
++        return true;
++    }
++
++    @Override
++    public Item asItem() {
++        return this;
++    }
++
++    public InteractionResult useOn(UseOnContext context) {
++        return InteractionResult.PASS;
++    }
++
++    public float getDestroySpeed(ItemStack stack, BlockState state) {
++        Tool tool = stack.get(DataComponents.TOOL);
++        return tool != null ? tool.getMiningSpeed(state) : 1.0F;
++    }
++
++    public InteractionResultHolder<ItemStack> use(Level world, Player user, InteractionHand hand) {
++        ItemStack itemStack = user.getItemInHand(hand);
++        FoodProperties foodProperties = itemStack.get(DataComponents.FOOD);
++        if (foodProperties != null) {
++            if (user.canEat(foodProperties.canAlwaysEat())) {
++                user.startUsingItem(hand);
++                return InteractionResultHolder.consume(itemStack);
++            } else {
++                return InteractionResultHolder.fail(itemStack);
++            }
++        } else {
++            return InteractionResultHolder.pass(user.getItemInHand(hand));
++        }
++    }
++
++    public ItemStack finishUsingItem(ItemStack stack, Level world, LivingEntity user) {
++        FoodProperties foodProperties = stack.get(DataComponents.FOOD);
++        return foodProperties != null ? user.eat(world, stack, foodProperties) : stack;
++    }
++
++    public boolean isBarVisible(ItemStack stack) {
++        return stack.isDamaged();
++    }
++
++    public int getBarWidth(ItemStack stack) {
++        return Mth.clamp(Math.round(13.0F - (float)stack.getDamageValue() * 13.0F / (float)stack.getMaxDamage()), 0, 13);
++    }
++
++    public int getBarColor(ItemStack stack) {
++        int i = stack.getMaxDamage();
++        float f = Math.max(0.0F, ((float)i - (float)stack.getDamageValue()) / (float)i);
++        return Mth.hsvToRgb(f / 3.0F, 1.0F, 1.0F);
++    }
++
++    public boolean overrideStackedOnOther(ItemStack stack, Slot slot, ClickAction clickType, Player player) {
++        return false;
++    }
++
++    public boolean overrideOtherStackedOnMe(
++        ItemStack stack, ItemStack otherStack, Slot slot, ClickAction clickType, Player player, SlotAccess cursorStackReference
++    ) {
++        return false;
++    }
++
++    public float getAttackDamageBonus(Entity target, float baseAttackDamage, DamageSource damageSource) {
++        return 0.0F;
++    }
++
++    public boolean hurtEnemy(ItemStack stack, LivingEntity target, LivingEntity attacker) {
++        return false;
++    }
++
++    public void postHurtEnemy(ItemStack stack, LivingEntity target, LivingEntity attacker) {
++    }
++
++    public boolean mineBlock(ItemStack stack, Level world, BlockState state, BlockPos pos, LivingEntity miner) {
++        Tool tool = stack.get(DataComponents.TOOL);
++        if (tool == null) {
++            return false;
++        } else {
++            if (!world.isClientSide && state.getDestroySpeed(world, pos) != 0.0F && tool.damagePerBlock() > 0) {
++                stack.hurtAndBreak(tool.damagePerBlock(), miner, EquipmentSlot.MAINHAND);
++            }
++
++            return true;
++        }
++    }
++
++    public boolean isCorrectToolForDrops(ItemStack stack, BlockState state) {
++        Tool tool = stack.get(DataComponents.TOOL);
++        return tool != null && tool.isCorrectForDrops(state);
++    }
++
++    public InteractionResult interactLivingEntity(ItemStack stack, Player user, LivingEntity entity, InteractionHand hand) {
++        return InteractionResult.PASS;
++    }
++
++    public Component getDescription() {
++        return Component.translatable(this.getDescriptionId());
++    }
++
++    @Override
++    public String toString() {
++        return BuiltInRegistries.ITEM.wrapAsHolder(this).getRegisteredName();
++    }
++
++    protected String getOrCreateDescriptionId() {
++        if (this.descriptionId == null) {
++            this.descriptionId = Util.makeDescriptionId("item", BuiltInRegistries.ITEM.getKey(this));
++        }
++
++        return this.descriptionId;
++    }
++
++    public String getDescriptionId() {
++        return this.getOrCreateDescriptionId();
++    }
++
++    public String getDescriptionId(ItemStack stack) {
++        return this.getDescriptionId();
++    }
++
++    @Nullable
++    public final Item getCraftingRemainingItem() {
++        return this.craftingRemainingItem;
++    }
++
++    public boolean hasCraftingRemainingItem() {
++        return this.craftingRemainingItem != null;
++    }
++
++    public void inventoryTick(ItemStack stack, Level world, Entity entity, int slot, boolean selected) {
++    }
++
++    public void onCraftedBy(ItemStack stack, Level world, Player player) {
++        this.onCraftedPostProcess(stack, world);
++    }
++
++    public void onCraftedPostProcess(ItemStack stack, Level world) {
++    }
++
++    public boolean isComplex() {
++        return false;
++    }
++
++    public UseAnim getUseAnimation(ItemStack stack) {
++        return stack.has(DataComponents.FOOD) ? UseAnim.EAT : UseAnim.NONE;
++    }
++
++    public int getUseDuration(ItemStack stack, LivingEntity user) {
++        FoodProperties foodProperties = stack.get(DataComponents.FOOD);
++        return foodProperties != null ? foodProperties.eatDurationTicks() : 0;
++    }
++
++    public void releaseUsing(ItemStack stack, Level world, LivingEntity user, int remainingUseTicks) {
++    }
++
++    public void appendHoverText(ItemStack stack, Item.TooltipContext context, List<Component> tooltip, TooltipFlag type) {
++    }
++
++    public Optional<TooltipComponent> getTooltipImage(ItemStack stack) {
++        return Optional.empty();
++    }
++
++    public Component getName(ItemStack stack) {
++        return Component.translatable(this.getDescriptionId(stack));
++    }
++
++    public boolean isFoil(ItemStack stack) {
++        return stack.isEnchanted();
++    }
++
++    public boolean isEnchantable(ItemStack stack) {
++        return stack.getMaxStackSize() == 1 && stack.has(DataComponents.MAX_DAMAGE);
++    }
++
++    protected static BlockHitResult getPlayerPOVHitResult(Level world, Player player, ClipContext.Fluid fluidHandling) {
++        Vec3 vec3 = player.getEyePosition();
++        Vec3 vec32 = vec3.add(player.calculateViewVector(player.getXRot(), player.getYRot()).scale(player.blockInteractionRange()));
++        return world.clip(new ClipContext(vec3, vec32, ClipContext.Block.OUTLINE, fluidHandling, player));
++    }
++
++    public int getEnchantmentValue() {
++        return 0;
++    }
++
++    public boolean isValidRepairItem(ItemStack stack, ItemStack ingredient) {
++        return false;
++    }
++
++    @Deprecated
++    public ItemAttributeModifiers getDefaultAttributeModifiers() {
++        return ItemAttributeModifiers.EMPTY;
++    }
++
++    public boolean useOnRelease(ItemStack stack) {
++        return false;
++    }
++
++    public ItemStack getDefaultInstance() {
++        return new ItemStack(this);
++    }
++
++    public SoundEvent getDrinkingSound() {
++        return SoundEvents.GENERIC_DRINK;
++    }
++
++    public SoundEvent getEatingSound() {
++        return SoundEvents.GENERIC_EAT;
++    }
++
++    public SoundEvent getBreakingSound() {
++        return SoundEvents.ITEM_BREAK;
++    }
++
++    public boolean canFitInsideContainerItems() {
++        return true;
++    }
++
++    @Override
++    public FeatureFlagSet requiredFeatures() {
++        return this.requiredFeatures;
++    }
++
++    public static class Properties {
++        static final Interner<DataComponentMap> COMPONENT_INTERNER = Interners.newStrongInterner();
++        @Nullable
++        private DataComponentMap.Builder components;
++        @Nullable
++        Item craftingRemainingItem;
++        FeatureFlagSet requiredFeatures = FeatureFlags.VANILLA_SET;
++
++        public Item.Properties food(FoodProperties foodComponent) {
++            return this.component(DataComponents.FOOD, foodComponent);
++        }
++
++        public Item.Properties stacksTo(int maxCount) {
++            return this.component(DataComponents.MAX_STACK_SIZE, maxCount);
++        }
++
++        public Item.Properties durability(int maxDamage) {
++            this.component(DataComponents.MAX_DAMAGE, maxDamage);
++            this.component(DataComponents.MAX_STACK_SIZE, 1);
++            this.component(DataComponents.DAMAGE, 0);
++            return this;
++        }
++
++        public Item.Properties craftRemainder(Item recipeRemainder) {
++            this.craftingRemainingItem = recipeRemainder;
++            return this;
++        }
++
++        public Item.Properties rarity(Rarity rarity) {
++            return this.component(DataComponents.RARITY, rarity);
++        }
++
++        public Item.Properties fireResistant() {
++            return this.component(DataComponents.FIRE_RESISTANT, Unit.INSTANCE);
++        }
++
++        public Item.Properties jukeboxPlayable(ResourceKey<JukeboxSong> songKey) {
++            return this.component(DataComponents.JUKEBOX_PLAYABLE, new JukeboxPlayable(new EitherHolder<>(songKey), true));
++        }
++
++        public Item.Properties requiredFeatures(FeatureFlag... features) {
++            this.requiredFeatures = FeatureFlags.REGISTRY.subset(features);
++            return this;
++        }
++
++        public <T> Item.Properties component(DataComponentType<T> type, T value) {
++            if (this.components == null) {
++                this.components = DataComponentMap.builder().addAll(DataComponents.COMMON_ITEM_COMPONENTS);
++            }
++
++            this.components.set(type, value);
++            return this;
++        }
++
++        public Item.Properties attributes(ItemAttributeModifiers attributeModifiersComponent) {
++            return this.component(DataComponents.ATTRIBUTE_MODIFIERS, attributeModifiersComponent);
++        }
++
++        DataComponentMap buildAndValidateComponents() {
++            return validateComponents(this.buildComponents());
++        }
++
++        public static DataComponentMap validateComponents(DataComponentMap dataComponentMap) {
++            if (dataComponentMap.has(DataComponents.DAMAGE) && dataComponentMap.getOrDefault(DataComponents.MAX_STACK_SIZE, 1) > 1) {
++                throw new IllegalStateException("Item cannot have both durability and be stackable");
++            }
++            return dataComponentMap;
++        }
++
++        private DataComponentMap buildComponents() {
++            return this.components == null ? DataComponents.COMMON_ITEM_COMPONENTS : COMPONENT_INTERNER.intern(this.components.build());
++        }
++    }
++
++    public interface TooltipContext {
++        Item.TooltipContext EMPTY = new Item.TooltipContext() {
++            @Nullable
++            @Override
++            public HolderLookup.Provider registries() {
++                return null;
++            }
++
++            @Override
++            public float tickRate() {
++                return 20.0F;
++            }
++
++            @Nullable
++            @Override
++            public MapItemSavedData mapData(MapId mapIdComponent) {
++                return null;
++            }
++        };
++
++        @Nullable
++        HolderLookup.Provider registries();
++
++        float tickRate();
++
++        @Nullable
++        MapItemSavedData mapData(MapId mapIdComponent);
++
++        static Item.TooltipContext of(@Nullable Level world) {
++            return world == null ? EMPTY : new Item.TooltipContext() {
++                @Override
++                public HolderLookup.Provider registries() {
++                    return world.registryAccess();
++                }
++
++                @Override
++                public float tickRate() {
++                    return world.tickRateManager().tickrate();
++                }
++
++                @Override
++                public MapItemSavedData mapData(MapId mapIdComponent) {
++                    return world.getMapData(mapIdComponent);
++                }
++            };
++        }
++
++        static Item.TooltipContext of(HolderLookup.Provider registryLookup) {
++            return new Item.TooltipContext() {
++                @Override
++                public HolderLookup.Provider registries() {
++                    return registryLookup;
++                }
++
++                @Override
++                public float tickRate() {
++                    return 20.0F;
++                }
++
++                @Nullable
++                @Override
++                public MapItemSavedData mapData(MapId mapIdComponent) {
++                    return null;
++                }
++            };
++        }
++    }
++}
+diff --git a/src/main/java/net/minecraft/world/item/ItemStack.java b/src/main/java/net/minecraft/world/item/ItemStack.java
+index 7027faae6dfd69ff39cc15e8802f5c9ab45b0d13..37bfbf585aef7662629154c545e0d25eec8e3981 100644
+--- a/src/main/java/net/minecraft/world/item/ItemStack.java
++++ b/src/main/java/net/minecraft/world/item/ItemStack.java
+@@ -1053,7 +1053,7 @@ public final class ItemStack implements DataComponentHolder {
+             return List.of();
+         } else {
+             List<Component> list = Lists.newArrayList();
+-            MutableComponent ichatmutablecomponent = Component.empty().append(this.getHoverName()).withStyle(this.getRarity().color());
++            MutableComponent ichatmutablecomponent = Component.empty().append(this.getHoverName()).withStyle(this.getRarity().getStyleModifier());
+ 
+             if (this.has(DataComponents.CUSTOM_NAME)) {
+                 ichatmutablecomponent.withStyle(ChatFormatting.ITALIC);
+@@ -1307,7 +1307,7 @@ public final class ItemStack implements DataComponentHolder {
+         MutableComponent ichatmutablecomponent1 = ComponentUtils.wrapInSquareBrackets(ichatmutablecomponent);
+ 
+         if (!this.isEmpty()) {
+-            ichatmutablecomponent1.withStyle(this.getRarity().color()).withStyle((chatmodifier) -> {
++            ichatmutablecomponent1.withStyle(this.getRarity().getStyleModifier()).withStyle((chatmodifier) -> {
+                 return chatmodifier.withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_ITEM, new HoverEvent.ItemStackInfo(this)));
+             });
+         }
+diff --git a/src/main/java/net/minecraft/world/item/Rarity.java b/src/main/java/net/minecraft/world/item/Rarity.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..d7f9150e073f4d168505bccb8f336c4ddb04ffaa
+--- /dev/null
++++ b/src/main/java/net/minecraft/world/item/Rarity.java
+@@ -0,0 +1,63 @@
++package net.minecraft.world.item;
++
++import com.mojang.serialization.Codec;
++import io.netty.buffer.ByteBuf;
++import java.util.function.IntFunction;
++import java.util.function.UnaryOperator;
++import net.minecraft.ChatFormatting;
++import net.minecraft.network.chat.Style;
++import net.minecraft.network.codec.ByteBufCodecs;
++import net.minecraft.network.codec.StreamCodec;
++import net.minecraft.util.ByIdMap;
++import net.minecraft.util.StringRepresentable;
++
++@net.neoforged.fml.common.asm.enumextension.IndexedEnum
++@net.neoforged.fml.common.asm.enumextension.NamedEnum(1)
++@net.neoforged.fml.common.asm.enumextension.NetworkedEnum(net.neoforged.fml.common.asm.enumextension.NetworkedEnum.NetworkCheck.BIDIRECTIONAL)
++public enum Rarity implements StringRepresentable, net.neoforged.fml.common.asm.enumextension.IExtensibleEnum {
++    COMMON(0, "common", ChatFormatting.WHITE),
++    UNCOMMON(1, "uncommon", ChatFormatting.YELLOW),
++    RARE(2, "rare", ChatFormatting.AQUA),
++    EPIC(3, "epic", ChatFormatting.LIGHT_PURPLE);
++
++    public static final Codec<Rarity> CODEC = StringRepresentable.fromValues(Rarity::values);
++    public static final IntFunction<Rarity> BY_ID = ByIdMap.continuous(value -> value.id, values(), ByIdMap.OutOfBoundsStrategy.ZERO);
++    public static final StreamCodec<ByteBuf, Rarity> STREAM_CODEC = ByteBufCodecs.idMapper(BY_ID, value -> value.id);
++    private final int id;
++    private final String name;
++    private final ChatFormatting color;
++    private final UnaryOperator<Style> styleModifier;
++
++    private Rarity(final int index, final String name, final ChatFormatting formatting) {
++        this.id = index;
++        this.name = name;
++        this.color = formatting;
++        this.styleModifier = style -> style.withColor(formatting);
++    }
++
++    Rarity(int id, String name, UnaryOperator<Style> styleModifier) {
++        this.id = id;
++        this.name = name;
++        this.color = ChatFormatting.BLACK;
++        this.styleModifier = styleModifier;
++    }
++
++    /** @deprecated NeoForge: Use {@link #getStyleModifier()} */
++    @Deprecated
++    public ChatFormatting color() {
++        return this.color;
++    }
++
++    public UnaryOperator<Style> getStyleModifier() {
++        return this.styleModifier;
++    }
++
++    @Override
++    public String getSerializedName() {
++        return this.name;
++    }
++
++    public static net.neoforged.fml.common.asm.enumextension.ExtensionInfo getExtensionInfo() {
++        return net.neoforged.fml.common.asm.enumextension.ExtensionInfo.nonExtended(Rarity.class);
++    }
++}
+diff --git a/src/main/java/net/minecraft/world/level/block/FenceGateBlock.java b/src/main/java/net/minecraft/world/level/block/FenceGateBlock.java
+index 26ed17e433cbafbbf788231f27f296f08048adfe..8807b54befb1f88605bd5869752194e59fe57a3f 100644
+--- a/src/main/java/net/minecraft/world/level/block/FenceGateBlock.java
++++ b/src/main/java/net/minecraft/world/level/block/FenceGateBlock.java
+@@ -33,9 +33,12 @@ import net.minecraft.world.phys.shapes.VoxelShape;
+ public class FenceGateBlock extends HorizontalDirectionalBlock {
+ 
+     public static final MapCodec<FenceGateBlock> CODEC = RecordCodecBuilder.mapCodec((instance) -> {
+-        return instance.group(WoodType.CODEC.fieldOf("wood_type").forGetter((blockfencegate) -> {
+-            return blockfencegate.type;
+-        }), propertiesCodec()).apply(instance, FenceGateBlock::new);
++        return instance.group(
++            WoodType.CODEC.optionalFieldOf("wood_type").forGetter((block) -> java.util.Optional.ofNullable(block.type)),
++            propertiesCodec(),
++            net.minecraft.sounds.SoundEvent.DIRECT_CODEC.optionalFieldOf("open_sound").forGetter((fence) -> java.util.Optional.of(fence.openSound).filter(s -> fence.type == null || s != fence.type.fenceGateOpen())),
++            net.minecraft.sounds.SoundEvent.DIRECT_CODEC.optionalFieldOf("close_sound").forGetter((fence) -> java.util.Optional.of(fence.closeSound).filter(s -> fence.type == null || s != fence.type.fenceGateClose()))
++        ).apply(instance, FenceGateBlock::new);
+     });
+     public static final BooleanProperty OPEN = BlockStateProperties.OPEN;
+     public static final BooleanProperty POWERED = BlockStateProperties.POWERED;
+@@ -52,6 +55,8 @@ public class FenceGateBlock extends HorizontalDirectionalBlock {
+     protected static final VoxelShape X_OCCLUSION_SHAPE = Shapes.or(Block.box(7.0D, 5.0D, 0.0D, 9.0D, 16.0D, 2.0D), Block.box(7.0D, 5.0D, 14.0D, 9.0D, 16.0D, 16.0D));
+     protected static final VoxelShape Z_OCCLUSION_SHAPE_LOW = Shapes.or(Block.box(0.0D, 2.0D, 7.0D, 2.0D, 13.0D, 9.0D), Block.box(14.0D, 2.0D, 7.0D, 16.0D, 13.0D, 9.0D));
+     protected static final VoxelShape X_OCCLUSION_SHAPE_LOW = Shapes.or(Block.box(7.0D, 2.0D, 0.0D, 9.0D, 13.0D, 2.0D), Block.box(7.0D, 2.0D, 14.0D, 9.0D, 13.0D, 16.0D));
++    public final net.minecraft.sounds.SoundEvent openSound, closeSound;
++    @javax.annotation.Nullable
+     private final WoodType type;
+ 
+     @Override
+@@ -60,8 +65,20 @@ public class FenceGateBlock extends HorizontalDirectionalBlock {
+     }
+ 
+     public FenceGateBlock(WoodType type, BlockBehaviour.Properties settings) {
+-        super(settings.sound(type.soundType()));
+-        this.type = type;
++        this(java.util.Optional.of(type), settings.sound(type.soundType()), java.util.Optional.of(type.fenceGateOpen()), java.util.Optional.of(type.fenceGateClose()));
++    }
++
++    /** NeoForge: custom open/close sounds without a WoodType (e.g. Farmers Delight rope gate). */
++    public FenceGateBlock(BlockBehaviour.Properties settings, net.minecraft.sounds.SoundEvent openSound, net.minecraft.sounds.SoundEvent closeSound) {
++        this(java.util.Optional.empty(), settings, java.util.Optional.of(openSound), java.util.Optional.of(closeSound));
++    }
++
++    public FenceGateBlock(java.util.Optional<WoodType> type, BlockBehaviour.Properties settings, java.util.Optional<net.minecraft.sounds.SoundEvent> openSound, java.util.Optional<net.minecraft.sounds.SoundEvent> closeSound) {
++        super(settings);
++        com.google.common.base.Preconditions.checkArgument(type.isPresent() || (openSound.isPresent() && closeSound.isPresent()), "Fence gates must have sounds set");
++        this.type = type.orElse(null);
++        this.openSound = openSound.orElseGet(() -> this.type.fenceGateOpen());
++        this.closeSound = closeSound.orElseGet(() -> this.type.fenceGateClose());
+         this.registerDefaultState((BlockState) ((BlockState) ((BlockState) ((BlockState) this.stateDefinition.any()).setValue(FenceGateBlock.OPEN, false)).setValue(FenceGateBlock.POWERED, false)).setValue(FenceGateBlock.IN_WALL, false));
+     }
+ 
+@@ -146,7 +163,7 @@ public class FenceGateBlock extends HorizontalDirectionalBlock {
+ 
+         boolean flag = (Boolean) state.getValue(FenceGateBlock.OPEN);
+ 
+-        world.playSound(player, pos, flag ? this.type.fenceGateOpen() : this.type.fenceGateClose(), SoundSource.BLOCKS, 1.0F, world.getRandom().nextFloat() * 0.1F + 0.9F);
++        world.playSound(player, pos, flag ? this.openSound : this.closeSound, SoundSource.BLOCKS, 1.0F, world.getRandom().nextFloat() * 0.1F + 0.9F);
+         world.gameEvent((Entity) player, (Holder) (flag ? GameEvent.BLOCK_OPEN : GameEvent.BLOCK_CLOSE), pos);
+         return InteractionResult.sidedSuccess(world.isClientSide);
+     }
+@@ -157,7 +174,7 @@ public class FenceGateBlock extends HorizontalDirectionalBlock {
+             boolean flag = (Boolean) state.getValue(FenceGateBlock.OPEN);
+ 
+             world.setBlockAndUpdate(pos, (BlockState) state.setValue(FenceGateBlock.OPEN, !flag));
+-            world.playSound((Player) null, pos, flag ? this.type.fenceGateClose() : this.type.fenceGateOpen(), SoundSource.BLOCKS, 1.0F, world.getRandom().nextFloat() * 0.1F + 0.9F);
++            world.playSound((Player) null, pos, flag ? this.closeSound : this.openSound, SoundSource.BLOCKS, 1.0F, world.getRandom().nextFloat() * 0.1F + 0.9F);
+             world.gameEvent((Holder) (flag ? GameEvent.BLOCK_CLOSE : GameEvent.BLOCK_OPEN), pos, GameEvent.Context.of(state));
+         }
+ 
+@@ -183,7 +200,7 @@ public class FenceGateBlock extends HorizontalDirectionalBlock {
+             if ((Boolean) state.getValue(FenceGateBlock.POWERED) != flag1) {
+                 world.setBlock(pos, (BlockState) ((BlockState) state.setValue(FenceGateBlock.POWERED, flag1)).setValue(FenceGateBlock.OPEN, flag1), 2);
+                 if ((Boolean) state.getValue(FenceGateBlock.OPEN) != flag1) {
+-                    world.playSound((Player) null, pos, flag1 ? this.type.fenceGateOpen() : this.type.fenceGateClose(), SoundSource.BLOCKS, 1.0F, world.getRandom().nextFloat() * 0.1F + 0.9F);
++                    world.playSound((Player) null, pos, flag1 ? this.openSound : this.closeSound, SoundSource.BLOCKS, 1.0F, world.getRandom().nextFloat() * 0.1F + 0.9F);
+                     world.gameEvent((Entity) null, (Holder) (flag1 ? GameEvent.BLOCK_OPEN : GameEvent.BLOCK_CLOSE), pos);
+                 }
+             }
+diff --git a/src/main/java/net/minecraft/world/level/block/state/BlockBehaviour.java b/src/main/java/net/minecraft/world/level/block/state/BlockBehaviour.java
+index d0109633e8bdf109cfc9178963d7b6cf92f8b189..96054e3119b889754ee9b951d627bf2f9a7b8f01 100644
+--- a/src/main/java/net/minecraft/world/level/block/state/BlockBehaviour.java
++++ b/src/main/java/net/minecraft/world/level/block/state/BlockBehaviour.java
+@@ -97,10 +97,10 @@ public abstract class BlockBehaviour implements FeatureElement {
+     protected final BlockBehaviour.Properties properties;
+     @Nullable
+     protected ResourceKey<LootTable> drops;
++    private final java.util.function.Supplier<ResourceKey<LootTable>> lootTableSupplier;
+ 
+     public BlockBehaviour(BlockBehaviour.Properties settings) {
+         this.hasCollision = settings.hasCollision;
+-        this.drops = settings.drops;
+         this.explosionResistance = settings.explosionResistance;
+         this.isRandomlyTicking = settings.isRandomlyTicking;
+         this.soundType = settings.soundType;
+@@ -110,6 +110,18 @@ public abstract class BlockBehaviour implements FeatureElement {
+         this.dynamicShape = settings.dynamicShape;
+         this.requiredFeatures = settings.requiredFeatures;
+         this.properties = settings;
++        // NeoForge: deferred loot table supplier (lootFrom) for DeferredRegister blocks
++        if (settings.drops != null) {
++            this.lootTableSupplier = () -> settings.drops;
++        } else if (settings.lootTableSupplier != null) {
++            this.lootTableSupplier = settings.lootTableSupplier;
++        } else {
++            this.lootTableSupplier = () -> {
++                ResourceLocation id = BuiltInRegistries.BLOCK.getKey(this.asBlock());
++                return ResourceKey.create(Registries.LOOT_TABLE, id.withPrefix("blocks/"));
++            };
++        }
++        this.drops = settings.drops;
+     }
+ 
+     public BlockBehaviour.Properties properties() {
+@@ -364,9 +376,7 @@ public abstract class BlockBehaviour implements FeatureElement {
+ 
+     public final ResourceKey<LootTable> getLootTable() {
+         if (this.drops == null) {
+-            ResourceLocation minecraftkey = BuiltInRegistries.BLOCK.getKey(this.asBlock());
+-
+-            this.drops = ResourceKey.create(Registries.LOOT_TABLE, minecraftkey.withPrefix("blocks/"));
++            this.drops = this.lootTableSupplier.get();
+         }
+ 
+         return this.drops;
+@@ -417,6 +427,7 @@ public abstract class BlockBehaviour implements FeatureElement {
+         float speedFactor;
+         float jumpFactor;
+         ResourceKey<LootTable> drops;
++        private java.util.function.Supplier<ResourceKey<LootTable>> lootTableSupplier;
+         boolean canOcclude;
+         boolean isAir;
+         boolean ignitedByLava;
+@@ -488,6 +499,7 @@ public abstract class BlockBehaviour implements FeatureElement {
+             blockbase_info.isSuffocating = blockbase_info1.isSuffocating;
+             blockbase_info.isViewBlocking = blockbase_info1.isViewBlocking;
+             blockbase_info.drops = blockbase_info1.drops;
++            blockbase_info.lootTableSupplier = blockbase_info1.lootTableSupplier;
+             return blockbase_info;
+         }
+ 
+@@ -607,8 +619,15 @@ public abstract class BlockBehaviour implements FeatureElement {
+             return this;
+         }
+ 
++        /** @deprecated NeoForge: Prefer {@link #lootFrom(java.util.function.Supplier)} for DeferredRegister blocks */
++        @Deprecated
+         public BlockBehaviour.Properties dropsLike(Block source) {
+-            this.drops = source.getLootTable();
++            this.lootTableSupplier = () -> source.getLootTable();
++            return this;
++        }
++
++        public BlockBehaviour.Properties lootFrom(java.util.function.Supplier<? extends Block> blockIn) {
++            this.lootTableSupplier = () -> blockIn.get().getLootTable();
+             return this;
+         }
+ 
+diff --git a/src/main/java/net/minecraft/world/level/levelgen/DebugLevelSource.java b/src/main/java/net/minecraft/world/level/levelgen/DebugLevelSource.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..474a2c4e5486ac5d5fde4e560df54d293a69d991
+--- /dev/null
++++ b/src/main/java/net/minecraft/world/level/levelgen/DebugLevelSource.java
+@@ -0,0 +1,151 @@
++package net.minecraft.world.level.levelgen;
++
++import com.mojang.serialization.MapCodec;
++import com.mojang.serialization.codecs.RecordCodecBuilder;
++import java.util.List;
++import java.util.concurrent.CompletableFuture;
++import java.util.stream.Collectors;
++import java.util.stream.StreamSupport;
++import net.minecraft.core.BlockPos;
++import net.minecraft.core.Holder;
++import net.minecraft.core.SectionPos;
++import net.minecraft.core.registries.BuiltInRegistries;
++import net.minecraft.resources.RegistryOps;
++import net.minecraft.server.level.WorldGenRegion;
++import net.minecraft.util.Mth;
++import net.minecraft.world.level.ChunkPos;
++import net.minecraft.world.level.LevelHeightAccessor;
++import net.minecraft.world.level.NoiseColumn;
++import net.minecraft.world.level.StructureManager;
++import net.minecraft.world.level.WorldGenLevel;
++import net.minecraft.world.level.biome.Biome;
++import net.minecraft.world.level.biome.BiomeManager;
++import net.minecraft.world.level.biome.Biomes;
++import net.minecraft.world.level.biome.FixedBiomeSource;
++import net.minecraft.world.level.block.Blocks;
++import net.minecraft.world.level.block.state.BlockState;
++import net.minecraft.world.level.chunk.ChunkAccess;
++import net.minecraft.world.level.chunk.ChunkGenerator;
++import net.minecraft.world.level.levelgen.blending.Blender;
++
++public class DebugLevelSource extends ChunkGenerator {
++    public static final MapCodec<DebugLevelSource> CODEC = RecordCodecBuilder.mapCodec(
++        instance -> instance.group(RegistryOps.retrieveElement(Biomes.PLAINS)).apply(instance, instance.stable(DebugLevelSource::new))
++    );
++    private static final int BLOCK_MARGIN = 2;
++    // Neo: refreshed after mod blocks register via initValidStates()
++    private static List<BlockState> ALL_BLOCKS = StreamSupport.stream(BuiltInRegistries.BLOCK.spliterator(), false)
++        .flatMap(block -> block.getStateDefinition().getPossibleStates().stream())
++        .collect(Collectors.toList());
++    private static int GRID_WIDTH = Mth.ceil(Mth.sqrt((float)ALL_BLOCKS.size()));
++    private static int GRID_HEIGHT = Mth.ceil((float)ALL_BLOCKS.size() / (float)GRID_WIDTH);
++    protected static final BlockState AIR = Blocks.AIR.defaultBlockState();
++    protected static final BlockState BARRIER = Blocks.BARRIER.defaultBlockState();
++    public static final int HEIGHT = 70;
++    public static final int BARRIER_HEIGHT = 60;
++
++    public DebugLevelSource(Holder.Reference<Biome> biomeEntry) {
++        super(new FixedBiomeSource(biomeEntry));
++    }
++
++    @Override
++    protected MapCodec<? extends ChunkGenerator> codec() {
++        return CODEC;
++    }
++
++    @Override
++    public void buildSurface(WorldGenRegion region, StructureManager structures, RandomState noiseConfig, ChunkAccess chunk) {
++    }
++
++    @Override
++    public void applyBiomeDecoration(WorldGenLevel world, ChunkAccess chunk, StructureManager structureAccessor) {
++        BlockPos.MutableBlockPos mutableBlockPos = new BlockPos.MutableBlockPos();
++        ChunkPos chunkPos = chunk.getPos();
++        int i = chunkPos.x;
++        int j = chunkPos.z;
++
++        for (int k = 0; k < 16; k++) {
++            for (int l = 0; l < 16; l++) {
++                int m = SectionPos.sectionToBlockCoord(i, k);
++                int n = SectionPos.sectionToBlockCoord(j, l);
++                world.setBlock(mutableBlockPos.set(m, 60, n), BARRIER, 2);
++                BlockState blockState = getBlockStateFor(m, n);
++                world.setBlock(mutableBlockPos.set(m, 70, n), blockState, 2);
++            }
++        }
++    }
++
++    @Override
++    public CompletableFuture<ChunkAccess> fillFromNoise(Blender blender, RandomState noiseConfig, StructureManager structureAccessor, ChunkAccess chunk) {
++        return CompletableFuture.completedFuture(chunk);
++    }
++
++    @Override
++    public int getBaseHeight(int x, int z, Heightmap.Types heightmap, LevelHeightAccessor world, RandomState noiseConfig) {
++        return 0;
++    }
++
++    public static void initValidStates() {
++        ALL_BLOCKS = StreamSupport.stream(BuiltInRegistries.BLOCK.spliterator(), false)
++            .flatMap(block -> block.getStateDefinition().getPossibleStates().stream())
++            .collect(Collectors.toList());
++        GRID_WIDTH = Mth.ceil(Mth.sqrt(ALL_BLOCKS.size()));
++        GRID_HEIGHT = Mth.ceil((float) ALL_BLOCKS.size() / (float) GRID_WIDTH);
++    }
++
++    @Override
++    public NoiseColumn getBaseColumn(int x, int z, LevelHeightAccessor world, RandomState noiseConfig) {
++        return new NoiseColumn(0, new BlockState[0]);
++    }
++
++    @Override
++    public void addDebugScreenInfo(List<String> text, RandomState noiseConfig, BlockPos pos) {
++    }
++
++    public static BlockState getBlockStateFor(int x, int z) {
++        BlockState blockState = AIR;
++        if (x > 0 && z > 0 && x % 2 != 0 && z % 2 != 0) {
++            x /= 2;
++            z /= 2;
++            if (x <= GRID_WIDTH && z <= GRID_HEIGHT) {
++                int i = Mth.abs(x * GRID_WIDTH + z);
++                if (i < ALL_BLOCKS.size()) {
++                    blockState = ALL_BLOCKS.get(i);
++                }
++            }
++        }
++
++        return blockState;
++    }
++
++    @Override
++    public void applyCarvers(
++        WorldGenRegion chunkRegion,
++        long seed,
++        RandomState noiseConfig,
++        BiomeManager biomeAccess,
++        StructureManager structureAccessor,
++        ChunkAccess chunk,
++        GenerationStep.Carving carverStep
++    ) {
++    }
++
++    @Override
++    public void spawnOriginalMobs(WorldGenRegion region) {
++    }
++
++    @Override
++    public int getMinY() {
++        return 0;
++    }
++
++    @Override
++    public int getGenDepth() {
++        return 384;
++    }
++
++    @Override
++    public int getSeaLevel() {
++        return 63;
++    }
++}
