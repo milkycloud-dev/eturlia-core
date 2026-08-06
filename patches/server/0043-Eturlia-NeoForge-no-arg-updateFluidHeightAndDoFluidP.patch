@@ -1,0 +1,208 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 20:10:28 +0000
+Subject: [PATCH] Eturlia: NeoForge no-arg updateFluidHeightAndDoFluidPushing
+ for Sable
+
+Sable @Overwrite targets the NeoForge no-arg fluid push method. Add it,
+delegate TagKey overload like NeoForge, expose FluidState.getFluidType,
+and isInFluidType(FluidType).
+
+diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
+index 7829219ed5449862854e687907e1370690db1971..b7b1519e26867407ce378374cfc37d01b592aad9 100644
+--- a/src/main/java/net/minecraft/world/entity/Entity.java
++++ b/src/main/java/net/minecraft/world/entity/Entity.java
+@@ -5231,81 +5231,105 @@ public abstract class Entity extends net.neoforged.neoforge.attachment.Attachmen
+         return Mth.lerp(delta, this.yRotO, this.yRot);
+     }
+ 
++    // Eturlia/NeoForge: TagKey overload delegates to no-arg FluidType path (Sable @Overwrite).
+     public boolean updateFluidHeightAndDoFluidPushing(TagKey<Fluid> tag, double speed) {
+-        if (this.touchingUnloadedChunk()) {
+-            return false;
+-        } else {
+-            AABB axisalignedbb = this.getBoundingBox().deflate(0.001D);
+-            int i = Mth.floor(axisalignedbb.minX);
+-            int j = Mth.ceil(axisalignedbb.maxX);
+-            int k = Mth.floor(axisalignedbb.minY);
+-            int l = Mth.ceil(axisalignedbb.maxY);
+-            int i1 = Mth.floor(axisalignedbb.minZ);
+-            int j1 = Mth.ceil(axisalignedbb.maxZ);
+-            double d1 = 0.0D;
+-            boolean flag = this.isPushedByFluid();
+-            boolean flag1 = false;
+-            Vec3 vec3d = Vec3.ZERO;
+-            int k1 = 0;
+-            BlockPos.MutableBlockPos blockposition_mutableblockposition = new BlockPos.MutableBlockPos();
+-
+-            for (int l1 = i; l1 < j; ++l1) {
+-                for (int i2 = k; i2 < l; ++i2) {
+-                    for (int j2 = i1; j2 < j1; ++j2) {
+-                        blockposition_mutableblockposition.set(l1, i2, j2);
+-                        FluidState fluid = this.level().getFluidState(blockposition_mutableblockposition);
+-
+-                        if (fluid.is(tag)) {
+-                            double d2 = (double) ((float) i2 + fluid.getHeight(this.level(), blockposition_mutableblockposition));
+-
+-                            if (d2 >= axisalignedbb.minY) {
+-                                flag1 = true;
+-                                d1 = Math.max(d2 - axisalignedbb.minY, d1);
+-                                if (flag) {
+-                                    Vec3 vec3d1 = fluid.getFlow(this.level(), blockposition_mutableblockposition);
++        this.updateFluidHeightAndDoFluidPushing();
++        if (tag == FluidTags.WATER) {
++            return this.isInFluidType(net.neoforged.neoforge.common.NeoForgeMod.WATER_TYPE.value());
++        } else if (tag == FluidTags.LAVA) {
++            return this.isInFluidType(net.neoforged.neoforge.common.NeoForgeMod.LAVA_TYPE.value());
++        }
++        return false;
++    }
+ 
+-                                    if (d1 < 0.4D) {
+-                                        vec3d1 = vec3d1.scale(d1);
+-                                    }
++    /**
++     * NeoForge FluidType fluid push. Sable overwrites this for sub-level swimming.
++     */
++    public void updateFluidHeightAndDoFluidPushing() {
++        if (this.touchingUnloadedChunk()) {
++            return;
++        }
++        AABB axisalignedbb = this.getBoundingBox().deflate(0.001D);
++        int i = Mth.floor(axisalignedbb.minX);
++        int j = Mth.ceil(axisalignedbb.maxX);
++        int k = Mth.floor(axisalignedbb.minY);
++        int l = Mth.ceil(axisalignedbb.maxY);
++        int i1 = Mth.floor(axisalignedbb.minZ);
++        int j1 = Mth.ceil(axisalignedbb.maxZ);
++        BlockPos.MutableBlockPos blockposition_mutableblockposition = new BlockPos.MutableBlockPos();
+ 
+-                                    vec3d = vec3d.add(vec3d1);
+-                                    ++k1;
+-                                }
+-                                // CraftBukkit start - store last lava contact location
+-                                if (tag == FluidTags.LAVA) {
+-                                    this.lastLavaContact = blockposition_mutableblockposition.immutable();
++        class InterimCalculation {
++            double fluidHeight = 0.0D;
++            Vec3 flowVector = Vec3.ZERO;
++            int blockCount = 0;
++        }
++        it.unimi.dsi.fastutil.objects.Object2ObjectMap<net.neoforged.neoforge.fluids.FluidType, InterimCalculation> interimCalcs = null;
++
++        for (int l1 = i; l1 < j; ++l1) {
++            for (int i2 = k; i2 < l; ++i2) {
++                for (int j2 = i1; j2 < j1; ++j2) {
++                    blockposition_mutableblockposition.set(l1, i2, j2);
++                    FluidState fluid = this.level().getFluidState(blockposition_mutableblockposition);
++                    net.neoforged.neoforge.fluids.FluidType fluidType = fluid.getFluidType();
++                    if (!fluidType.isAir()) {
++                        double d2 = (double) ((float) i2 + fluid.getHeight(this.level(), blockposition_mutableblockposition));
++                        if (d2 >= axisalignedbb.minY) {
++                            if (interimCalcs == null) {
++                                interimCalcs = new it.unimi.dsi.fastutil.objects.Object2ObjectArrayMap<>();
++                            }
++                            InterimCalculation calc = interimCalcs.computeIfAbsent(fluidType, t -> new InterimCalculation());
++                            calc.fluidHeight = Math.max(d2 - axisalignedbb.minY, calc.fluidHeight);
++                            if (this.isPushedByFluid(fluidType)) {
++                                Vec3 vec3d1 = fluid.getFlow(this.level(), blockposition_mutableblockposition);
++                                if (calc.fluidHeight < 0.4D) {
++                                    vec3d1 = vec3d1.scale(calc.fluidHeight);
+                                 }
+-                                // CraftBukkit end
++                                calc.flowVector = calc.flowVector.add(vec3d1);
++                                calc.blockCount++;
++                            }
++                            // CraftBukkit: last lava contact
++                            if (fluidType == net.neoforged.neoforge.common.NeoForgeMod.LAVA_TYPE.value()) {
++                                this.lastLavaContact = blockposition_mutableblockposition.immutable();
+                             }
+                         }
+                     }
+                 }
+             }
++        }
+ 
+-            if (vec3d.length() > 0.0D) {
+-                if (k1 > 0) {
+-                    vec3d = vec3d.scale(1.0D / (double) k1);
+-                }
+-
+-                if (!(this instanceof Player)) {
+-                    vec3d = vec3d.normalize();
++        if (interimCalcs != null) {
++            interimCalcs.forEach((fluidType, calc) -> {
++                if (calc.flowVector.length() > 0.0D) {
++                    if (calc.blockCount > 0) {
++                        calc.flowVector = calc.flowVector.scale(1.0D / (double) calc.blockCount);
++                    }
++                    if (!(this instanceof Player)) {
++                        calc.flowVector = calc.flowVector.normalize();
++                    }
++                    Vec3 push = calc.flowVector.scale(this.getFluidMotionScale(fluidType));
++                    Vec3 motion = this.getDeltaMovement();
++                    if (Math.abs(motion.x) < 0.003D && Math.abs(motion.z) < 0.003D && push.length() < 0.0045000000000000005D) {
++                        push = push.normalize().scale(0.0045000000000000005D);
++                    }
++                    this.setDeltaMovement(this.getDeltaMovement().add(push));
+                 }
+-
+-                Vec3 vec3d2 = this.getDeltaMovement();
+-
+-                vec3d = vec3d.scale(speed);
+-                double d3 = 0.003D;
+-
+-                if (Math.abs(vec3d2.x) < 0.003D && Math.abs(vec3d2.z) < 0.003D && vec3d.length() < 0.0045000000000000005D) {
+-                    vec3d = vec3d.normalize().scale(0.0045000000000000005D);
++                this.setFluidTypeHeight(fluidType, calc.fluidHeight);
++                // Keep vanilla tag map in sync for water/lava callers
++                if (fluidType == net.neoforged.neoforge.common.NeoForgeMod.WATER_TYPE.value()) {
++                    this.fluidHeight.put(FluidTags.WATER, calc.fluidHeight);
++                } else if (fluidType == net.neoforged.neoforge.common.NeoForgeMod.LAVA_TYPE.value()) {
++                    this.fluidHeight.put(FluidTags.LAVA, calc.fluidHeight);
+                 }
++            });
++        }
++    }
+ 
+-                this.setDeltaMovement(this.getDeltaMovement().add(vec3d));
+-            }
++    public boolean isPushedByFluid(net.neoforged.neoforge.fluids.FluidType type) {
++        return type.canPushEntity(this) && this.isPushedByFluid();
++    }
+ 
+-            this.fluidHeight.put(tag, d1);
+-            return flag1;
+-        }
++    public double getFluidMotionScale(net.neoforged.neoforge.fluids.FluidType type) {
++        return type.motionScale(this);
+     }
+ 
+     public boolean touchingUnloadedChunk() {
+@@ -5825,6 +5849,10 @@ public abstract class Entity extends net.neoforged.neoforge.attachment.Attachmen
+         return !this.forgeFluidTypeHeight.isEmpty();
+     }
+ 
++    public final boolean isInFluidType(net.neoforged.neoforge.fluids.FluidType type) {
++        return this.getFluidTypeHeight(type) > 0.0D;
++    }
++
+     public final net.neoforged.neoforge.fluids.FluidType getEyeInFluidType() {
+         return this.forgeFluidTypeOnEyes;
+     }
+diff --git a/src/main/java/net/minecraft/world/level/material/FluidState.java b/src/main/java/net/minecraft/world/level/material/FluidState.java
+index 14bb12d2a0066e8b020f2e0e670a7a5c74633623..95f4a35df625ebe31d48f427b9b1e56161cae476 100644
+--- a/src/main/java/net/minecraft/world/level/material/FluidState.java
++++ b/src/main/java/net/minecraft/world/level/material/FluidState.java
+@@ -36,6 +36,11 @@ public final class FluidState extends StateHolder<Fluid, FluidState> {
+         return this.owner;
+     }
+ 
++    // Eturlia/NeoForge
++    public net.neoforged.neoforge.fluids.FluidType getFluidType() {
++        return this.getType().getFluidType();
++    }
++
+     public boolean isSource() {
+         return this.getType().isSource(this);
+     }
