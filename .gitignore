@@ -1,0 +1,31 @@
+# Ignore Gradle project-specific cache directory
+.gradle
+
+# Ignore Gradle build output directory
+build
+
+/run
+
+# Crelia-NeoForge: generated output directories (created by paperweight applyAllPatches)
+/Folia-API/
+/Folia-Server/
+/paper-api/
+/paper-server/
+/paper-api-generator/
+
+# Legacy Crelia directories (unused in paperweight 1.7.3 mode)
+/folia-server/build.gradle.kts
+/folia-server/src/minecraft
+/folia-api/build.gradle.kts
+/folia-api/paper-patches/
+/folia-server/paper-patches/
+/folia-server/minecraft-patches/
+
+.idea/
+.DS_Store
+
+
+# Crelia build outputs
+/build/
+/crelia-libraries/
+/crelia-*.jar
