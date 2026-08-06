@@ -233,7 +233,8 @@ neoforge:
 # МОДЫ / PACK GUARDS
 # -----------------------------------------------------------------------------
 mods:
-  # lithostitched < 1.7.13 / *beta* → жёсткий отказ при старте (TemplateLists NSEE + Terralith).
+  # lithostitched < 1.7.13 / *beta* → жёсткий отказ при старте.
+  # Ядро (0074): NeoForge prefixNamespace для datapack-реестров (template_list).
   # Override: -Deturlia.lithostitched.allow-unsafe=true (не рекомендуется).
   require-lithostitched-min: "1.7.13"
   block-lithostitched-prerelease: true
