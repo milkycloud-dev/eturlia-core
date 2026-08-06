@@ -74,15 +74,20 @@
 
 ## Lithostitched + Terralith + Incendium — **OK** (после ядерных патчей)
 
-Smoke на Eturlia: `Done` с `lithostitched-1.7.13` + Terralith 2.6.2 + Incendium 5.4.4.
+Smoke на Eturlia: `Done` + structure gen с `lithostitched-1.7.13` + Terralith 2.6.2 + Incendium 5.4.4.
 
 | Что чинили в ядре | Патч |
 |-------------------|------|
 | Paper `Conversions` сломал `RegistryDataLoaderMixin` | `0041` — 6-arg `loadElementFromResource` + ThreadLocal |
 | CraftBukkit `loadLevel(String)` vs Lithostitched `loadLevel()V` | `0041` |
 | Paper убрал `lambda$forStructuresInChunk$2` (Beardifier) | `0042` |
+| Пустой `lithostitched:template_list` → `TemplateLists.getRandom` NSEE | `0074` — NeoForge `Registries.elementsDirPath` → `CommonHooks.prefixNamespace` |
+| Beta Lithostitched | `0073` — hard-block `< 1.7.13` / `*beta*` |
 
 Рекомендация: **не** `1.7.10+beta4` — ставьте **≥ 1.7.13**.
+
+**HARD BLOCK:** `lithostitched-1.7.10+beta4` — Eturlia откажется стартовать. Только **≥ 1.7.13**.
+
 
 ---
 
