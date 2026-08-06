@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Crelia Benchmark Script
+# Eturlia Benchmark Script
 # ==============================================================================
-# Starts the Crelia server, spawns simulated players across regions, and
+# Starts the Eturlia server, spawns simulated players across regions, and
 # collects TPS / MSPT / memory metrics over a 5-minute measurement window.
 # Outputs structured JSON results to benchmark-results.json.
 #
 # Prerequisites:
 #   - Java 21+ installed and on PATH
-#   - A built creliatest2.jar
+#   - A built eturliatest2.jar
 #
 # Usage:
-#   ./benchmark.sh <path-to-creliatest2.jar> [options]
+#   ./benchmark.sh <path-to-eturliatest2.jar> [options]
 #
 # Options:
 #   --duration <seconds>        Measurement duration (default: 300)
@@ -71,7 +71,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [ -z "$JAR_PATH" ]; then
-    echo "Usage: benchmark.sh <path-to-creliatest2.jar> [options]" >&2
+    echo "Usage: benchmark.sh <path-to-eturliatest2.jar> [options]" >&2
     exit 1
 fi
 
@@ -82,7 +82,7 @@ fi
 
 # ---------- Setup ----------
 
-WORK_DIR="$(mktemp -d crelia-benchmark.XXXXXX)"
+WORK_DIR="$(mktemp -d eturlia-benchmark.XXXXXX)"
 SERVER_DIR="$WORK_DIR/server"
 
 mkdir -p "$SERVER_DIR/crash-reports" "$SERVER_DIR/logs"
@@ -93,13 +93,13 @@ cat > "$SERVER_DIR/server.properties" <<EOF
 enable-rcon=true
 rcon.port=${RCON_PORT}
 rcon.password=${RCON_PASSWORD}
-level-seed=crelia-benchmark-seed
+level-seed=eturlia-benchmark-seed
 view-distance=10
 simulation-distance=8
 max-players=200
 online-mode=false
 allow-flight=true
-motd=Crelia Benchmark Server
+motd=Eturlia Benchmark Server
 EOF
 
 echo "eula=true" > "$SERVER_DIR/eula.txt"
@@ -272,7 +272,7 @@ run_benchmark() {
         -XX:+UseG1GC \
         -XX:+ParallelRefProcEnabled \
         -XX:MaxGCPauseMillis=50 \
-        -Dcrelia.lod.mode=DISABLED \
+        -Deturlia.lod.mode=DISABLED \
         -jar "$jar" \
         --nogui \
         > >(tee -a "$LOG_FILE") 2>&1 \
@@ -399,7 +399,7 @@ run_benchmark() {
 
 # ---------- Main ----------
 
-echo "=== Crelia Benchmark ===" | tee "$LOG_FILE"
+echo "=== Eturlia Benchmark ===" | tee "$LOG_FILE"
 echo "JAR:       $JAR_PATH" | tee -a "$LOG_FILE"
 echo "Players:   $PLAYERS" | tee -a "$LOG_FILE"
 echo "Regions:   $REGIONS" | tee -a "$LOG_FILE"
@@ -409,15 +409,15 @@ date -Iseconds | tee -a "$LOG_FILE"
 echo "" | tee -a "$LOG_FILE"
 
 # Run the main benchmark
-CRELIA_RESULT=""
-if run_benchmark "$JAR_PATH" "Crelia" "$SERVER_DIR"; then
+ETURLIA_RESULT=""
+if run_benchmark "$JAR_PATH" "Eturlia" "$SERVER_DIR"; then
     echo "" | tee -a "$LOG_FILE"
     echo "Collecting metrics..." | tee -a "$LOG_FILE"
-    CRELIA_RESULT=$(collect_tps "$LOG_FILE" "$BENCHMARK_START" "$BENCHMARK_END")
-    echo "$CRELIA_RESULT" | tee -a "$LOG_FILE"
+    ETURLIA_RESULT=$(collect_tps "$LOG_FILE" "$BENCHMARK_START" "$BENCHMARK_END")
+    echo "$ETURLIA_RESULT" | tee -a "$LOG_FILE"
 else
-    echo "FAIL: Crelia benchmark failed" | tee -a "$LOG_FILE"
-    CRELIA_RESULT='{"error": "benchmark_failed", "tps_samples_count": 0}'
+    echo "FAIL: Eturlia benchmark failed" | tee -a "$LOG_FILE"
+    ETURLIA_RESULT='{"error": "benchmark_failed", "tps_samples_count": 0}'
 fi
 
 # Run baseline if provided
@@ -457,13 +457,13 @@ import sys
 import os
 import datetime
 
-crelia_raw = '''${CRELIA_RESULT}'''
+eturlia_raw = '''${ETURLIA_RESULT}'''
 baseline_raw = '''${BASELINE_RESULT}'''
 
 try:
-    crelia_data = json.loads(crelia_raw)
+    eturlia_data = json.loads(eturlia_raw)
 except json.JSONDecodeError:
-    crelia_data = {"error": "parse_error", "raw": crelia_raw}
+    eturlia_data = {"error": "parse_error", "raw": eturlia_raw}
 
 baseline_data = None
 if baseline_raw.strip():
@@ -474,7 +474,7 @@ if baseline_raw.strip():
 
 output = {
     "benchmark": {
-        "tool": "crelia-benchmark",
+        "tool": "eturlia-benchmark",
         "version": "1.0.0",
         "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
         "duration_seconds": ${ACTUAL_DURATION},
@@ -484,9 +484,9 @@ output = {
         "pregen_radius": ${PREGEN_RADIUS},
         "crash_detected": ${CRASH_DETECTED} == "true"
     },
-    "crelia": {
+    "eturlia": {
         "jar": os.path.basename("${JAR_PATH}"),
-        "metrics": crelia_data
+        "metrics": eturlia_data
     }
 }
 
@@ -496,13 +496,13 @@ if baseline_data:
         "metrics": baseline_data
     }
     # Add comparison if both have TPS data
-    if "tps" in crelia_data and "tps" in baseline_data:
-        c_avg = crelia_data["tps"]["1m"]["avg"]
+    if "tps" in eturlia_data and "tps" in baseline_data:
+        c_avg = eturlia_data["tps"]["1m"]["avg"]
         b_avg = baseline_data["tps"]["1m"]["avg"]
         if b_avg > 0:
             delta_pct = round(((c_avg - b_avg) / b_avg) * 100, 2)
             output["comparison"] = {
-                "tps_1m_avg_crelia": c_avg,
+                "tps_1m_avg_eturlia": c_avg,
                 "tps_1m_avg_baseline": b_avg,
                 "tps_delta_percent": delta_pct,
                 "conclusion": "better" if delta_pct >= 0 else "worse"

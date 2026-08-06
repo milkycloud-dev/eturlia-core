@@ -1,7 +1,7 @@
 # Testpack — Fixed Test Modpack for CI
 
 This directory contains a pinned, version-locked modpack used for automated integration
-testing of the Crelia compatibility modules against real mod JARs in CI pipelines.
+testing of the Eturlia compatibility modules against real mod JARs in CI pipelines.
 
 ## Directory Structure
 
@@ -18,7 +18,7 @@ testpack/
 
 The testpack ensures that:
 
-1. **Crelia compat modules work with real mod APIs** — CI downloads pinned mod JARs
+1. **Eturlia compat modules work with real mod APIs** — CI downloads pinned mod JARs
    (Create, Create Big Cannons, Sable, Create Aeronautics) and compiles the compat
    modules against them, catching API breakage early.
 
@@ -40,8 +40,8 @@ In CI pipelines, the testpack is used as follows:
 ./scripts/download-test-mods.sh testpack/mods/
 
 # Compile compat modules against test mods
-./gradlew :crelia-compat-create:compileJava --test-mods-dir testpack/mods/
-./gradlew :crelia-compat-sable:compileJava --test-mods-dir testpack/mods/
+./gradlew :eturlia-compat-create:compileJava --test-mods-dir testpack/mods/
+./gradlew :eturlia-compat-sable:compileJava --test-mods-dir testpack/mods/
 
 # Run integration tests with the test server
 ./scripts/start-test-server.sh testpack/

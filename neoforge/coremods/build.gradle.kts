@@ -27,13 +27,13 @@ dependencies {
 }
 
 tasks.named<Jar>("jar") {
-    archiveBaseName.set("crelia-neoforge-coremods")
+    archiveBaseName.set("eturlia-neoforge-coremods")
     manifest {
         attributes(
-            "Automatic-Module-Name" to "crelia.neoforge.coremods",
+            "Automatic-Module-Name" to "eturlia.neoforge.coremods",
             "FMLModType" to "LIBRARY",
-            "Specification-Title" to "crelia-neoforge-coremods",
-            "Implementation-Title" to "crelia-neoforge-coremods",
+            "Specification-Title" to "eturlia-neoforge-coremods",
+            "Implementation-Title" to "eturlia-neoforge-coremods",
             "Implementation-Version" to project.version,
         )
     }

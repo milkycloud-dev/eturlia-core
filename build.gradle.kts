@@ -7,7 +7,7 @@ import java.util.zip.ZipFile
 import org.gradle.process.CommandLineArgumentProvider
 
 // ============================================================================
-// Crelia-NeoForge: Folia 1.21.1 + NeoForge 21.1.x hybrid server
+// Eturlia-NeoForge: Folia 1.21.1 + NeoForge 21.1.x hybrid server
 // Uses paperweight-patcher 1.7.3 (same as Folia dev/1.21.1)
 // ============================================================================
 
@@ -58,7 +58,7 @@ subprojects {
     repositories {
         mavenCentral()
         maven(paperMavenPublicUrl)
-        maven("https://maven.neoforged.net/releases") // Crelia-NeoForge: FancyModLoader
+        maven("https://maven.neoforged.net/releases") // Eturlia-NeoForge: FancyModLoader
         maven("https://repo.spongepowered.org/repository/maven-public/") // SpongePowered: Configurate
         maven("https://oss.sonatype.org/content/repositories/snapshots") // Spark snapshots
         maven("https://hub.spigotmc.org/nexus/content/repositories/snapshots/") // Spigot / Spark
@@ -73,11 +73,11 @@ paperweight {
 
     usePaperUpstream(providers.gradleProperty("paperRef")) {
         withPaperPatcher {
-            // Crelia-NeoForge: API patches (Folia region scheduler API + NeoForge hooks)
+            // Eturlia-NeoForge: API patches (Folia region scheduler API + NeoForge hooks)
             apiPatchDir.set(layout.projectDirectory.dir("patches/api"))
             apiOutputDir.set(layout.projectDirectory.dir("Folia-API"))
 
-            // Crelia-NeoForge: Server patches (Folia region threading + NeoForge event hooks)
+            // Eturlia-NeoForge: Server patches (Folia region threading + NeoForge event hooks)
             serverPatchDir.set(layout.projectDirectory.dir("patches/server"))
             serverOutputDir.set(layout.projectDirectory.dir("Folia-Server"))
         }
@@ -116,7 +116,7 @@ tasks.register("printPaperVersion") {
 }
 
 // ============================================================================
-// Crelia-NeoForge: Standalone JAR builder (creliatest2.jar)
+// Eturlia-NeoForge: Standalone JAR builder (eturliatest2.jar)
 // ============================================================================
 
 fun sha256(file: File): String {
@@ -155,7 +155,7 @@ project(":folia-server") {
         val foliaServerReady = projectDir.resolve("build.gradle.kts").exists() ||
             projectDir.resolve("src").exists()
         if (!foliaServerReady) {
-            logger.lifecycle("Crelia: Folia-Server not generated yet — run ./gradlew applyPatches first")
+            logger.lifecycle("Eturlia: Folia-Server not generated yet — run ./gradlew applyPatches first")
             return@afterEvaluate
         }
 
@@ -181,12 +181,12 @@ project(":folia-server") {
         }
 
         // Prefer published NeoForge universal (mojmap) for EventHooks / CommonHooks / etc.
-        // Shims remain available under build-data/crelia-neoforge-shims for documentation
+        // Shims remain available under build-data/eturlia-neoforge-shims for documentation
         // and for optional offline stubbing, but they reference Minecraft types and cannot
         // compile on an empty classpath.
         val compileJava = tasks.findByName("compileJava") as? JavaCompile
         if (compileJava != null) {
-            logger.lifecycle("Crelia: compiling Folia-Server against NeoForge {} universal", providers.gradleProperty("neoforgeVersion").get())
+            logger.lifecycle("Eturlia: compiling Folia-Server against NeoForge {} universal", providers.gradleProperty("neoforgeVersion").get())
         }
     }
 }
@@ -200,7 +200,7 @@ gradle.projectsEvaluated {
     val neoforge = project(":neoforge")
     val coremods = project(":neoforge:coremods")
     if (neoforge.tasks.findByName("neoforgeResourcesJar") == null) {
-        logger.warn("Crelia: neoforgeResourcesJar missing — skipping standalone jar wiring")
+        logger.warn("Eturlia: neoforgeResourcesJar missing — skipping standalone jar wiring")
         return@projectsEvaluated
     }
 
@@ -216,25 +216,25 @@ gradle.projectsEvaluated {
     // Fat classpath: keep EVERYTHING needed at runtime — including folia-api and spark-*.
     // Do not filter paper/spark jars out; Paper embeds spark (PaperClassLookup) and Folia needs API.
     val excludeNamePrefixes = listOf<String>()
-    val stagingDir = server.layout.buildDirectory.dir("crelia/standalone")
+    val stagingDir = server.layout.buildDirectory.dir("eturlia/standalone")
     val neoforgeVersion = providers.gradleProperty("neoforgeVersion").get()
 
-    val creliaLauncherSources = fileTree("build-data/crelia-launcher/src/main/java") { include("**/*.java") }
-    val creliaCoreSources = fileTree("build-data/crelia-core/src/main/java") { include("**/*.java") }
-    val creliaServerTemplateSources = fileTree("build-data/crelia-server-templates/src/main/java") { include("**/*.java") }
+    val eturliaLauncherSources = fileTree("build-data/eturlia-launcher/src/main/java") { include("**/*.java") }
+    val eturliaCoreSources = fileTree("build-data/eturlia-core/src/main/java") { include("**/*.java") }
+    val eturliaServerTemplateSources = fileTree("build-data/eturlia-server-templates/src/main/java") { include("**/*.java") }
 
-    val compileCreliaLauncher = server.tasks.register("compileCreliaLauncher", JavaCompile::class.java) {
-        description = "Compile the Crelia jar launcher"
-        source(creliaLauncherSources)
+    val compileEturliaLauncher = server.tasks.register("compileEturliaLauncher", JavaCompile::class.java) {
+        description = "Compile the Eturlia jar launcher"
+        source(eturliaLauncherSources)
         classpath = files()
-        destinationDirectory.set(server.layout.buildDirectory.dir("crelia/launcher-classes"))
+        destinationDirectory.set(server.layout.buildDirectory.dir("eturlia/launcher-classes"))
         options.release.set(21)
     }
 
-    val compileCreliaCore = server.tasks.register("compileCreliaCore", JavaCompile::class.java) {
-        description = "Compile Crelia core runtime (+ ModLauncher launch handler)"
-        source(creliaCoreSources)
-        // Need FML loader + ModLauncher + securejarhandler APIs for crelia.launch.*
+    val compileEturliaCore = server.tasks.register("compileEturliaCore", JavaCompile::class.java) {
+        description = "Compile Eturlia core runtime (+ ModLauncher launch handler)"
+        source(eturliaCoreSources)
+        // Need FML loader + ModLauncher + securejarhandler APIs for eturlia.launch.*
         classpath = files(
             serverArchive.flatMap { it.archiveFile },
             fmlLoaderConfig?.files ?: emptySet<File>(),
@@ -252,60 +252,60 @@ gradle.projectsEvaluated {
                 }
             },
             // Bootstrap copies (known versions) as a fallback if runtimeClasspath filter misses them
-            rootProject.fileTree("build-data/crelia-bootstrap/libs") {
+            rootProject.fileTree("build-data/eturlia-bootstrap/libs") {
                 include("securejarhandler-*.jar", "JarJarFileSystems-*.jar")
             },
         )
-        destinationDirectory.set(server.layout.buildDirectory.dir("crelia/core-classes"))
+        destinationDirectory.set(server.layout.buildDirectory.dir("eturlia/core-classes"))
         options.release.set(21)
-        dependsOn(compileCreliaLauncher, serverArchive)
+        dependsOn(compileEturliaLauncher, serverArchive)
     }
 
-    val compileCreliaServerTemplates = server.tasks.register("compileCreliaServerTemplates", JavaCompile::class.java) {
-        description = "Compile Crelia server template classes"
-        source(creliaServerTemplateSources)
-        classpath = files(serverArchive.flatMap { it.archiveFile }, server.layout.buildDirectory.dir("crelia/core-classes"))
-        destinationDirectory.set(server.layout.buildDirectory.dir("crelia/server-template-classes"))
+    val compileEturliaServerTemplates = server.tasks.register("compileEturliaServerTemplates", JavaCompile::class.java) {
+        description = "Compile Eturlia server template classes"
+        source(eturliaServerTemplateSources)
+        classpath = files(serverArchive.flatMap { it.archiveFile }, server.layout.buildDirectory.dir("eturlia/core-classes"))
+        destinationDirectory.set(server.layout.buildDirectory.dir("eturlia/server-template-classes"))
         options.release.set(21)
-        dependsOn(compileCreliaCore)
+        dependsOn(compileEturliaCore)
     }
 
-    val creliaCoreResources = fileTree("build-data/crelia-core/src/main/resources") { include("**/*") }
+    val eturliaCoreResources = fileTree("build-data/eturlia-core/src/main/resources") { include("**/*") }
 
-    val creliaCoreJar = server.tasks.register("creliaCoreJar", Jar::class.java) {
-        from(server.layout.buildDirectory.dir("crelia/core-classes"))
-        from(creliaCoreResources)
-        archiveFileName.set("crelia-core.jar")
-        destinationDirectory.set(server.layout.buildDirectory.dir("crelia/intermediate-jars"))
-        dependsOn(compileCreliaCore)
+    val eturliaCoreJar = server.tasks.register("eturliaCoreJar", Jar::class.java) {
+        from(server.layout.buildDirectory.dir("eturlia/core-classes"))
+        from(eturliaCoreResources)
+        archiveFileName.set("eturlia-core.jar")
+        destinationDirectory.set(server.layout.buildDirectory.dir("eturlia/intermediate-jars"))
+        dependsOn(compileEturliaCore)
     }
 
-    val creliaServerTemplateJar = server.tasks.register("creliaServerTemplateJar", Jar::class.java) {
-        from(server.layout.buildDirectory.dir("crelia/server-template-classes"))
-        archiveFileName.set("crelia-server-templates.jar")
-        destinationDirectory.set(server.layout.buildDirectory.dir("crelia/intermediate-jars"))
-        dependsOn(compileCreliaServerTemplates)
+    val eturliaServerTemplateJar = server.tasks.register("eturliaServerTemplateJar", Jar::class.java) {
+        from(server.layout.buildDirectory.dir("eturlia/server-template-classes"))
+        archiveFileName.set("eturlia-server-templates.jar")
+        destinationDirectory.set(server.layout.buildDirectory.dir("eturlia/intermediate-jars"))
+        dependsOn(compileEturliaServerTemplates)
     }
 
 
     // Apply NeoForge access transformers to the Folia mojang-mapped server jar so
     // NeoForge runtime (ServerLifecycleHooks, etc.) can access widened MC members
     // without ModLauncher. Required for Folia-first hybrid boots.
-    val atApplySources = fileTree("build-data/crelia-at-apply/src/main/java") { include("**/*.java") }
-    val atApplyClasspath = files(fileTree("build-data/crelia-at-apply/libs") { include("*.jar") })
-    val compileAtApply = tasks.register("compileCreliaAtApply", JavaCompile::class.java) {
+    val atApplySources = fileTree("build-data/eturlia-at-apply/src/main/java") { include("**/*.java") }
+    val atApplyClasspath = files(fileTree("build-data/eturlia-at-apply/libs") { include("*.jar") })
+    val compileAtApply = tasks.register("compileEturliaAtApply", JavaCompile::class.java) {
         source(atApplySources)
         classpath = atApplyClasspath
-        destinationDirectory.set(layout.buildDirectory.dir("crelia/at-apply-classes"))
+        destinationDirectory.set(layout.buildDirectory.dir("eturlia/at-apply-classes"))
         options.release.set(21)
         options.encoding = "UTF-8"
         doFirst {
             if (atApplyClasspath.isEmpty) {
-                error("Missing jars in build-data/crelia-at-apply/libs (accesstransformers, asm, antlr)")
+                error("Missing jars in build-data/eturlia-at-apply/libs (accesstransformers, asm, antlr)")
             }
         }
     }
-    val neoForgeAtCfg = layout.buildDirectory.file("crelia/neoforge-accesstransformer.cfg")
+    val neoForgeAtCfg = layout.buildDirectory.file("eturlia/neoforge-accesstransformer.cfg")
     val extractNeoForgeAt = tasks.register("extractNeoForgeAccessTransformer") {
         val universal = neoforge.configurations.getByName("neoforgeUniversal")
         inputs.files(universal)
@@ -322,13 +322,13 @@ gradle.projectsEvaluated {
             }
         }
     }
-    val atTransformedServerJar = server.layout.buildDirectory.file("crelia/folia-server-neoforge-at.jar")
+    val atTransformedServerJar = server.layout.buildDirectory.file("eturlia/folia-server-neoforge-at.jar")
     val applyNeoForgeAts = server.tasks.register("applyNeoForgeAts", JavaExec::class.java) {
         group = "build"
         description = "Apply NeoForge access transformers to Folia mojang-mapped server jar"
         dependsOn(serverArchive, compileAtApply, extractNeoForgeAt)
         classpath(compileAtApply.map { it.destinationDirectory }, atApplyClasspath)
-        mainClass.set("crelia.build.AtApply")
+        mainClass.set("eturlia.build.AtApply")
         val inJar = serverArchive.flatMap { it.archiveFile }
         val atCfg = neoForgeAtCfg
         val outJar = atTransformedServerJar
@@ -347,9 +347,9 @@ gradle.projectsEvaluated {
         }
     }
 
-    val prepareCreliaStandalone = server.tasks.register("prepareCreliaStandalone") {
+    val prepareEturliaStandalone = server.tasks.register("prepareEturliaStandalone") {
         description = "Stage Folia server + API + NeoForge FML classpath as nested jars"
-        dependsOn(applyNeoForgeAts, apiJar, creliaCoreJar, creliaServerTemplateJar, neoforgeResourcesJar, neoforgeExtrasJar, neoforgeCoremodsJar)
+        dependsOn(applyNeoForgeAts, apiJar, eturliaCoreJar, eturliaServerTemplateJar, neoforgeResourcesJar, neoforgeExtrasJar, neoforgeCoremodsJar)
         inputs.file(atTransformedServerJar)
         inputs.file(serverArchive.flatMap { it.archiveFile })
         inputs.file(apiJar.flatMap { it.archiveFile })
@@ -375,8 +375,8 @@ gradle.projectsEvaluated {
                 add(neoforgeExtrasJar.get().archiveFile.get().asFile)
                 add(neoforgeCoremodsJar.get().archiveFile.get().asFile)
                 addAll(universalFiles)
-                add(creliaCoreJar.get().archiveFile.get().asFile)
-                add(creliaServerTemplateJar.get().archiveFile.get().asFile)
+                add(eturliaCoreJar.get().archiveFile.get().asFile)
+                add(eturliaServerTemplateJar.get().archiveFile.get().asFile)
                 addAll(runtimeClasspath.get().files.filterNot { file ->
                     excludeNamePrefixes.any { prefix -> file.name.startsWith(prefix) }
                 })
@@ -402,39 +402,39 @@ gradle.projectsEvaluated {
                 if (file.isDirectory) jarDirectory(file, embeddedFile) else file.copyTo(embeddedFile, overwrite = true)
                 "${sha256(embeddedFile)}\t$baseName"
             }
-            outputDir.resolve("crelia-libraries.index")
+            outputDir.resolve("eturlia-libraries.index")
                 .writeText(indexLines.joinToString(separator = "\n", postfix = "\n"))
         }
     }
 
-    val creliaBootstrapLibs = rootProject.fileTree("build-data/crelia-bootstrap/libs") { include("*.jar") }
+    val eturliaBootstrapLibs = rootProject.fileTree("build-data/eturlia-bootstrap/libs") { include("*.jar") }
 
-    server.tasks.register("creliaStandaloneJar", Jar::class.java) {
+    server.tasks.register("eturliaStandaloneJar", Jar::class.java) {
         group = "build"
-        description = "Build crelia-1.21.1-neoforge.jar with Folia + NeoForge FML nested inside"
-        dependsOn(compileCreliaLauncher, prepareCreliaStandalone)
-        archiveFileName.set("crelia-1.21.1-neoforge-$neoforgeVersion.jar")
+        description = "Build eturlia-1.21.1-neoforge.jar with Folia + NeoForge FML nested inside"
+        dependsOn(compileEturliaLauncher, prepareEturliaStandalone)
+        archiveFileName.set("eturlia-1.21.1-neoforge-$neoforgeVersion.jar")
         destinationDirectory.set(rootProject.layout.buildDirectory.dir("libs"))
-        from(compileCreliaLauncher.flatMap { it.destinationDirectory })
-        from(stagingDir.map { it.dir("libraries") }) { into("META-INF/crelia-libraries") }
-        from(stagingDir.map { it.file("crelia-libraries.index") }) { into("META-INF") }
-        from(creliaBootstrapLibs) { into("META-INF/crelia-bootstrap") }
-        from(rootProject.file("folia-server/crelia-supported.json")) { into("META-INF") }
-        from(rootProject.file("build-data/crelia-launcher/src/main/resources/crelia")) { into("crelia") }
+        from(compileEturliaLauncher.flatMap { it.destinationDirectory })
+        from(stagingDir.map { it.dir("libraries") }) { into("META-INF/eturlia-libraries") }
+        from(stagingDir.map { it.file("eturlia-libraries.index") }) { into("META-INF") }
+        from(eturliaBootstrapLibs) { into("META-INF/eturlia-bootstrap") }
+        from(rootProject.file("folia-server/eturlia-supported.json")) { into("META-INF") }
+        from(rootProject.file("build-data/eturlia-launcher/src/main/resources/eturlia")) { into("eturlia") }
         doFirst {
-            if (creliaBootstrapLibs.files.isEmpty()) {
-                error("Missing build-data/crelia-bootstrap/libs (bootstraplauncher, securejarhandler, asm, JarJarFileSystems)")
+            if (eturliaBootstrapLibs.files.isEmpty()) {
+                error("Missing build-data/eturlia-bootstrap/libs (bootstraplauncher, securejarhandler, asm, JarJarFileSystems)")
             }
         }
         manifest {
             attributes(
                 mapOf(
-                    "Main-Class" to "crelia.launcher.Main",
+                    "Main-Class" to "eturlia.launcher.Main",
                     "Enable-Native-Access" to "ALL-UNNAMED",
-                    "Crelia-NeoForge" to "true",
-                    "Crelia-MC-Version" to "1.21.1",
-                    "Crelia-NeoForge-Version" to neoforgeVersion,
-                    "Crelia-Launch-Target" to "creliaserver",
+                    "Eturlia-NeoForge" to "true",
+                    "Eturlia-MC-Version" to "1.21.1",
+                    "Eturlia-NeoForge-Version" to neoforgeVersion,
+                    "Eturlia-Launch-Target" to "eturliaserver",
                 )
             )
         }
