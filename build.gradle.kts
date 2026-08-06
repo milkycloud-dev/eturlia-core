@@ -328,7 +328,7 @@ gradle.projectsEvaluated {
         description = "Apply NeoForge access transformers to Folia mojang-mapped server jar"
         dependsOn(serverArchive, compileAtApply, extractNeoForgeAt)
         classpath(compileAtApply.map { it.destinationDirectory }, atApplyClasspath)
-        mainClass.set("eturlia.build.AtApply")
+        mainClass.set("eturlia.at.AtApply")
         val inJar = serverArchive.flatMap { it.archiveFile }
         val atCfg = neoForgeAtCfg
         val outJar = atTransformedServerJar
