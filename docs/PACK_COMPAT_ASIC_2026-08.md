@@ -84,6 +84,9 @@ Smoke на Eturlia: `Done` с `lithostitched-1.7.13` + Terralith 2.6.2 + Incendi
 
 Рекомендация: **не** `1.7.10+beta4` — ставьте **≥ 1.7.13**.
 
+**HARD BLOCK:** `lithostitched-1.7.10+beta4` — Eturlia откажется стартовать (краш `TemplateLists.getRandom`). Только **≥ 1.7.13**.
+
+
 ---
 
 ## Sable + Arclight patch — как завести на Eturlia
