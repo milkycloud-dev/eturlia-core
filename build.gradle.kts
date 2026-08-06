@@ -234,15 +234,26 @@ gradle.projectsEvaluated {
     val compileCreliaCore = server.tasks.register("compileCreliaCore", JavaCompile::class.java) {
         description = "Compile Crelia core runtime (+ ModLauncher launch handler)"
         source(creliaCoreSources)
-        // Need FML loader + ModLauncher APIs for crelia.launch.CreliaServerLaunchHandler
+        // Need FML loader + ModLauncher + securejarhandler APIs for crelia.launch.*
         classpath = files(
             serverArchive.flatMap { it.archiveFile },
             fmlLoaderConfig?.files ?: emptySet<File>(),
             runtimeClasspath.map { cfg ->
                 cfg.files.filter { f ->
                     val n = f.name
-                    n.startsWith("modlauncher-") || n.startsWith("mergetool-") || n.contains("distmarker")
+                    n.startsWith("modlauncher-")
+                            || n.startsWith("mergetool-")
+                            || n.contains("distmarker")
+                            || n.startsWith("securejarhandler-")
+                            || n.startsWith("JarJarFileSystems-")
+                            || n.contains("nightconfig")
+                            || n.startsWith("toml-")
+                            || n.startsWith("core-3.") // nightconfig core
                 }
+            },
+            // Bootstrap copies (known versions) as a fallback if runtimeClasspath filter misses them
+            rootProject.fileTree("build-data/crelia-bootstrap/libs") {
+                include("securejarhandler-*.jar", "JarJarFileSystems-*.jar")
             },
         )
         destinationDirectory.set(server.layout.buildDirectory.dir("crelia/core-classes"))

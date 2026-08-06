@@ -63,6 +63,27 @@ public final class Main {
             allLibs.add(outputFile);
         }
 
+        Path serverJarEarly = findLib(allLibs, "folia-server-neoforge-at.jar");
+        Path apiJarEarly = findLib(allLibs, "folia-api-");
+        if (serverJarEarly != null) {
+            // Paper adds LogUtils.getClassLogger(); stock Mojang logging jars lack it.
+            for (Path p : allLibs) {
+                String n = p.getFileName().toString().toLowerCase(Locale.ROOT);
+                if (n.startsWith("logging-") && n.endsWith(".jar")) {
+                    injectFoliaLogUtils(serverJarEarly, p);
+                }
+            }
+            // PaperBrigadier from the API jar is injected into the AT jar to avoid a split
+            // package in the minecraft union (AT owns io.papermc.paper.brigadier).
+            if (apiJarEarly != null) {
+                injectClassesFromJar(apiJarEarly, serverJarEarly, List.of(
+                        "io/papermc/paper/brigadier/PaperBrigadier.class"
+                ), "paper-brigadier");
+            }
+            // brigadier is unioned into the minecraft module (see CreliaGameLocator); Folia AT
+            // overlays patched ArgumentBuilder/CommandNode. No separate module injection.
+        }
+
         Path bootstrapDir = Path.of("crelia-bootstrap").toAbsolutePath().normalize();
         Files.createDirectories(bootstrapDir);
         List<Path> modulePath = materializeBootstrapModules(bootstrapDir);
@@ -96,12 +117,14 @@ public final class Main {
         List<String> ignore = new ArrayList<>(MODULE_PATH_NAMES);
         for (Path p : allLibs) {
             String name = p.getFileName().toString();
-            if (isBootstrapModuleJar(name) || isJpmsIncompatibleJar(name)) {
+            if (isBootstrapModuleJar(name) || isJpmsIncompatibleJar(name) || isGameLayerOwnedJar(name)) {
                 ignore.add(name);
             }
         }
         String ignoreList = String.join(",", ignore);
 
+        // Keep game jars on legacyClassPath for NeoForgeDevProvider's client-extra lookup;
+        // ignoreList prevents them from becoming duplicate JPMS modules.
         String legacyClassPathWithExtra = allLibs.stream()
                 .filter(p -> !isBootstrapModuleJar(p.getFileName().toString()))
                 .filter(p -> !isJpmsIncompatibleJar(p.getFileName().toString()))
@@ -131,6 +154,30 @@ public final class Main {
         command.add("-DlegacyClassPath=" + legacyClassPathWithExtra);
         command.add("-Dcrelia.serverJar=" + serverJar.toAbsolutePath().normalize());
         command.add("-Dcrelia.neoforgeJar=" + neoForgeJar.toAbsolutePath().normalize());
+        Path apiJar = findLib(allLibs, "folia-api-");
+        if (apiJar != null) {
+            command.add("-Dcrelia.apiJar=" + apiJar.toAbsolutePath().normalize());
+        }
+        Path commonsLang2 = preferNewestLib(allLibs, "commons-lang-2.");
+        if (commonsLang2 != null) {
+            command.add("-Dcrelia.commonsLang2Jar=" + commonsLang2.toAbsolutePath().normalize());
+        }
+        Path brigadier = preferNewestLib(allLibs, "brigadier-");
+        if (brigadier != null) {
+            command.add("-Dcrelia.brigadierJar=" + brigadier.toAbsolutePath().normalize());
+        }
+        List<Path> sparkJars = new ArrayList<>();
+        for (Path p : allLibs) {
+            String n = p.getFileName().toString().toLowerCase(Locale.ROOT);
+            if (n.contains("spark-") && n.endsWith(".jar")) {
+                sparkJars.add(p);
+            }
+        }
+        if (!sparkJars.isEmpty()) {
+            command.add("-Dcrelia.sparkJars=" + sparkJars.stream()
+                    .map(p -> p.toAbsolutePath().normalize().toString())
+                    .collect(Collectors.joining(File.pathSeparator)));
+        }
         command.add("-Dnet.kyori.adventure.text.warnWhenLegacyFormattingDetected=true");
         command.add("-Dio.papermc.paper.suppress.sout.nags=true");
         command.add("-Dpaper.maxChatCommandInputSize=32767");
@@ -189,6 +236,29 @@ public final class Main {
     }
 
     /**
+     * Jars that must appear on {@code legacyClassPath} for FML path discovery (or packaging)
+     * but must not become JPMS modules — content is already in the {@code minecraft}/{@code neoforge}
+     * game modules (or nested via NeoForge jar-in-jar).
+     */
+    private static boolean isGameLayerOwnedJar(String fileName) {
+        String n = fileName.toLowerCase(Locale.ROOT);
+        return n.contains("folia-server-neoforge-at")
+                || n.contains("folia-api-")
+                || n.contains("client-extra")
+                || (n.contains("neoforge") && n.contains("universal"))
+                || n.contains("crelia-neoforge-coremods")
+                || n.contains("crelia-neoforge-extras")
+                || n.contains("crelia-neoforge-resources")
+                || n.startsWith("filteredminecraft")
+                || n.startsWith("log4jplugins")
+                || n.startsWith("autorenamingtool-")
+                // Unioned into the minecraft module (Folia overlays patched classes)
+                || n.contains("brigadier-")
+                // Paper Spark must see Bukkit API in the minecraft module
+                || n.contains("spark-");
+    }
+
+    /**
      * Jars that cannot be turned into JPMS modules (reserved package segments like {@code enum}).
      * commons-lang 2.x ships {@code org.apache.commons.lang.enum} which breaks module descriptors.
      * Folia still has commons-lang3 on the fat classpath for modern call sites.
@@ -205,6 +275,27 @@ public final class Main {
             }
         }
         return null;
+    }
+
+    /**
+     * Prefer the highest version among jars whose filename contains {@code needle}
+     * (embedded libs may be renamed {@code NNN-artifact-ver.jar}).
+     */
+    private static Path preferNewestLib(List<Path> libs, String needle) {
+        Path best = null;
+        String bestName = "";
+        String needleLower = needle.toLowerCase(Locale.ROOT);
+        for (Path p : libs) {
+            String name = p.getFileName().toString();
+            String lower = name.toLowerCase(Locale.ROOT);
+            if (lower.contains(needleLower)
+                    && lower.endsWith(".jar")
+                    && name.compareTo(bestName) > 0) {
+                best = p;
+                bestName = name;
+            }
+        }
+        return best;
     }
 
     /**
@@ -229,6 +320,81 @@ public final class Main {
             Files.createSymbolicLink(clientExtra, target);
         } catch (UnsupportedOperationException | IOException e) {
             Files.copy(target, clientExtra, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    /**
+     * Overlay Paper's {@code LogUtils.getClassLogger()} into the Mojang logging jar used
+     * as a JPMS module (Folia AT also embeds LogUtils, but that copy is filtered out of the
+     * minecraft module to avoid split packages with this jar).
+     */
+    private static void injectFoliaLogUtils(Path foliaAtJar, Path loggingJar) throws IOException {
+        injectClassesFromJar(foliaAtJar, loggingJar, List.of(
+                "com/mojang/logging/LogUtils.class",
+                "com/mojang/logging/LogUtils$1.class",
+                "com/mojang/logging/LogUtils$1ToString.class"
+        ), "LogUtils");
+    }
+
+    private static void injectClassesFromFolia(
+            Path foliaAtJar, Path targetJar, List<String> entries, String label
+    ) throws IOException {
+        injectClassesFromJar(foliaAtJar, targetJar, entries, label);
+    }
+
+    private static void injectClassesFromJar(
+            Path sourceJar, Path targetJar, List<String> entries, String label
+    ) throws IOException {
+        Path work = Files.createTempDirectory("crelia-" + label);
+        try {
+            try (java.util.jar.JarFile jf = new java.util.jar.JarFile(sourceJar.toFile())) {
+                for (String entry : entries) {
+                    java.util.jar.JarEntry je = jf.getJarEntry(entry);
+                    if (je == null) {
+                        System.out.println("Missing " + entry + " in " + sourceJar.getFileName());
+                        continue;
+                    }
+                    Path dest = work.resolve(entry);
+                    Files.createDirectories(dest.getParent());
+                    try (InputStream in = jf.getInputStream(je)) {
+                        Files.copy(in, dest, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    }
+                }
+            }
+            String jarBin = Path.of(System.getProperty("java.home"), "bin",
+                    File.separatorChar == '\\' ? "jar.exe" : "jar").toString();
+            // Detect top-level package dir to update
+            String root;
+            if (Files.isDirectory(work.resolve("com"))) {
+                root = "com";
+            } else if (Files.isDirectory(work.resolve("io"))) {
+                root = "io";
+            } else {
+                throw new IOException("No class roots extracted for " + label);
+            }
+            ProcessBuilder pb = new ProcessBuilder(
+                    jarBin, "uf", targetJar.toAbsolutePath().toString(),
+                    "-C", work.toString(), root);
+            pb.redirectErrorStream(true);
+            Process proc = pb.start();
+            String out = new String(proc.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            int code = proc.waitFor();
+            if (code != 0) {
+                throw new IOException("jar uf " + label + " failed (" + code + "): " + out);
+            }
+            System.out.println("Injected " + label + " into " + targetJar.getFileName());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted patching " + label + " jar", e);
+        } finally {
+            try (var walk = Files.walk(work)) {
+                walk.sorted(java.util.Comparator.reverseOrder()).forEach(path -> {
+                    try {
+                        Files.deleteIfExists(path);
+                    } catch (IOException ignored) {
+                    }
+                });
+            }
         }
     }
 

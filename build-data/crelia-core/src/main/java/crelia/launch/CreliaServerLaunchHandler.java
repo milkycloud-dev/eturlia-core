@@ -2,7 +2,6 @@ package crelia.launch;
 
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.fml.loading.VersionInfo;
-import net.neoforged.fml.loading.moddiscovery.locators.NeoForgeDevProvider;
 import net.neoforged.fml.loading.moddiscovery.locators.UserdevLocator;
 import net.neoforged.fml.loading.targets.CommonDevLaunchHandler;
 import net.neoforged.neoforgespi.locating.IModFileCandidateLocator;
@@ -19,14 +18,9 @@ import java.util.function.Consumer;
 /**
  * ModLauncher launch target {@code creliaserver}.
  *
- * <p>Uses NeoForge's <em>dev</em> discovery shape ({@link NeoForgeDevProvider}) so the
- * Folia AT-mapped server jar + NeoForge universal become the {@code minecraft}/{@code neoforge}
- * game modules and {@code mods/} is scanned via {@code ModsFolderLocator}. Starts Folia's
- * CraftBukkit entry instead of {@code net.minecraft.server.Main}.</p>
- *
- * <p>Unlike stock {@link CommonDevLaunchHandler}, game jars are taken from
- * {@code crelia.serverJar} / {@code crelia.neoforgeJar} (set by the outer launcher) instead of
- * classpath discovery — the Folia jar is only on {@code legacyClassPath}, not the bootstrap CL.</p>
+ * <p>Discovers Folia AT + NeoForge universal via {@link CreliaGameLocator}, scans {@code mods/}
+ * through FML's {@code ModsFolderLocator}, then starts Folia CraftBukkit
+ * ({@code org.bukkit.craftbukkit.Main}) instead of {@code net.minecraft.server.Main}.</p>
  */
 public final class CreliaServerLaunchHandler extends CommonDevLaunchHandler {
 
@@ -45,30 +39,37 @@ public final class CreliaServerLaunchHandler extends CommonDevLaunchHandler {
             VersionInfo versionInfo,
             Consumer<IModFileCandidateLocator> additionalLocators
     ) {
-        List<Path> gameJars = resolveGameJars();
-        System.out.println("[crelia] FML game jars for NeoForgeDevProvider: " + gameJars);
-        additionalLocators.accept(new NeoForgeDevProvider(gameJars));
-        // Keep UserdevLocator for any fml.modFolders extras; mods/ itself is ModsFolderLocator SPI
+        Path serverJar = requiredJarProperty("crelia.serverJar");
+        Path neoForgeJar = requiredJarProperty("crelia.neoforgeJar");
+        Path apiJar = optionalJarProperty("crelia.apiJar");
+        Path commonsLang2 = optionalJarProperty("crelia.commonsLang2Jar");
+        Path brigadier = optionalJarProperty("crelia.brigadierJar");
+        java.util.List<Path> sparkJars = new java.util.ArrayList<>();
+        String sparkProp = System.getProperty("crelia.sparkJars");
+        if (sparkProp != null && !sparkProp.isBlank()) {
+            for (String part : sparkProp.split(java.io.File.pathSeparator)) {
+                if (part.isBlank()) continue;
+                Path p = Path.of(part).toAbsolutePath().normalize();
+                if (java.nio.file.Files.isRegularFile(p)) {
+                    sparkJars.add(p);
+                }
+            }
+        }
+        System.out.println("[crelia] FML game locator: folia=" + serverJar
+                + " api=" + apiJar + " neoforge=" + neoForgeJar
+                + " commons-lang2=" + commonsLang2 + " brigadier=" + brigadier
+                + " spark=" + sparkJars);
+        additionalLocators.accept(new CreliaGameLocator(
+                serverJar, apiJar, neoForgeJar, commonsLang2, brigadier, sparkJars));
         Map<String, List<Path>> folders = getGroupedModFolders();
         additionalLocators.accept(new UserdevLocator(folders));
-    }
-
-    private static List<Path> resolveGameJars() {
-        List<Path> paths = new ArrayList<>(2);
-        Path server = requiredJarProperty("crelia.serverJar");
-        paths.add(server);
-        Path neoForge = optionalJarProperty("crelia.neoforgeJar");
-        if (neoForge != null) {
-            paths.add(neoForge);
-        }
-        return List.copyOf(paths);
     }
 
     private static Path requiredJarProperty(String key) {
         Path path = optionalJarProperty(key);
         if (path == null) {
             throw new IllegalStateException(
-                    "Missing system property " + key + " — Crelia launcher must point at the Folia AT jar");
+                    "Missing system property " + key + " — Crelia launcher must set game jar paths");
         }
         return path;
     }
@@ -115,7 +116,6 @@ public final class CreliaServerLaunchHandler extends CommonDevLaunchHandler {
                 }
                 continue;
             }
-            // ModLauncher / FML also pass --launchTarget / --gameDir consumed earlier
             if (arg.equals("--launchTarget") || arg.equals("--gameDir")) {
                 if (i + 1 < args.length && !args[i + 1].startsWith("-")) {
                     i++;
