@@ -46,8 +46,11 @@ public final class RegionContextCrashReport {
     /** Ordered map holding every piece of crash context keyed by name. */
     private final Map<String, Object> data;
 
-    /** Parsed stack-trace frames of the crashed thread. */
+    /** Parsed stack-trace frames of the crashed throwable (not the handler thread). */
     private final List<String> stackFrames;
+
+    /** Full printable exception text including causes. */
+    private final String exceptionText;
 
     // =====================================================================
     // Construction
@@ -59,15 +62,12 @@ public final class RegionContextCrashReport {
         String regionId = extractRegionId(threadName);
         String timestamp = new SimpleDateFormat(TIMESTAMP_FMT).format(new Date());
 
-        // TODO: At runtime, if `thread instanceof io.papermc.paper.threadedregions.RegionizedWorldThread`,
-        //   extract the Region object, affected chunks, and owning entity.
-        //   Store them as Object placeholders in `data` under keys
-        //   "regionObject", "affectedChunks", and "owningEntity".
-
         Runtime rt = Runtime.getRuntime();
         long used = rt.totalMemory() - rt.freeMemory();
 
-        this.stackFrames = captureStackFrames(thread);
+        // Capture the REAL exception stack, not the crash-handler thread frames.
+        this.stackFrames = captureStackFrames(cause);
+        this.exceptionText = renderThrowable(cause);
 
         this.data = new LinkedHashMap<>();
         this.data.put("timestamp",            timestamp);
@@ -140,11 +140,12 @@ public final class RegionContextCrashReport {
         }
         sb.append('\n');
 
-        // Reconstruct exception text from data since we don't store the Throwable
         sb.append("-- Exception --\n");
-        sb.append(data.get("exceptionClass"));
-        if (msg != null) sb.append(": ").append(msg);
-        sb.append("\n  Stack frames listed above.\n\n");
+        sb.append(exceptionText);
+        if (!exceptionText.endsWith("\n")) {
+            sb.append('\n');
+        }
+        sb.append('\n');
 
         sb.append("-- System --\n");
         sb.append("  JVM: ").append(data.get("jvmVersion")).append('\n');
@@ -231,13 +232,26 @@ public final class RegionContextCrashReport {
     // Internal helpers
     // =====================================================================
 
-    private static List<String> captureStackFrames(Thread thread) {
-        StackTraceElement[] elements = thread.getStackTrace();
-        List<String> frames = new ArrayList<>(elements.length);
-        for (StackTraceElement e : elements) {
-            frames.add("at " + e);
+    private static List<String> captureStackFrames(Throwable cause) {
+        List<String> frames = new ArrayList<>();
+        Throwable current = cause;
+        while (current != null) {
+            if (current != cause) {
+                frames.add("Caused by: " + current);
+            }
+            StackTraceElement[] elements = current.getStackTrace();
+            for (StackTraceElement e : elements) {
+                frames.add("at " + e);
+            }
+            current = current.getCause();
         }
         return frames;
+    }
+
+    private static String renderThrowable(Throwable cause) {
+        StringWriter sw = new StringWriter();
+        cause.printStackTrace(new PrintWriter(sw));
+        return sw.toString();
     }
 
     private static String mb(long bytes) {

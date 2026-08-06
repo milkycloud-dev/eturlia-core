@@ -21,8 +21,10 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -100,6 +102,15 @@ public final class CreliaServer {
     private volatile String mcVersion = "unknown";
     private volatile String neoForgeVersion = "unknown";
 
+    /** Absolute game directory used for FMLPaths (defaults to cwd). */
+    private volatile Path gameDir = Path.of(".").toAbsolutePath().normalize();
+
+    /**
+     * Whether minimal FML path/environment state was initialised for Folia-first
+     * NeoForge hooks (does <em>not</em> mean mods were loaded via ModLauncher).
+     */
+    private volatile boolean fmlPathsReady;
+
     /** Number of mods loaded (populated after FML bootstrap). */
     private final AtomicInteger modCount = new AtomicInteger(0);
 
@@ -168,6 +179,12 @@ public final class CreliaServer {
     private CreliaServer(Map<String, String> parsedArgs) {
         this.mcVersion = parsedArgs.getOrDefault("fml.mcVersion", "unknown");
         this.neoForgeVersion = parsedArgs.getOrDefault("fml.neoForgeVersion", "unknown");
+        String gameDirArg = parsedArgs.get("gameDir");
+        if (gameDirArg != null && !gameDirArg.isEmpty()) {
+            this.gameDir = Path.of(gameDirArg).toAbsolutePath().normalize();
+        } else {
+            this.gameDir = Path.of(".").toAbsolutePath().normalize();
+        }
     }
 
     // =========================================================================
@@ -258,16 +275,15 @@ public final class CreliaServer {
      * @throws Exception if FML loading fails unexpectedly
      */
     private void bootstrapFML(String[] args) throws Exception {
-        LOGGER.info("Attempting FML bootstrap via reflection...");
+        LOGGER.info("Attempting FML detection (FancyModLoader 4.0.x / NeoForge 21.1)...");
 
-        Class<?> fmlLoaderClass = null;
+        Class<?> fmlLoaderClass;
         try {
             fmlLoaderClass = Class.forName("net.neoforged.fml.loading.FMLLoader");
         } catch (ClassNotFoundException e) {
-            // FML not on classpath — graceful degradation
             fmlAvailable = false;
-            LOGGER.warning("FML not found on classpath — running in vanilla+Patches mode");
-            LOGGER.info("To enable NeoForge mod loading, ensure the FML libraries are on the classpath");
+            fmlBootstrapped = false;
+            LOGGER.warning("FML not found on classpath — running in Folia-only mode");
             return;
         }
 
@@ -275,53 +291,149 @@ public final class CreliaServer {
         LOGGER.info("FMLLoader found: " + fmlLoaderClass.getName()
                 + " (from " + fmlLoaderClass.getProtectionDomain().getCodeSource().getLocation() + ")");
 
-        // --- Call FMLLoader.beginEarlyModsLaunch() ---
+        // FML 4.0.x (NeoForge 21.1) is designed to run under ModLauncher:
+        //   beginModScan(ILaunchContext) / completeScan(ILaunchContext, List<String>)
+        // Those APIs require a real ModLauncher launch context. Crelia's standalone
+        // launcher currently boots Folia first and does NOT own the ModLauncher
+        // pipeline, so we must NOT pretend mods were loaded.
+        boolean hasLegacyLaunch = hasMethod(fmlLoaderClass, "beginEarlyModsLaunch")
+                || hasMethod(fmlLoaderClass, "beginModsLaunch", String[].class);
+        boolean hasModernScan = false;
         try {
-            Method beginEarly = fmlLoaderClass.getMethod("beginEarlyModsLaunch");
-            LOGGER.info("Invoking FMLLoader.beginEarlyModsLaunch()...");
-            beginEarly.invoke(null); // static method
-            LOGGER.info("FMLLoader.beginEarlyModsLaunch() completed successfully");
-        } catch (NoSuchMethodException e) {
-            LOGGER.warning("FMLLoader.beginEarlyModsLaunch() not found — FML API may have changed: "
-                    + e.getMessage());
-        } catch (InvocationTargetException e) {
-            Throwable target = e.getTargetException();
-            LOGGER.log(Level.WARNING, "FMLLoader.beginEarlyModsLaunch() threw an exception", target);
-            // Continue — try beginModsLaunch anyway
+            Class<?> launchContext = Class.forName("net.neoforged.neoforgespi.ILaunchContext");
+            hasModernScan = hasMethod(fmlLoaderClass, "beginModScan", launchContext);
+        } catch (ClassNotFoundException e) {
+            LOGGER.fine("ILaunchContext not found while probing FML API");
         }
 
-        // --- Call FMLLoader.beginModsLaunch(String... args) ---
-        try {
-            Method beginMods = fmlLoaderClass.getMethod("beginModsLaunch", String[].class);
-            LOGGER.info("Invoking FMLLoader.beginModsLaunch()...");
-            beginMods.invoke(null, (Object) args); // static method, pass args array
-            LOGGER.info("FMLLoader.beginModsLaunch() completed successfully");
-        } catch (NoSuchMethodException e) {
-            LOGGER.warning("FMLLoader.beginModsLaunch(String[]) not found — FML API may have changed: "
-                    + e.getMessage());
-        } catch (InvocationTargetException e) {
-            Throwable target = e.getTargetException();
-            LOGGER.log(Level.WARNING, "FMLLoader.beginModsLaunch() threw an exception", target);
-            if (target instanceof Exception) throw (Exception) target;
-            throw new RuntimeException(target); // Wrap non-Exception Throwables
+        if (hasLegacyLaunch) {
+            LOGGER.warning("Legacy FML launch methods detected — this build expects FML 4.0.x");
         }
 
-        // --- Query mod list from FMLLoader if possible ---
+        if (hasModernScan) {
+            LOGGER.info("Detected FML 4.0.x scan API (beginModScan/completeScan). "
+                    + "Full NeoForge mod loading requires ModLauncher; "
+                    + "Crelia is starting in Folia-first mode without completing an FML mod scan.");
+            fmlBootstrapped = false;
+        } else if (!hasLegacyLaunch) {
+            LOGGER.warning("Unrecognized FMLLoader API — continuing in Folia-first mode");
+            fmlBootstrapped = false;
+        }
+
+        // Folia-first still needs FMLPaths / Dist / FMLConfig so NeoForge
+        // ServerLifecycleHooks (ConfigTracker) does not NPE immediately.
+        try {
+            initializeFmlRuntimeForFoliaFirst(fmlLoaderClass);
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING,
+                    "Failed to prime Folia-first FML runtime (paths/Dist): " + e.getMessage(), e);
+        }
+
+        // Report loading mod list if ModLauncher already populated it (usually empty here).
         try {
             Method getModList = fmlLoaderClass.getMethod("getLoadingModList");
             Object modList = getModList.invoke(null);
             if (modList != null) {
-                Method sizeMethod = modList.getClass().getMethod("size");
-                int count = (int) sizeMethod.invoke(modList);
-                this.modCount.set(count);
-                LOGGER.info("FML reports " + count + " mods loaded");
+                try {
+                    Method sizeMethod = modList.getClass().getMethod("size");
+                    int count = (int) sizeMethod.invoke(modList);
+                    this.modCount.set(count);
+                    LOGGER.info("FML LoadingModList size=" + count);
+                } catch (NoSuchMethodException ignored) {
+                    LOGGER.info("FML LoadingModList present (size API unavailable)");
+                }
             }
         } catch (Exception e) {
-            LOGGER.fine("Could not query mod count from FML: " + e.getMessage());
+            LOGGER.fine("Could not query FML LoadingModList: " + e.getMessage());
         }
 
-        fmlBootstrapped = true;
-        LOGGER.info("FML bootstrap complete — NeoForge mod loading pipeline initialised");
+        if (fmlBootstrapped) {
+            LOGGER.info("FML bootstrap complete — NeoForge mod loading pipeline initialised");
+        } else {
+            LOGGER.warning("FML is on the classpath but NOT bootstrapped via ModLauncher. "
+                    + "FMLPaths/Dist were primed for Folia-first NeoForge hooks; "
+                    + "mods will NOT be loaded until ModLauncher owns the launch.");
+        }
+    }
+
+    /**
+     * Primes the subset of FML static state that NeoForge server lifecycle hooks
+     * require when ModLauncher did not run {@code FMLLoader.setupLaunchHandler}.
+     *
+     * <p>Without this, {@code ConfigTracker.&lt;clinit&gt;} NPEs on
+     * {@code FMLPaths.GAMEDIR.get()} as soon as
+     * {@code ServerLifecycleHooks.handleServerAboutToStart} runs.</p>
+     */
+    private void initializeFmlRuntimeForFoliaFirst(Class<?> fmlLoaderClass) throws Exception {
+        Class<?> fmlPathsClass = Class.forName("net.neoforged.fml.loading.FMLPaths");
+        Method loadAbsolutePaths = fmlPathsClass.getMethod("loadAbsolutePaths", Path.class);
+        loadAbsolutePaths.invoke(null, this.gameDir);
+        LOGGER.info("FMLPaths.loadAbsolutePaths(" + this.gameDir + ")");
+
+        // Dedicated-server Dist + production BEFORE anything touches FMLEnvironment.
+        // FMLEnvironment.<clinit> copies FMLLoader.getDist()/isProduction().
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        Class<? extends Enum> distClass =
+                (Class<? extends Enum>) Class.forName("net.neoforged.api.distmarker.Dist");
+        Object dedicatedServer = Enum.valueOf(distClass, "DEDICATED_SERVER");
+        setStaticField(fmlLoaderClass, "dist", dedicatedServer);
+        setStaticField(fmlLoaderClass, "production", Boolean.TRUE);
+        setStaticField(fmlLoaderClass, "gamePath", this.gameDir);
+
+        try {
+            Class<?> fmlConfig = Class.forName("net.neoforged.fml.loading.FMLConfig");
+            fmlConfig.getMethod("load").invoke(null);
+            LOGGER.info("FMLConfig.load() completed for Folia-first mode");
+        } catch (InvocationTargetException e) {
+            Throwable cause = e.getTargetException() != null ? e.getTargetException() : e;
+            LOGGER.log(Level.WARNING, "FMLConfig.load() failed (continuing): " + cause.getMessage(), cause);
+        }
+
+        this.fmlPathsReady = true;
+        LOGGER.info("Folia-first FML runtime primed (paths + Dist.DEDICATED_SERVER)");
+    }
+
+    private static void setStaticField(Class<?> type, String name, Object value) throws Exception {
+        Field field = type.getDeclaredField(name);
+        field.setAccessible(true);
+        field.set(null, value);
+    }
+
+    private static boolean hasMethod(Class<?> type, String name, Class<?>... parameterTypes) {
+        try {
+            type.getMethod(name, parameterTypes);
+            return true;
+        } catch (NoSuchMethodException e) {
+            return false;
+        }
+    }
+
+    /**
+     * Returns whether NeoForge {@code ServerLifecycleHooks} should be attempted.
+     * True once FMLPaths were primed (Folia-first) or full FML bootstrap completed.
+     */
+    public static boolean areNeoForgeLifecycleHooksEnabled() {
+        CreliaServer cs = instance;
+        return cs != null && (cs.fmlBootstrapped || cs.fmlPathsReady);
+    }
+
+    /**
+     * Best-effort NeoForge lifecycle hook invocation. Failures are logged and
+     * swallowed so Folia can still reach {@code Done} when FML is only partially
+     * initialised (e.g. NeoForgeConfig not loaded → PermissionAPI throws).
+     */
+    public static void safeNeoForgeLifecycle(String hookName, Runnable action) {
+        if (!areNeoForgeLifecycleHooksEnabled()) {
+            return;
+        }
+        try {
+            action.run();
+        } catch (Throwable t) {
+            LOGGER.log(Level.WARNING,
+                    "NeoForge lifecycle hook '" + hookName
+                            + "' failed (Folia-first / FML incomplete): " + t,
+                    t);
+        }
     }
 
     // =========================================================================
@@ -357,17 +469,10 @@ public final class CreliaServer {
      */
     private void installCrashHandler() {
         Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
-            LOGGER.severe("Uncaught exception on thread '" + thread.getName()
-                    + "' (id=" + thread.getId() + ")");
+            LOGGER.log(Level.SEVERE, "Uncaught exception on thread '" + thread.getName()
+                    + "' (id=" + thread.getId() + ")", throwable);
 
-            // Enrich with region context if possible
-            RegionContextCrashReport report;
-            if (RegionContextCrashReport.class.isAssignableFrom(
-                    RegionContextCrashReport.enrich(throwable).getClass())) {
-                report = RegionContextCrashReport.enrich(thread, throwable);
-            } else {
-                report = RegionContextCrashReport.enrich(thread, throwable);
-            }
+            RegionContextCrashReport report = RegionContextCrashReport.enrich(thread, throwable);
 
             System.err.println("==== Crelia Crash Report ====");
             System.err.println(report.toHumanReadable());
@@ -375,7 +480,9 @@ public final class CreliaServer {
             System.err.println("==== Structured JSON ====");
             System.err.println(report.toJsonString());
 
-            // Write crash report to file
+            // Always dump the original throwable so logs keep the real stack.
+            throwable.printStackTrace(System.err);
+
             writeCrashReportToFile(report);
         });
         LOGGER.info("Crash report handler installed");
@@ -433,12 +540,14 @@ public final class CreliaServer {
      * @throws Exception if the server cannot be started
      */
     private void runServer(String[] args) throws Exception {
+        String[] foliaArgs = stripFmlArgs(args);
+
         // Attempt 1: MinecraftServer.main(String[])
         try {
             Class<?> serverClass = Class.forName("net.minecraft.server.MinecraftServer");
             Method mainMethod = serverClass.getMethod("main", String[].class);
             LOGGER.info("Delegating to MinecraftServer.main()");
-            mainMethod.invoke(null, (Object) args);
+            mainMethod.invoke(null, (Object) foliaArgs);
             return;
         } catch (ClassNotFoundException e) {
             LOGGER.fine("MinecraftServer not found — trying CraftBukkit Main");
@@ -450,22 +559,44 @@ public final class CreliaServer {
         try {
             Class<?> craftMainClass = Class.forName("org.bukkit.craftbukkit.Main");
             Method mainMethod = craftMainClass.getMethod("main", String[].class);
-            LOGGER.info("Delegating to CraftBukkit Main.main()");
-            mainMethod.invoke(null, (Object) args);
+            LOGGER.info("Delegating to CraftBukkit Main.main() with Folia args (FML flags stripped)");
+            mainMethod.invoke(null, (Object) foliaArgs);
             return;
         } catch (ClassNotFoundException e) {
             LOGGER.fine("CraftBukkit Main not found");
         } catch (NoSuchMethodException e) {
             LOGGER.fine("CraftBukkit Main.main(String[]) not found");
+        } catch (InvocationTargetException e) {
+            Throwable target = e.getTargetException();
+            if (target instanceof Exception) throw (Exception) target;
+            throw new RuntimeException(target);
         }
 
-        // Neither server class found — this should not happen in a properly
-        // assembled Crelia installation.
         throw new IllegalStateException(
                 "No server entry point found on classpath. Expected "
                         + "net.minecraft.server.MinecraftServer or "
                         + "org.bukkit.craftbukkit.Main. "
                         + "Ensure the Minecraft/Folia server jar is on the classpath.");
+    }
+
+    /**
+     * Removes {@code --fml.*} flags (and their values) so CraftBukkit's joptsimple
+     * parser does not reject unrecognized NeoForge launcher arguments.
+     */
+    static String[] stripFmlArgs(String[] args) {
+        java.util.ArrayList<String> out = new java.util.ArrayList<>(args.length);
+        for (int i = 0; i < args.length; i++) {
+            String arg = args[i];
+            if (arg.startsWith("--fml.")) {
+                // Skip optional value if present and not another flag
+                if (i + 1 < args.length && !args[i + 1].startsWith("-")) {
+                    i++;
+                }
+                continue;
+            }
+            out.add(arg);
+        }
+        return out.toArray(new String[0]);
     }
 
     // =========================================================================

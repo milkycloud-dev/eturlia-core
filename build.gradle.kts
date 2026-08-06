@@ -3,6 +3,8 @@ import java.io.FileOutputStream
 import java.security.MessageDigest
 import java.util.jar.JarEntry
 import java.util.jar.JarOutputStream
+import java.util.zip.ZipFile
+import org.gradle.process.CommandLineArgumentProvider
 
 // ============================================================================
 // Crelia-NeoForge: Folia 1.21.1 + NeoForge 21.1.x hybrid server
@@ -202,13 +204,18 @@ gradle.projectsEvaluated {
         return@projectsEvaluated
     }
 
-    val serverJar = server.tasks.named("jar", Jar::class.java)
+    // Prefer mojang-mapped Folia-Server jar (paperweight task: serverJar, a Zip/Jar archive).
+    val serverArchiveTaskName = if (server.tasks.findByName("serverJar") != null) "serverJar" else "jar"
+    val serverArchive = server.tasks.named(serverArchiveTaskName, org.gradle.api.tasks.bundling.AbstractArchiveTask::class.java)
+    val apiJar = project(":folia-api").tasks.named("jar", Jar::class.java)
     val neoforgeResourcesJar = neoforge.tasks.named("neoforgeResourcesJar", Jar::class.java)
     val neoforgeExtrasJar = neoforge.tasks.named("jar", Jar::class.java)
     val neoforgeCoremodsJar = coremods.tasks.named("jar", Jar::class.java)
     val fmlLoaderConfig = server.configurations.findByName("fmlLoader")
     val runtimeClasspath = server.configurations.named("runtimeClasspath")
-    val paperTransformerJarPrefixes = listOf("folia-api-", "spark-api-", "spark-paper-")
+    // Do NOT exclude folia-api — CraftBukkit needs org.bukkit.* / Paper lifecycle APIs.
+    // Keep spark-* on the classpath too (Paper embeds spark; missing PaperClassLookup crashes boot).
+    val excludeNamePrefixes = listOf<String>()
     val stagingDir = server.layout.buildDirectory.dir("crelia/standalone")
     val neoforgeVersion = providers.gradleProperty("neoforgeVersion").get()
 
@@ -227,7 +234,7 @@ gradle.projectsEvaluated {
     val compileCreliaCore = server.tasks.register("compileCreliaCore", JavaCompile::class.java) {
         description = "Compile Crelia core runtime"
         source(creliaCoreSources)
-        classpath = files(serverJar.flatMap { it.archiveFile })
+        classpath = files(serverArchive.flatMap { it.archiveFile })
         destinationDirectory.set(server.layout.buildDirectory.dir("crelia/core-classes"))
         options.release.set(21)
         dependsOn(compileCreliaLauncher)
@@ -236,7 +243,7 @@ gradle.projectsEvaluated {
     val compileCreliaServerTemplates = server.tasks.register("compileCreliaServerTemplates", JavaCompile::class.java) {
         description = "Compile Crelia server template classes"
         source(creliaServerTemplateSources)
-        classpath = files(serverJar.flatMap { it.archiveFile }, server.layout.buildDirectory.dir("crelia/core-classes"))
+        classpath = files(serverArchive.flatMap { it.archiveFile }, server.layout.buildDirectory.dir("crelia/core-classes"))
         destinationDirectory.set(server.layout.buildDirectory.dir("crelia/server-template-classes"))
         options.release.set(21)
         dependsOn(compileCreliaCore)
@@ -259,10 +266,72 @@ gradle.projectsEvaluated {
         dependsOn(compileCreliaServerTemplates)
     }
 
+
+    // Apply NeoForge access transformers to the Folia mojang-mapped server jar so
+    // NeoForge runtime (ServerLifecycleHooks, etc.) can access widened MC members
+    // without ModLauncher. Required for Folia-first hybrid boots.
+    val atApplySources = fileTree("build-data/crelia-at-apply/src/main/java") { include("**/*.java") }
+    val atApplyClasspath = files(fileTree("build-data/crelia-at-apply/libs") { include("*.jar") })
+    val compileAtApply = tasks.register("compileCreliaAtApply", JavaCompile::class.java) {
+        source(atApplySources)
+        classpath = atApplyClasspath
+        destinationDirectory.set(layout.buildDirectory.dir("crelia/at-apply-classes"))
+        options.release.set(21)
+        options.encoding = "UTF-8"
+        doFirst {
+            if (atApplyClasspath.isEmpty) {
+                error("Missing jars in build-data/crelia-at-apply/libs (accesstransformers, asm, antlr)")
+            }
+        }
+    }
+    val neoForgeAtCfg = layout.buildDirectory.file("crelia/neoforge-accesstransformer.cfg")
+    val extractNeoForgeAt = tasks.register("extractNeoForgeAccessTransformer") {
+        val universal = neoforge.configurations.getByName("neoforgeUniversal")
+        inputs.files(universal)
+        outputs.file(neoForgeAtCfg)
+        doLast {
+            val universalJar = universal.files.single { it.name.contains("neoforge") && it.name.endsWith(".jar") }
+            ZipFile(universalJar).use { zip ->
+                val entry = zip.getEntry("META-INF/accesstransformer.cfg")
+                    ?: error("META-INF/accesstransformer.cfg missing from $universalJar")
+                zip.getInputStream(entry).use { input ->
+                    neoForgeAtCfg.get().asFile.parentFile.mkdirs()
+                    neoForgeAtCfg.get().asFile.outputStream().use { output -> input.copyTo(output) }
+                }
+            }
+        }
+    }
+    val atTransformedServerJar = server.layout.buildDirectory.file("crelia/folia-server-neoforge-at.jar")
+    val applyNeoForgeAts = server.tasks.register("applyNeoForgeAts", JavaExec::class.java) {
+        group = "build"
+        description = "Apply NeoForge access transformers to Folia mojang-mapped server jar"
+        dependsOn(serverArchive, compileAtApply, extractNeoForgeAt)
+        classpath(compileAtApply.map { it.destinationDirectory }, atApplyClasspath)
+        mainClass.set("crelia.build.AtApply")
+        val inJar = serverArchive.flatMap { it.archiveFile }
+        val atCfg = neoForgeAtCfg
+        val outJar = atTransformedServerJar
+        argumentProviders.add(CommandLineArgumentProvider {
+            listOf(
+                inJar.get().asFile.absolutePath,
+                atCfg.get().asFile.absolutePath,
+                outJar.get().asFile.absolutePath,
+            )
+        })
+        inputs.file(inJar)
+        inputs.file(atCfg)
+        outputs.file(outJar)
+        doFirst {
+            outJar.get().asFile.parentFile.mkdirs()
+        }
+    }
+
     val prepareCreliaStandalone = server.tasks.register("prepareCreliaStandalone") {
-        description = "Stage Folia server + NeoForge FML classpath as nested jars"
-        dependsOn(serverJar, creliaCoreJar, creliaServerTemplateJar, neoforgeResourcesJar, neoforgeExtrasJar, neoforgeCoremodsJar)
-        inputs.file(serverJar.flatMap { it.archiveFile })
+        description = "Stage Folia server + API + NeoForge FML classpath as nested jars"
+        dependsOn(applyNeoForgeAts, apiJar, creliaCoreJar, creliaServerTemplateJar, neoforgeResourcesJar, neoforgeExtrasJar, neoforgeCoremodsJar)
+        inputs.file(atTransformedServerJar)
+        inputs.file(serverArchive.flatMap { it.archiveFile })
+        inputs.file(apiJar.flatMap { it.archiveFile })
         inputs.file(neoforgeResourcesJar.flatMap { it.archiveFile })
         inputs.file(neoforgeExtrasJar.flatMap { it.archiveFile })
         inputs.file(neoforgeCoremodsJar.flatMap { it.archiveFile })
@@ -278,7 +347,9 @@ gradle.projectsEvaluated {
 
             val universalFiles = neoforge.configurations.getByName("neoforgeUniversal").files
             val candidates = buildList {
-                add(serverJar.get().archiveFile.get().asFile)
+                // Mojang-mapped Folia server with NeoForge ATs applied, then API (org.bukkit.*)
+                add(atTransformedServerJar.get().asFile)
+                add(apiJar.get().archiveFile.get().asFile)
                 add(neoforgeResourcesJar.get().archiveFile.get().asFile)
                 add(neoforgeExtrasJar.get().archiveFile.get().asFile)
                 add(neoforgeCoremodsJar.get().archiveFile.get().asFile)
@@ -286,7 +357,7 @@ gradle.projectsEvaluated {
                 add(creliaCoreJar.get().archiveFile.get().asFile)
                 add(creliaServerTemplateJar.get().archiveFile.get().asFile)
                 addAll(runtimeClasspath.get().files.filterNot { file ->
-                    paperTransformerJarPrefixes.any { prefix -> file.name.startsWith(prefix) }
+                    excludeNamePrefixes.any { prefix -> file.name.startsWith(prefix) }
                 })
                 if (fmlLoaderConfig != null) addAll(fmlLoaderConfig.files)
             }

@@ -8,11 +8,10 @@ injects NeoForge lifecycle hooks (ServerLifecycleHooks) and Crelia region-
 aware event dispatch into the Folia server bootstrap and tick loop.
 
 Key changes:
-- ServerLifecycleHooks.handleServerAboutToStart() called before Folia region init
-- ServerLifecycleHooks.handleServerStarting() called before "Done" message
-- ServerLifecycleHooks.handleServerStarted() called after "Done" message
-- ServerLifecycleHooks.handleServerStopping() called during shutdown
-- ServerLifecycleHooks.handleServerStopped() called in stopPart2
+- ServerLifecycleHooks.handleServerAboutToStart/Starting before "Done"
+- ServerLifecycleHooks.handleServerStarted after "Done" (outside Folia park loop)
+- Lifecycle hooks wrapped in try/catch so Folia-first reaches Done when FML is incomplete
+- ServerLifecycleHooks.handleServerStopping/Stopped during shutdown
 - NeoForge EventHooks.fireServerTickPre/Post for server tick events
 
 diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
@@ -31,46 +30,78 @@ index 4ed79a51c89d54a7b2ab65a99b5b09cc807f4d4e..4b35c256ea3e6cf5405b950886ef621b
  import java.util.function.Consumer;
  import java.util.function.Function;
  import java.util.stream.Collectors;
-@@ -1063,6 +1068,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -1063,6 +1068,13 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
  
      public void stopServer() {
          // Folia start - region threading
-+        ServerLifecycleHooks.handleServerStopping(this); // NeoForge - fire ServerStoppingEvent
++        try {
++            ServerLifecycleHooks.handleServerStopping(this); // NeoForge - fire ServerStoppingEvent
++        } catch (Throwable t) {
++            LOGGER.warn("NeoForge handleServerStopping failed (Folia-first / FML incomplete): {}", (Object) t.toString());
++            LOGGER.debug("NeoForge handleServerStopping", t);
++        }
          // halt scheduler
          // don't wait, we may be on a scheduler thread
          io.papermc.paper.threadedregions.TickRegions.getScheduler().halt(false, 0L);
-@@ -1153,6 +1159,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -1153,6 +1165,13 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
      }
      public void stopPart2() {
          // Folia end - region threading
-+        ServerLifecycleHooks.handleServerStopped(this); // NeoForge - fire ServerStoppedEvent
++        try {
++            ServerLifecycleHooks.handleServerStopped(this); // NeoForge - fire ServerStoppedEvent
++        } catch (Throwable t) {
++            LOGGER.warn("NeoForge handleServerStopped failed (Folia-first / FML incomplete): {}", (Object) t.toString());
++            LOGGER.debug("NeoForge handleServerStopped", t);
++        }
          this.resources.close();
  
          try {
-@@ -1206,6 +1213,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -1206,6 +1225,13 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
          // Paper end
          this.running = false;
          this.stopServer(); // Folia - region threading
-+        ServerLifecycleHooks.handleServerStopping(this); // NeoForge - fire ServerStoppingEvent (safeShutdown path)
++        try {
++            ServerLifecycleHooks.handleServerStopping(this); // NeoForge - fire ServerStoppingEvent (safeShutdown path)
++        } catch (Throwable t) {
++            LOGGER.warn("NeoForge handleServerStopping(safeShutdown) failed (Folia-first / FML incomplete): {}", (Object) t.toString());
++            LOGGER.debug("NeoForge handleServerStopping(safeShutdown)", t);
++        }
          if (waitForShutdown) {
              try {
                  this.serverThread.join();
-@@ -1288,11 +1296,14 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -1288,11 +1314,34 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
              // Folia start - region threading
              if (true) {
                  io.papermc.paper.threadedregions.RegionizedServer.getInstance().init(); // Folia - region threading - only after loading worlds
-+                ServerLifecycleHooks.handleServerAboutToStart(this); // NeoForge - fire ServerAboutToStartEvent
++                // NeoForge lifecycle: AboutToStart → Starting → Done → Started (outside Folia park loop).
++                // Folia-first may lack full FML (NeoForgeConfig unloaded); never abort before Done.
++                try {
++                    ServerLifecycleHooks.handleServerAboutToStart(this); // NeoForge - fire ServerAboutToStartEvent
++                } catch (Throwable t) {
++                    LOGGER.warn("NeoForge handleServerAboutToStart failed (Folia-first / FML incomplete): {}", (Object) t.toString());
++                    LOGGER.debug("NeoForge handleServerAboutToStart", t);
++                }
++                try {
++                    ServerLifecycleHooks.handleServerStarting(this); // NeoForge - fire ServerStartingEvent
++                } catch (Throwable t) {
++                    LOGGER.warn("NeoForge handleServerStarting failed (Folia-first / FML incomplete): {}", (Object) t.toString());
++                    LOGGER.debug("NeoForge handleServerStarting", t);
++                }
                  String doneTime = String.format(java.util.Locale.ROOT, "%.3fs", (double) (Util.getNanos() - serverStartTime) / 1.0E9D);
                  LOGGER.info("Done ({})! For help, type \"help\"", doneTime);
++                try {
++                    ServerLifecycleHooks.handleServerStarted(this); // NeoForge - fire ServerStartedEvent
++                } catch (Throwable t) {
++                    LOGGER.warn("NeoForge handleServerStarted failed (Folia-first / FML incomplete): {}", (Object) t.toString());
++                    LOGGER.debug("NeoForge handleServerStarted", t);
++                }
                  for (;;) {
-+                ServerLifecycleHooks.handleServerStarting(this); // NeoForge - fire ServerStartingEvent
                      try {
                          Thread.sleep(Long.MAX_VALUE);
-+                ServerLifecycleHooks.handleServerStarted(this); // NeoForge - fire ServerStartedEvent
                      } catch (final InterruptedException ex) {}
                  }
              }
-@@ -1672,6 +1683,9 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -1672,6 +1721,9 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
              return scheduledEnd - System.nanoTime() > targetBuffer;
          };
          this.server.spark.tickStart(); // Paper - spark
@@ -80,7 +111,7 @@ index 4ed79a51c89d54a7b2ab65a99b5b09cc807f4d4e..4b35c256ea3e6cf5405b950886ef621b
          new com.destroystokyo.paper.event.server.ServerTickStartEvent((int)region.getCurrentTick()).callEvent(); // Paper
          // Folia end - region threading
          co.aikar.timings.TimingsManager.FULL_SERVER_TICK.startTiming(); // Paper
-@@ -1764,6 +1778,9 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -1764,6 +1816,9 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
          this.profiler.pop();
          org.spigotmc.WatchdogThread.tick(); // Spigot
          co.aikar.timings.TimingsManager.FULL_SERVER_TICK.stopTiming(); // Paper
