@@ -1,0 +1,90 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 16:36:08 +0000
+Subject: [PATCH] Eturlia: plain console by default; drop broken Log4j Paper
+ plugins
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Adventure ComponentLogger now serializes plain text (no yellow ANSI join
+spam). TerminalConsole keeps %highlightError for WARN/ERROR only.
+Remove %stripAnsi and rewrite policies that fail under ModLauncher
+(StatusConsoleListener noise) — plugins live in the minecraft layer, not
+Log4j's.
+
+diff --git a/src/main/java/io/papermc/paper/adventure/providers/ComponentLoggerProviderImpl.java b/src/main/java/io/papermc/paper/adventure/providers/ComponentLoggerProviderImpl.java
+index a143ea1e58464a3122fbd8ccafe417bdb3c31c78..2011e1ad00f83f44013a7e7afbc1c84cbaabacf5 100644
+--- a/src/main/java/io/papermc/paper/adventure/providers/ComponentLoggerProviderImpl.java
++++ b/src/main/java/io/papermc/paper/adventure/providers/ComponentLoggerProviderImpl.java
+@@ -1,10 +1,10 @@
+ package io.papermc.paper.adventure.providers;
+ 
+-import io.papermc.paper.adventure.PaperAdventure;
+ import java.util.Locale;
+ import net.kyori.adventure.text.Component;
+ import net.kyori.adventure.text.logger.slf4j.ComponentLogger;
+ import net.kyori.adventure.text.logger.slf4j.ComponentLoggerProvider;
++import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
+ import net.kyori.adventure.translation.GlobalTranslator;
+ import org.jetbrains.annotations.NotNull;
+ import org.slf4j.LoggerFactory;
+@@ -17,6 +17,9 @@ public class ComponentLoggerProviderImpl implements ComponentLoggerProvider {
+     }
+ 
+     private String serialize(final Component message) {
+-        return PaperAdventure.ANSI_SERIALIZER.serialize(GlobalTranslator.render(message, Locale.getDefault()));
++        // Eturlia: plain console by default — Adventure ANSI dumped ESC codes into
++        // logs/terminals (stripAnsi often failed under ModLauncher). WARN/ERROR level
++        // coloring remains via TerminalConsole %highlightError.
++        return PlainTextComponentSerializer.plainText().serialize(GlobalTranslator.render(message, Locale.getDefault()));
+     }
+ }
+diff --git a/src/main/resources/log4j2.xml b/src/main/resources/log4j2.xml
+index d2a75850af9c6ad2aca66a5f994f1b587d73eac4..e49f7e12ba4b6b6c12ea6764b2c031faca5d6578 100644
+--- a/src/main/resources/log4j2.xml
++++ b/src/main/resources/log4j2.xml
+@@ -6,6 +6,7 @@
+         </Queue>
+         <TerminalConsole name="TerminalConsole">
+             <PatternLayout>
++                <!-- Eturlia: plain INFO messages; %highlightError colors WARN/ERROR lines only -->
+                 <LoggerNamePatternSelector defaultPattern="%highlightError{[%d{HH:mm:ss} %level]: [%logger] %msg%n%xEx{full}}">
+                     <!-- Log root, Minecraft, Mojang and Bukkit loggers without prefix -->
+                     <!-- Disable prefix for various plugins that bypass the plugin logger -->
+@@ -16,11 +17,11 @@
+         </TerminalConsole>
+         <RollingRandomAccessFile name="File" fileName="logs/latest.log" filePattern="logs/%d{yyyy-MM-dd}-%i.log.gz">
+             <PatternLayout>
+-                <LoggerNamePatternSelector defaultPattern="[%d{HH:mm:ss}] [%t/%level]: [%logger] %stripAnsi{%msg}%n%xEx{full}">
+-                    <!-- Log root, Minecraft, Mojang and Bukkit loggers without prefix -->
+-                    <!-- Disable prefix for various plugins that bypass the plugin logger -->
++                <!-- Eturlia: no %stripAnsi — Paper Log4j plugins are not on ModLauncher's
++                     Log4j layer (would spam StatusConsoleListener). Messages are plain text. -->
++                <LoggerNamePatternSelector defaultPattern="[%d{HH:mm:ss}] [%t/%level]: [%logger] %msg%n%xEx{full}">
+                     <PatternMatch key=",net.minecraft.,Minecraft,com.mojang.,com.sk89q.,ru.tehkode.,Minecraft.AWE"
+-                                  pattern="[%d{HH:mm:ss}] [%t/%level]: %stripAnsi{%msg}%n%xEx{full}" />
++                                  pattern="[%d{HH:mm:ss}] [%t/%level]: %msg%n%xEx{full}" />
+                 </LoggerNamePatternSelector>
+             </PatternLayout>
+             <Policies>
+@@ -30,18 +31,10 @@
+             <DefaultRolloverStrategy max="1000"/>
+         </RollingRandomAccessFile>
+         <Async name="Async">
+-            <AppenderRef ref="rewrite"/>
+-        </Async>
+-        <Rewrite name="rewrite">
+-            <StacktraceDeobfuscatingRewritePolicy />
+-            <AppenderRef ref="rewrite2"/>
+-        </Rewrite>
+-        <Rewrite name="rewrite2">
+-            <ExtraClassInfoRewritePolicy />
+             <AppenderRef ref="File"/>
+             <AppenderRef ref="TerminalConsole" level="info"/>
+             <AppenderRef ref="ServerGuiConsole" level="info"/>
+-        </Rewrite>
++        </Async>
+     </Appenders>
+     <Loggers>
+         <Root level="info">
