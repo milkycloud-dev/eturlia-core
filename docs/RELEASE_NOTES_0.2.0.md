@@ -99,7 +99,7 @@ java -jar eturlia-1.21.1-neoforge-21.1.248.jar --nogui
 ### SHA256
 
 ```
-457653dabe853b4c2242cee13ad36cdfdc02ec5eee0b9bd49d45fbc4b77523b4
+ed08c57b9923566a136b3826c1d9ef2db8d964cb354d601ffc5f298e559dd7df
 ```
 
 ---
