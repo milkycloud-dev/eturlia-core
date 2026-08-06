@@ -32,7 +32,7 @@
 | **Артефакт** | `eturlia-1.21.1-neoforge-21.1.248.jar` |
 | **Launch target** | `eturliaserver` |
 | **Точка входа** | `eturlia.EturliaServer` |
-| **Релиз** | [v0.1.0](https://github.com/eturnercus/Core/releases/tag/v0.1.0) |
+| **Релиз** | [v0.2.0](https://github.com/eturnercus/Core/releases/tag/v0.2.0) |
 
 ## Как это работает
 
@@ -117,7 +117,9 @@ java -jar build/libs/eturlia-1.21.1-neoforge-21.1.248.jar --nogui
 - Первый запуск: примите `eula.txt`.
 - Моды NeoForge → `mods/`.
 - Плагины Bukkit/Paper → только с `folia-supported: true`.
-- **Не кладите** отдельный `spark-neoforge` в `mods/` — spark уже вшит в Folia (конфликт JPMS).
+- **Не кладите** отдельный `spark-neoforge` в `mods/` — bundled spark уже вшит (JPMS-конфликт). `/spark` работает; TPS семплится с global tick.
+- Консоль по умолчанию **calm** (INFO без зелёного). `-Deturlia.console.color=full|off` при необходимости.
+- Плагины с `libraries:` в `plugin.yml` могут не резолвить Maven под ModLauncher; без `libraries:` — ок.
 
 ## Smoke-статус / whitelist matrix
 
@@ -127,6 +129,8 @@ java -jar build/libs/eturlia-1.21.1-neoforge-21.1.248.jar --nogui
 | Farmers Delight (+ Cloth) | SML + `Done` | whitelist |
 | Create 6.0.10 | SML + `Done`; tick gaps под нагрузкой ещё ловятся | whitelist (best-effort) |
 | Moonlight Lib | SML + `Done` + worlds; SoftFluid/FluidType bridged; further Folia gaps under load | whitelist (best-effort) |
+| Bukkit/Paper плагины (`folia-supported`) | discovery + load (LibraryLoader/ProxyGenerator) | whitelist (без `libraries:`) |
+| Bundled spark | `spark tps` OK; TPS с Folia global tick | whitelist |
 | FerriteCore / прочие | не в матрице | **at your own risk** |
 
 Политика моддеров и unsupported-модов: [`docs/MODDER_POLICY.md`](./docs/MODDER_POLICY.md).
@@ -138,7 +142,7 @@ java -jar build/libs/eturlia-1.21.1-neoforge-21.1.248.jar --nogui
 
 ### Semver
 
-Теги `vMAJOR.MINOR.PATCH` (сейчас **v0.1.0**). Линия `0.x` — экспериментальная; ломающие NMS-патчи между минорными ожидаемы. Артефакт: `eturlia-1.21.1-neoforge-21.1.248.jar`.
+Теги `vMAJOR.MINOR.PATCH` (сейчас **v0.2.0**). Линия `0.x` — экспериментальная; ломающие NMS-патчи между минорными ожидаемы. Артефакт: `eturlia-1.21.1-neoforge-21.1.248.jar`.
 
 ## Структура репозитория
 
@@ -161,7 +165,7 @@ java -jar build/libs/eturlia-1.21.1-neoforge-21.1.248.jar --nogui
 
 ## Статус патчей
 
-Активные server-патчи: Folia `0001`–`0019`, NeoForge/Eturlia `0020`–`0036+` (interaction hooks, Moonlight spawn bridge).  
+Активные server-патчи: Folia `0001`–`0019`, NeoForge/Eturlia `0020`–`0038` (interaction, Moonlight, spark global-tick, plugin remap).  
 Черновики остальных WIP — в `patches/server-wip/`.
 
 ---
@@ -193,7 +197,7 @@ The goal is Folia’s multi-core scaling without giving up the NeoForge ecosyste
 | **Artifact** | `eturlia-1.21.1-neoforge-21.1.248.jar` |
 | **Launch target** | `eturliaserver` |
 | **Entry point** | `eturlia.EturliaServer` |
-| **Release** | [v0.1.0](https://github.com/eturnercus/Core/releases/tag/v0.1.0) |
+| **Release** | [v0.2.0](https://github.com/eturnercus/Core/releases/tag/v0.2.0) |
 
 ## How it works
 
@@ -276,7 +280,9 @@ java -jar build/libs/eturlia-1.21.1-neoforge-21.1.248.jar --nogui
 ```
 
 Accept `eula.txt` on first boot. NeoForge mods go in `mods/`. Plugins need `folia-supported: true`.  
-**Do not** add `spark-neoforge` to `mods/` — spark is already bundled with Folia (JPMS conflict).
+**Do not** add `spark-neoforge` to `mods/` — bundled spark is already present (JPMS conflict). `/spark` works; TPS is sampled on the Folia global tick.
+Console defaults to **calm** (no green INFO). Override with `-Deturlia.console.color=full|off`.
+Plugins that declare `libraries:` in `plugin.yml` may fail Maven resolve under ModLauncher; plugins without `libraries:` load fine.
 
 ## Smoke status / whitelist matrix
 
@@ -286,6 +292,8 @@ Accept `eula.txt` on first boot. NeoForge mods go in `mods/`. Plugins need `foli
 | Farmers Delight (+ Cloth) | SML + `Done` | whitelist |
 | Create 6.0.10 | SML + `Done`; tick gaps under load still tracked | whitelist (best-effort) |
 | Moonlight Lib | SML + `Done` + worlds; SoftFluid/FluidType bridged; further Folia gaps under load | whitelist (best-effort) |
+| Bukkit/Paper plugins (`folia-supported`) | discovery + load (LibraryLoader/ProxyGenerator) | whitelist (no `libraries:`) |
+| Bundled spark | `spark tps` OK; TPS from Folia global tick | whitelist |
 | FerriteCore / others | not in matrix | **at your own risk** |
 
 Modder / unsupported-mod policy: [`docs/MODDER_POLICY.md`](./docs/MODDER_POLICY.md).
@@ -297,7 +305,7 @@ Modder / unsupported-mod policy: [`docs/MODDER_POLICY.md`](./docs/MODDER_POLICY.
 
 ### Semver
 
-Tags `vMAJOR.MINOR.PATCH` (currently **v0.1.0**). The `0.x` line is experimental; breaking NMS patches between minors are expected. Artifact: `eturlia-1.21.1-neoforge-21.1.248.jar`.
+Tags `vMAJOR.MINOR.PATCH` (currently **v0.2.0**). The `0.x` line is experimental; breaking NMS patches between minors are expected. Artifact: `eturlia-1.21.1-neoforge-21.1.248.jar`.
 
 ## Repository layout
 
@@ -320,7 +328,7 @@ Tags `vMAJOR.MINOR.PATCH` (currently **v0.1.0**). The `0.x` line is experimental
 
 ## Patch status
 
-Active server patches: Folia `0001`–`0019`, NeoForge/Eturlia `0020`–`0036+` (interaction hooks, Moonlight spawn bridge).  
+Active server patches: Folia `0001`–`0019`, NeoForge/Eturlia `0020`–`0038` (interaction, Moonlight, spark global-tick, plugin remap).  
 Remaining WIP drafts: `patches/server-wip/`.
 
 </details>
