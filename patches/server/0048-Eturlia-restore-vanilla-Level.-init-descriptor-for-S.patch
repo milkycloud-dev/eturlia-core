@@ -1,0 +1,69 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 20:19:02 +0000
+Subject: [PATCH] Eturlia: restore vanilla Level.<init> descriptor for Sable
+
+CraftBukkit widened Level's constructor; Sable world_border mixin injects
+the vanilla signature. Pass Bukkit/Paper extras via ThreadLocal from
+ServerLevel instead.
+
+diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
+index ed2c93bc2947fddae222c9599a45494ef3bcc2c7..2c14e60ac28837a26b881c9be8edbaf38d60a0c4 100644
+--- a/src/main/java/net/minecraft/server/level/ServerLevel.java
++++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
+@@ -610,7 +610,9 @@ public class ServerLevel extends Level implements WorldGenLevel, ca.spottedleaf.
+         // Holder holder = worlddimension.type(); // CraftBukkit - decompile error
+ 
+         // Objects.requireNonNull(minecraftserver); // CraftBukkit - decompile error
+-        super(iworlddataserver, resourcekey, minecraftserver.registryAccess(), worlddimension.type(), minecraftserver::getProfiler, false, flag, i, minecraftserver.getMaxChainedNeighborUpdates(), gen, biomeProvider, env, spigotConfig -> minecraftserver.paperConfigurations.createWorldConfig(io.papermc.paper.configuration.PaperConfigurations.createWorldContextMap(convertable_conversionsession.levelDirectory.path(), iworlddataserver.getLevelName(), resourcekey.location(), spigotConfig, minecraftserver.registryAccess(), iworlddataserver.getGameRules())), executor); // Paper - create paper world configs; Async-Anti-Xray: Pass executor
++        // Eturlia: ThreadLocal extras must be set in an expression evaluated before super() (super must be first stmt).
++        super(Level.eturliaPushLevelCtorExtras(iworlddataserver, new Level.EturliaLevelCtorExtras(gen, biomeProvider, env, spigotConfig -> minecraftserver.paperConfigurations.createWorldConfig(io.papermc.paper.configuration.PaperConfigurations.createWorldContextMap(convertable_conversionsession.levelDirectory.path(), iworlddataserver.getLevelName(), resourcekey.location(), spigotConfig, minecraftserver.registryAccess(), iworlddataserver.getGameRules())), executor)), resourcekey, minecraftserver.registryAccess(), worlddimension.type(), minecraftserver::getProfiler, false, flag, i, minecraftserver.getMaxChainedNeighborUpdates());
++        Level.ETURLIA$LEVEL_CTOR_EXTRAS.remove();
+         this.pvpMode = minecraftserver.isPvpAllowed();
+         this.convertable = convertable_conversionsession;
+         this.uuid = WorldUUID.getUUID(convertable_conversionsession.levelDirectory.path().toFile());
+diff --git a/src/main/java/net/minecraft/world/level/Level.java b/src/main/java/net/minecraft/world/level/Level.java
+index 8b0378398636887279df92294ffaba6f125397c2..47b6b18f9fc394b51c205630952250317dc3968e 100644
+--- a/src/main/java/net/minecraft/world/level/Level.java
++++ b/src/main/java/net/minecraft/world/level/Level.java
+@@ -703,7 +703,39 @@ public abstract class Level extends net.neoforged.neoforge.attachment.Attachment
+     }
+     // Folia end - region ticking
+ 
+-    protected Level(WritableLevelData worlddatamutable, ResourceKey<Level> resourcekey, RegistryAccess iregistrycustom, Holder<DimensionType> holder, Supplier<ProfilerFiller> supplier, boolean flag, boolean flag1, long i, int j, org.bukkit.generator.ChunkGenerator gen, org.bukkit.generator.BiomeProvider biomeProvider, org.bukkit.World.Environment env, java.util.function.Function<org.spigotmc.SpigotWorldConfig, io.papermc.paper.configuration.WorldConfiguration> paperWorldConfigCreator, java.util.concurrent.Executor executor) { // Paper - create paper world config & Anti-Xray
++    // Eturlia: CraftBukkit extras passed via ThreadLocal so Level.<init> keeps the vanilla
++    // descriptor for NeoForge mixins (Sable world_border.LevelMixin).
++    public static final class EturliaLevelCtorExtras {
++        public final org.bukkit.generator.ChunkGenerator gen;
++        public final org.bukkit.generator.BiomeProvider biomeProvider;
++        public final org.bukkit.World.Environment env;
++        public final java.util.function.Function<org.spigotmc.SpigotWorldConfig, io.papermc.paper.configuration.WorldConfiguration> paperWorldConfigCreator;
++        public final java.util.concurrent.Executor executor;
++        public EturliaLevelCtorExtras(org.bukkit.generator.ChunkGenerator gen, org.bukkit.generator.BiomeProvider biomeProvider, org.bukkit.World.Environment env, java.util.function.Function<org.spigotmc.SpigotWorldConfig, io.papermc.paper.configuration.WorldConfiguration> paperWorldConfigCreator, java.util.concurrent.Executor executor) {
++            this.gen = gen;
++            this.biomeProvider = biomeProvider;
++            this.env = env;
++            this.paperWorldConfigCreator = paperWorldConfigCreator;
++            this.executor = executor;
++        }
++    }
++    public static final ThreadLocal<EturliaLevelCtorExtras> ETURLIA$LEVEL_CTOR_EXTRAS = new ThreadLocal<>();
++
++    public static WritableLevelData eturliaPushLevelCtorExtras(WritableLevelData data, EturliaLevelCtorExtras extras) {
++        ETURLIA$LEVEL_CTOR_EXTRAS.set(extras);
++        return data;
++    }
++
++    protected Level(WritableLevelData worlddatamutable, ResourceKey<Level> resourcekey, RegistryAccess iregistrycustom, Holder<DimensionType> holder, Supplier<ProfilerFiller> supplier, boolean flag, boolean flag1, long i, int j) { // Eturlia: vanilla descriptor for Sable
++        EturliaLevelCtorExtras eturliaExtras = ETURLIA$LEVEL_CTOR_EXTRAS.get();
++        if (eturliaExtras == null) {
++            throw new IllegalStateException("Eturlia Level ctor extras missing; ServerLevel must set ETURLIA$LEVEL_CTOR_EXTRAS");
++        }
++        org.bukkit.generator.ChunkGenerator gen = eturliaExtras.gen;
++        org.bukkit.generator.BiomeProvider biomeProvider = eturliaExtras.biomeProvider;
++        org.bukkit.World.Environment env = eturliaExtras.env;
++        java.util.function.Function<org.spigotmc.SpigotWorldConfig, io.papermc.paper.configuration.WorldConfiguration> paperWorldConfigCreator = eturliaExtras.paperWorldConfigCreator;
++        java.util.concurrent.Executor executor = eturliaExtras.executor;
+         this.spigotConfig = new org.spigotmc.SpigotWorldConfig(((net.minecraft.world.level.storage.PrimaryLevelData) worlddatamutable).getLevelName()); // Spigot
+         this.paperConfig = paperWorldConfigCreator.apply(this.spigotConfig); // Paper - create paper world config
+         this.generator = gen;
