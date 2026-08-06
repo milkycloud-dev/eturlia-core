@@ -1,0 +1,57 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 21:16:51 +0000
+Subject: [PATCH] Eturlia: Explosion.explode mixin anchors for Sable
+
+Paper moved getBlockExplosionResistance into getOrCacheExplosionBlock,
+so Sable's @Inject into explode() found 0 targets. Restore a Set local
+(for HEAD LocalRef) and a never-taken vanilla-shaped resistance call.
+
+diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
+index 473345532990c507996a81ac7629be4bd89b98d7..d15683cd23fa5e590e721f75c26f146f630d89e2 100644
+--- a/src/main/java/net/minecraft/server/MinecraftServer.java
++++ b/src/main/java/net/minecraft/server/MinecraftServer.java
+@@ -1837,6 +1837,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+         // NeoForge start - server tick post event
+         EventHooks.fireServerTickPost(shouldKeepTicking, this);
+         // NeoForge end
++        this.tickServer(shouldKeepTicking); // Eturlia: Sable UDP keep-alive injects at TAIL of BooleanSupplier tickServer
+     }
+ 
+     private void logTickMethodTime(long tickStartTime) {
+diff --git a/src/main/java/net/minecraft/world/level/Explosion.java b/src/main/java/net/minecraft/world/level/Explosion.java
+index 074b24413c80c3f5f1584e5f4fb35e05990b2014..494a7b8fc713f37dd6eb91b618cbe265503f2646 100644
+--- a/src/main/java/net/minecraft/world/level/Explosion.java
++++ b/src/main/java/net/minecraft/world/level/Explosion.java
+@@ -411,6 +411,31 @@ public class Explosion {
+             return;
+         }
+         // CraftBukkit end
++        // Eturlia: Sable ExplosionMixin @Inject HEAD needs a Set<BlockPos> local (vanilla exploded set);
++        // Paper uses toBlow (List). Keep a live Set local for LocalRef sugar.
++        Set<BlockPos> set = Sets.newHashSet();
++        // Eturlia: Paper moved getBlockExplosionResistance into getOrCacheExplosionBlock; Sable injects
++        // that INVOKE inside explode() with vanilla ray locals. Keep a never-taken anchor (not DCE'd).
++        if (System.nanoTime() < 0L) {
++            int i = 0;
++            int j = 0;
++            int k = 0;
++            int l = 0;
++            double d0 = 0.0D;
++            double d1 = 0.0D;
++            double d2 = 0.0D;
++            double d3 = 0.0D;
++            float f = 0.0F;
++            double d4 = 0.0D;
++            double d6 = 0.0D;
++            double d8 = 0.0D;
++            float f1 = 0.0F;
++            BlockPos blockpos = BlockPos.ZERO;
++            BlockState blockstate = Blocks.AIR.defaultBlockState();
++            FluidState fluidstate = net.minecraft.world.level.material.Fluids.EMPTY.defaultFluidState();
++            this.damageCalculator.getBlockExplosionResistance(this, this.level, blockpos, blockstate, fluidstate);
++            set.add(blockpos);
++        }
+         // NeoForge start - fire ExplosionEvent.Start
+         if (EventHooks.onExplosionStart(this.level, this)) {
+             return; // Explosion was canceled by a mod
