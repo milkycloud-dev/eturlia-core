@@ -1,0 +1,41 @@
+modLoader="javafml"
+loaderVersion="[3,)"
+license="LGPL-2.1-or-later"
+issueTrackerURL="https://github.com/eturlia/eturlia-neoforge/issues"
+
+[[mods]]
+    modId="eturlia_compat_create"
+    version="${version}"
+    displayName="Eturlia Compat: Create"
+    authors="Eturlia Team"
+    description='''
+    Compatibility layer for Create and Create Big Cannons on Eturlia (Folia-based) regionized servers.
+
+    Patches Create's kinetic networks, contraptions, projectiles, and explosions to operate
+    correctly on Folia's per-region threading model, preventing cross-thread data corruption
+    and ensuring thread-safe block/entity interactions.
+    '''
+
+[[dependencies.eturlia_compat_create]]
+    modId="neoforge"
+    type="required"
+    versionRange="[21.1,)"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.eturlia_compat_create]]
+    modId="minecraft"
+    type="required"
+    versionRange="[1.21.1,1.21.2)"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.eturlia_compat_create]]
+    modId="create"
+    type="required"
+    versionRange="[0.5.1,)"
+    ordering="AFTER"
+    side="BOTH"
+
+[[mixins]]
+    config="eturlia-compat-create.mixins.json"

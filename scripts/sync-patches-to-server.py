@@ -5,8 +5,8 @@ Creates NeoForge server patches 0026-0032 mirroring 0014-0020.
 """
 import os
 
-FEATURES_DIR = "/home/z/my-project/crelia-neoforge/folia-server/minecraft-patches/features"
-SERVER_PATCHES_DIR = "/home/z/my-project/crelia-neoforge/patches/server"
+FEATURES_DIR = "/home/z/my-project/eturlia-neoforge/folia-server/minecraft-patches/features"
+SERVER_PATCHES_DIR = "/home/z/my-project/eturlia-neoforge/patches/server"
 
 # Mapping: features patch number -> server patch number
 MAPPING = {

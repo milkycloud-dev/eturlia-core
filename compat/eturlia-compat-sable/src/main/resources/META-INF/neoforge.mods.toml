@@ -1,0 +1,47 @@
+modLoader="javafml"
+loaderVersion="[3,)"
+license="LGPL-2.1-or-later"
+issueTrackerURL="https://github.com/eturlia/eturlia-neoforge/issues"
+
+[[mods]]
+    modId="eturlia_compat_sable"
+    version="${version}"
+    displayName="Eturlia Compat: Sable"
+    authors="Eturlia Team"
+    description='''
+    Compatibility layer for Sable and Create Aeronautics on Eturlia (Folia-based) regionized servers.
+
+    Bridges Sable's Rapier physics engine (JNI) to Folia's per-region threading model, ensuring
+    thread-safe physics simulation, cross-region sub-level management, and JNI callback auditing.
+    '''
+
+[[dependencies.eturlia_compat_sable]]
+    modId="neoforge"
+    type="required"
+    versionRange="[21.1,)"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.eturlia_compat_sable]]
+    modId="minecraft"
+    type="required"
+    versionRange="[1.21.1,1.21.2)"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.eturlia_compat_sable]]
+    modId="sable"
+    type="required"
+    versionRange="[0.1.0,)"
+    ordering="AFTER"
+    side="BOTH"
+
+[[dependencies.eturlia_compat_sable]]
+    modId="create_aeronautics"
+    type="required"
+    versionRange="[0.1.0,)"
+    ordering="AFTER"
+    side="BOTH"
+
+[[mixins]]
+    config="eturlia-compat-sable.mixins.json"

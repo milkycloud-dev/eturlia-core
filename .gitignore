@@ -6,14 +6,14 @@ build
 
 /run
 
-# Crelia-NeoForge: generated output directories (created by paperweight applyAllPatches)
+# Eturlia-NeoForge: generated output directories (created by paperweight applyAllPatches)
 /Folia-API/
 /Folia-Server/
 /paper-api/
 /paper-server/
 /paper-api-generator/
 
-# Legacy Crelia directories (unused in paperweight 1.7.3 mode)
+# Legacy Eturlia directories (unused in paperweight 1.7.3 mode)
 /folia-server/build.gradle.kts
 /folia-server/src/minecraft
 /folia-api/build.gradle.kts
@@ -25,7 +25,7 @@ build
 .DS_Store
 
 
-# Crelia build outputs
+# Eturlia build outputs
 /build/
-/crelia-libraries/
-/crelia-*.jar
+/eturlia-libraries/
+/eturlia-*.jar
