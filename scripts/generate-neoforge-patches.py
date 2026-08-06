@@ -10,7 +10,7 @@ FOLIA_SERVER = os.path.join(os.path.dirname(__file__), '..', 'Folia-Server', 'sr
 PATCHES_DIR = os.path.join(os.path.dirname(__file__), '..', 'patches', 'server')
 
 PATCH_HEADER = """From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-From: Crelia <crelia@users.noreply.github.com>
+From: Eturlia <eturlia@users.noreply.github.com>
 Date: Sat, 21 Jun 2026 12:00:00 +0000
 Subject: [PATCH] {subject}
 

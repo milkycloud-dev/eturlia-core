@@ -1,8 +1,8 @@
-# Анализ отсутствующих minecraft-patches для Crelia (NeoForge + Folia)
+# Анализ отсутствующих minecraft-patches для Eturlia (NeoForge + Folia)
 
 ## 1. Обзор проекта
 
-Crelia — это гибридный сервер Minecraft, объединяющий **Folia** (региональная многопоточность PaperMC) и **NeoForge** (мод-загрузчик). Проект основан на Paperweight patcher, который применяет патчи из Paper, Folia и NeoForge к ванильному коду Minecraft.
+Eturlia — это гибридный сервер Minecraft, объединяющий **Folia** (региональная многопоточность PaperMC) и **NeoForge** (мод-загрузчик). Проект основан на Paperweight patcher, который применяет патчи из Paper, Folia и NeoForge к ванильному коду Minecraft.
 
 **Ключевая проблема:** В репозитории git **полностью отсутствуют** minecraft-patches для NeoForge. Директория `folia-server/src/minecraft` исключена из `.gitignore`:
 
@@ -379,9 +379,9 @@ public Holder<Block> getPotted() {
 
 Эти миксины применяются через систему NeoForge SPI и не требуют патчей.
 
-### 8.4. Custom Entry Point: CreliaServer
+### 8.4. Custom Entry Point: EturliaServer
 
-Кастомный лаунчер `crelia.launcher.Main` запускает `crelia.CreliaServer` вместо стандартного `net.minecraft.server.Main`. Это требует наличия класса `CreliaServer` (вероятно, в `folia-server/src/minecraft`), который не может быть в репозитории из-за `.gitignore`.
+Кастомный лаунчер `eturlia.launcher.Main` запускает `eturlia.EturliaServer` вместо стандартного `net.minecraft.server.Main`. Это требует наличия класса `EturliaServer` (вероятно, в `folia-server/src/minecraft`), который не может быть в репозитории из-за `.gitignore`.
 
 ---
 
@@ -483,7 +483,7 @@ Paperweight уже умеет работать с патчами. Нужно с�
 |-----------|----------------------------|--------|-----------|
 | Методы-геттеры для coremods (3 класса, 4 метода) | 3 патча | **DONE** (0009-0011) | **КРИТИЧНО** |
 | Injected interfaces (~80 классов) | N/A (coremod) | **DONE** (coremod) | **КРИТИЧНО** |
-| ServerLifecycleHooks + CreliaServer entry point | 1 патч | **DONE** (0012) | **ВЫСОКИЙ** |
+| ServerLifecycleHooks + EturliaServer entry point | 1 патч | **DONE** (0012) | **ВЫСОКИЙ** |
 | EventHooks Integration (tick, entity join, block break, explosion, chunk watch) | 1 патч | **DONE** (0013) | **ВЫСОКИЙ** |
 | Additional Entity Hooks (heal, die, fall, jump, item, projectile, tooltip) | 1 патч | **DONE** (0014) | **ВЫСОКИЙ** |
 | LivingEntity Damage Hooks (hurt, knockback, armor, totem, effect, drops) | 1 патч | **DONE** (0015) | **ВЫСОКИЙ** |
@@ -502,7 +502,7 @@ Paperweight уже умеет работать с патчами. Нужно с�
 0009: NeoForge Biome ClimateSettings + SpecialEffects getters
 0010: NeoForge Structure Settings getter
 0011: NeoForge FlowerPotBlock Potted getter
-0012: NeoForge CreliaServer Entry Point + ServerLifecycleHooks
+0012: NeoForge EturliaServer Entry Point + ServerLifecycleHooks
 0013: NeoForge EventHooks Integration (tick, entity join, block break, explosion, chunk watch)
 0014: NeoForge Additional Entity Hooks (heal, die, fall, jump, item, projectile, tooltip)
 0015: NeoForge LivingEntity Damage Hooks (hurt, knockback, armor, totem, effect, drops)

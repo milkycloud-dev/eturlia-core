@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Crelia - Generate NeoForge minecraft-patches for Folia+NeoForge hybrid kernel.
+Eturlia - Generate NeoForge minecraft-patches for Folia+NeoForge hybrid kernel.
 Creates patches 0014-0023 injecting EventHooks/CommonHooks calls into vanilla MC classes.
 These patches are adapted for the Folia-patched decompiled source.
 """
 
 import os
 
-PATCH_DIR = "/home/z/my-project/crelia-neoforge/folia-server/minecraft-patches/features"
+PATCH_DIR = "/home/z/my-project/eturlia-neoforge/folia-server/minecraft-patches/features"
 PATCH_HEADER = """From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-From: Crelia <crelia@users.noreply.github.com>
+From: Eturlia <eturlia@users.noreply.github.com>
 Date: Mon, 1 Jan 2024 00:00:00 +0000
 Subject: [PATCH] {title}
 
@@ -208,7 +208,7 @@ def create_patch_0015():
 - onLivingDrops in dropAllDeathLoot()
 
 These are the core of NeoForge's damage modification system.
-In Crelia, all these hooks run on the entity's owning region thread,
+In Eturlia, all these hooks run on the entity's owning region thread,
 ensuring thread safety without additional synchronization."""
     
     content = PATCH_HEADER.format(title=title, description=desc)
@@ -667,7 +667,7 @@ def write_patch(num, content):
 def main():
     os.makedirs(PATCH_DIR, exist_ok=True)
     
-    print("=== Crelia NeoForge Minecraft Patch Generator ===")
+    print("=== Eturlia NeoForge Minecraft Patch Generator ===")
     print(f"Output directory: {PATCH_DIR}")
     print()
     

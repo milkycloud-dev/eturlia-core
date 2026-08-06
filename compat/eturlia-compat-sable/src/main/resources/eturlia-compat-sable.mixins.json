@@ -1,0 +1,19 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.eturlia.compat.sable.mixins",
+  "compatibilityLevel": "JAVA_21",
+  "refmap": "eturlia-compat-sable.refmap.json",
+  "plugin": "com.eturlia.compat.sable.mixin.EturliaCompatSableMixinPlugin",
+  "mixins": [
+    "physics.RapierPhysicsStepMixin",
+    "physics.JNICallbackAuditMixin",
+    "sublevel.SubLevelCreateMixin",
+    "sublevel.SubLevelTransferMixin",
+    "vehicle.VehicleAssemblyMixin",
+    "vehicle.VehicleDisassemblyMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

@@ -54,45 +54,45 @@ tasks.named<ProcessResources>("processResources") {
 }
 
 
-val creliaMixinSources = fileTree("src/main/java") { include("crelia/**/*.java") }
+val eturliaMixinSources = fileTree("src/main/java") { include("eturlia/**/*.java") }
 
-val compileCreliaMixins by tasks.registering(JavaCompile::class) {
+val compileEturliaMixins by tasks.registering(JavaCompile::class) {
     group = "build"
-    description = "Compile Crelia region-threading mixins (optional; requires Folia-Server jars + -Pcrelia.compileMixins)"
+    description = "Compile Eturlia region-threading mixins (optional; requires Folia-Server jars + -Peturlia.compileMixins)"
     onlyIf {
-        project.hasProperty("crelia.compileMixins") &&
+        project.hasProperty("eturlia.compileMixins") &&
             rootProject.file("Folia-Server/build/libs").isDirectory &&
-            creliaMixinSources.files.isNotEmpty()
+            eturliaMixinSources.files.isNotEmpty()
     }
-    source = creliaMixinSources
+    source = eturliaMixinSources
     classpath = configurations.compileClasspath.get() +
         files(rootProject.fileTree("Folia-Server/build/libs") { include("*.jar") }) +
         files(rootProject.fileTree("Folia-API/build/libs") { include("*.jar") })
-    destinationDirectory.set(layout.buildDirectory.dir("classes/creliaMixins"))
+    destinationDirectory.set(layout.buildDirectory.dir("classes/eturliaMixins"))
     options.release.set(21)
     options.encoding = "UTF-8"
 }
 
 tasks.named<Jar>("jar") {
-    archiveBaseName.set("crelia-neoforge-extras")
-    from(compileCreliaMixins.map { it.destinationDirectory })
-    dependsOn(compileCreliaMixins)
+    archiveBaseName.set("eturlia-neoforge-extras")
+    from(compileEturliaMixins.map { it.destinationDirectory })
+    dependsOn(compileEturliaMixins)
     manifest {
         attributes(
-            "Automatic-Module-Name" to "crelia.neoforge.extras",
+            "Automatic-Module-Name" to "eturlia.neoforge.extras",
             "FMLModType" to "GAMELIBRARY",
-            "Specification-Title" to "crelia-neoforge-extras",
-            "Implementation-Title" to "crelia-neoforge-extras",
+            "Specification-Title" to "eturlia-neoforge-extras",
+            "Implementation-Title" to "eturlia-neoforge-extras",
             "Implementation-Version" to project.version,
-            "Crelia-NeoForge-Version" to neoforgeVersion,
+            "Eturlia-NeoForge-Version" to neoforgeVersion,
         )
     }
 }
 
 tasks.register<Jar>("neoforgeResourcesJar") {
     group = "build"
-    description = "Package NeoForge/Crelia resources (mixins configs, mods.toml overlays)"
-    archiveFileName.set("crelia-neoforge-resources.jar")
+    description = "Package NeoForge/Eturlia resources (mixins configs, mods.toml overlays)"
+    archiveFileName.set("eturlia-neoforge-resources.jar")
     from(sourceSets.main.get().output.resourcesDir)
     dependsOn(tasks.named("processResources"))
 }
