@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Crelia Smoke Test
+# Eturlia Smoke Test
 # ==============================================================================
-# Starts the Crelia server, monitors for successful startup, TPS reporting,
+# Starts the Eturlia server, monitors for successful startup, TPS reporting,
 # and crash reports. Designed for use in CI pipelines.
 #
-# Usage: ./smoke-test.sh <path-to-creliatest2.jar> [timeout-seconds]
+# Usage: ./smoke-test.sh <path-to-eturliatest2.jar> [timeout-seconds]
 #
 # Exit codes:
 #   0 — Server started successfully, TPS reporting detected, no crashes
@@ -16,10 +16,10 @@ set -euo pipefail
 
 # ---------- Configuration ----------
 
-JAR_PATH="${1:?Usage: smoke-test.sh <path-to-creliatest2.jar> [timeout-seconds]}"
+JAR_PATH="${1:?Usage: smoke-test.sh <path-to-eturliatest2.jar> [timeout-seconds]}"
 TIMEOUT="${2:-120}"
 LOG_FILE="smoke-test.log"
-WORK_DIR="$(mktemp -d crelia-smoke-test.XXXXXX)"
+WORK_DIR="$(mktemp -d eturlia-smoke-test.XXXXXX)"
 EULA_FILE="$WORK_DIR/eula.txt"
 SERVER_DIR="$WORK_DIR/server"
 
@@ -34,7 +34,7 @@ if [ ! -f "$JAR_PATH" ]; then
     exit 1
 fi
 
-echo "=== Crelia Smoke Test ===" | tee "$LOG_FILE"
+echo "=== Eturlia Smoke Test ===" | tee "$LOG_FILE"
 echo "JAR:      $JAR_PATH" | tee -a "$LOG_FILE"
 echo "Timeout:  ${TIMEOUT}s" | tee -a "$LOG_FILE"
 echo "Work dir: $WORK_DIR" | tee -a "$LOG_FILE"
@@ -56,7 +56,7 @@ echo "Starting server..." | tee -a "$LOG_FILE"
 java -Xms1G -Xmx2G \
     -XX:+UseG1GC \
     -XX:+ParallelRefProcEnabled \
-    -Dcrelia.lod.mode=DISABLED \
+    -Deturlia.lod.mode=DISABLED \
     -jar "$JAR_PATH" \
     --nogui \
     > >(tee -a "$LOG_FILE") 2>&1 \

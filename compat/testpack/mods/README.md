@@ -15,7 +15,7 @@ here** — use the download script to ensure version consistency.
 
 ## Recommended Performance Mods (Server-Side)
 
-These mods are tested and confirmed safe on Crelia's Folia regionized threading model.
+These mods are tested and confirmed safe on Eturlia's Folia regionized threading model.
 They either operate client-side only or do not modify chunk generation threading.
 
 | Mod | Version Pin | Mod ID | Status | Notes |
@@ -28,13 +28,13 @@ They either operate client-side only or do not modify chunk generation threading
 
 ## Client-Side LOD Mods (Server Configuration Required)
 
-These mods are client-side but require server-side configuration via `crelia-lod.properties`
+These mods are client-side but require server-side configuration via `eturlia-lod.properties`
 or `server.properties` for optimal operation.
 
 | Mod | Version Pin | Server Config | Notes |
 |-----|-------------|---------------|-------|
-| **Distant Horizons (DH)** | `2.4.x` | `crelia.lod.mode=SERVER_ASSISTED`, `crelia.lod.dh-server-component=true` | Client-side LOD rendering. Server-assisted mode requires DH 2.4.x+ server component. Client-only mode works without server config. |
-| **Voxy** | Latest stable | `crelia.lod.mode=CLIENT_ONLY`, `crelia.lod.voxy-support=true` | Alternative client-side LOD. Voxy is purely client-side; the server flag just advertises compatibility to connecting clients. |
+| **Distant Horizons (DH)** | `2.4.x` | `eturlia.lod.mode=SERVER_ASSISTED`, `eturlia.lod.dh-server-component=true` | Client-side LOD rendering. Server-assisted mode requires DH 2.4.x+ server component. Client-only mode works without server config. |
+| **Voxy** | Latest stable | `eturlia.lod.mode=CLIENT_ONLY`, `eturlia.lod.voxy-support=true` | Alternative client-side LOD. Voxy is purely client-side; the server flag just advertises compatibility to connecting clients. |
 
 ## Blocked Mods (Critical Incompatibility)
 
@@ -52,61 +52,61 @@ refuse to start if any of these are detected.
 
 ## LOD Configuration Example
 
-Create `crelia-lod.properties` in the server root (alongside `server.properties`):
+Create `eturlia-lod.properties` in the server root (alongside `server.properties`):
 
 ```properties
 # Enable LOD integration
-crelia.lod.enabled=true
+eturlia.lod.enabled=true
 
 # CLIENT_ONLY = LOD runs purely client-side
 # SERVER_ASSISTED = server provides LOD data (DH 2.4.x)
-crelia.lod.mode=CLIENT_ONLY
+eturlia.lod.mode=CLIENT_ONLY
 
 # Override client render distance for LOD (-1 = no override)
-crelia.lod.max-render-distance=-1
+eturlia.lod.max-render-distance=-1
 
 # Distant Horizons 2.4.x server component
-crelia.lod.dh-server-component=false
+eturlia.lod.dh-server-component=false
 
 # Voxy client-only mode
-crelia.lod.voxy-support=true
+eturlia.lod.voxy-support=true
 ```
 
 ## Compatibility Notes by Mod
 
 ### Create 0.5.1.f
 - **Region threading impact:** HIGH — kinetic networks and contraptions span multiple regions
-- **Compat module:** `crelia-compat-create` patches cross-region kinetic propagation, contraption fragmentation, and projectile handling
+- **Compat module:** `eturlia-compat-create` patches cross-region kinetic propagation, contraption fragmentation, and projectile handling
 - **Known issues:** Large contraptions (trains, aerial) spanning 3+ regions may have slight position desync at region boundaries
 
 ### Create Big Cannons (CBC)
 - **Region threading impact:** HIGH — cannon projectiles travel at extreme velocity crossing regions rapidly
-- **Compat module:** Handled by `crelia-compat-create` via `RegionizedProjectileHandler`
+- **Compat module:** Handled by `eturlia-compat-create` via `RegionizedProjectileHandler`
 - **Known issues:** Explosion damage must be fanned out to all affected region threads, introducing up to 1 tick of damage aggregation delay
 
 ### Sable
 - **Region threading impact:** CRITICAL — JNI physics runs on a separate thread; must not access Minecraft state from physics thread
-- **Compat module:** `crelia-compat-sable` bridges physics thread to region threads via async message queues
+- **Compat module:** `eturlia-compat-sable` bridges physics thread to region threads via async message queues
 - **Known issues:** The JNI thread safety auditor adds ~2% overhead to physics calls; can be disabled in dev mode
 
 ### Create Aeronautics
 - **Region threading impact:** HIGH — aircraft move fast enough to cross multiple regions per tick
-- **Compat module:** Handled by `crelia-compat-sable` via `VehicleAssemblyRegionHandler`
+- **Compat module:** Handled by `eturlia-compat-sable` via `VehicleAssemblyRegionHandler`
 - **Known issues:** Emergency block scatter on crash requires cross-region coordination; debris may appear to pop in on distant regions
 
 ### Distant Horizons (DH) 2.4.x
 - **Region threading impact:** LOW in CLIENT_ONLY mode, MEDIUM in SERVER_ASSISTED mode
-- **Server config:** Set `crelia.lod.mode=SERVER_ASSISTED` and `crelia.lod.dh-server-component=true`
+- **Server config:** Set `eturlia.lod.mode=SERVER_ASSISTED` and `eturlia.lod.dh-server-component=true`
 - **Notes:** SERVER_ASSISTED mode generates LOD data on the server. Ensure adequate CPU headroom; LOD generation runs at lower priority than region ticking.
 
 ### Voxy
 - **Region threading impact:** NONE — purely client-side
-- **Server config:** Set `crelia.lod.mode=CLIENT_ONLY` and `crelia.lod.voxy-support=true`
+- **Server config:** Set `eturlia.lod.mode=CLIENT_ONLY` and `eturlia.lod.voxy-support=true`
 - **Notes:** The server-side flag only sets a Voxy compatibility marker in the handshake. No server-side code changes.
 
 ### Radium Reforged
 - **Region threading impact:** NONE — client-side rendering only
-- **Notes:** Safe to use on any Crelia server. Does not require server-side installation for NeoForge 21.1.x (client-side mod).
+- **Notes:** Safe to use on any Eturlia server. Does not require server-side installation for NeoForge 21.1.x (client-side mod).
 
 ### ServerCore
 - **Region threading impact:** NONE — entity/tick optimizations are per-tick, no threading model changes
@@ -122,7 +122,7 @@ crelia.lod.voxy-support=true
 
 ### Lithium Reforged
 - **Region threading impact:** NONE — all optimizations are per-tick and single-threaded within a region
-- **Notes:** Best results when combined with FerriteCore. The physics, AI, and redstone optimizations are particularly effective on Crelia.
+- **Notes:** Best results when combined with FerriteCore. The physics, AI, and redstone optimizations are particularly effective on Eturlia.
 
 ## Download
 
@@ -139,5 +139,5 @@ crelia.lod.voxy-support=true
 - Before upgrading any mod version, verify API compatibility by running the full
   CI suite.
 - If you add a new performance mod, verify it does not modify chunk generation
-  threading by checking against the Crelia mod compatibility list in
-  `crelia-supported.json`.
+  threading by checking against the Eturlia mod compatibility list in
+  `eturlia-supported.json`.

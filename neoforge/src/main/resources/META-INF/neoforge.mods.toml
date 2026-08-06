@@ -20,7 +20,7 @@ license="LGPL v2.1"
     config = "neoforge.mixins.json"
 
 [[mixins]]
-    config = "neoforge.mixins.crelia.json"
+    config = "neoforge.mixins.eturlia.json"
 
 [[accessTransformers]]
     file="META-INF/accesstransformer.cfg"

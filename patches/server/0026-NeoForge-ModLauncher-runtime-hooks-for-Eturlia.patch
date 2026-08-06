@@ -1,0 +1,1377 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 11:26:07 +0000
+Subject: [PATCH] NeoForge ModLauncher runtime hooks for Eturlia
+
+AttachmentHolder hierarchy, registry BaseMappedRegistry/IRegistryExtension,
+tag create(RL), DyeColor tags, Language Component JSON, FriendlyByteBuf.writeByte(byte),
+CrashReportCategory.setStackTrace, BuiltInRegistries.getVanillaRegistrationOrder,
+ResourceLocation.compareNamespaced, and soft-continue ServerModLoader.load().
+
+diff --git a/src/main/java/io/papermc/paper/PaperBootstrap.java b/src/main/java/io/papermc/paper/PaperBootstrap.java
+index d543b1b107ab8d3eeb1fc3c1cadf489928d2786e..8b3df5547f33ba0d1fe2badb417849516d5241d7 100644
+--- a/src/main/java/io/papermc/paper/PaperBootstrap.java
++++ b/src/main/java/io/papermc/paper/PaperBootstrap.java
+@@ -18,6 +18,8 @@ public final class PaperBootstrap {
+ 
+         getStartupVersionMessages().forEach(LOGGER::info);
+ 
++        // ServerModLoader runs after Bootstrap.bootStrap() inside net.minecraft.server.Main
++        // (NeoForge registries require a completed Bootstrap).
+         Main.main(options);
+     }
+ 
+diff --git a/src/main/java/io/papermc/paper/SparksFly.java b/src/main/java/io/papermc/paper/SparksFly.java
+index 4b30b05dcd99176715d49133fb99b96383a0ecbc..9a86c86be13c671a99b8582247aee56a2f31a04b 100644
+--- a/src/main/java/io/papermc/paper/SparksFly.java
++++ b/src/main/java/io/papermc/paper/SparksFly.java
+@@ -109,7 +109,9 @@ public final class SparksFly {
+ 
+     private void enable() {
+         if (!this.enabled) {
+-            if (false) { // Folia - disable in-built spark profiler
++            // Eturlia: keep Paper's bundled spark available (Folia 0018 had forced it off).
++            // Spark jars stay on the fat classpath; respect paper-global.yml spark.enabled.
++            if (GlobalConfiguration.get().spark.enabled) {
+                 this.enabled = true;
+                 this.spark.enable();
+             } else {
+@@ -161,7 +163,8 @@ public final class SparksFly {
+     }
+ 
+     public static boolean isPluginPreferred() {
+-        return true; // Folia - disable in-built spark profiler
++        // Eturlia: restore Paper preference flag (Folia 0018 forced plugin-only / disabled bundled spark).
++        return Boolean.getBoolean(PREFER_SPARK_PLUGIN_PROPERTY);
+     }
+ 
+     private static boolean isPluginEnabled(final Server server) {
+diff --git a/src/main/java/net/minecraft/CrashReportCategory.java b/src/main/java/net/minecraft/CrashReportCategory.java
+index 2176171954609fd88f97f93408e14e018c1d6eaa..d3d9ad0faf9fccc10235fa7059ae0acf938051ef 100644
+--- a/src/main/java/net/minecraft/CrashReportCategory.java
++++ b/src/main/java/net/minecraft/CrashReportCategory.java
+@@ -169,6 +169,11 @@ public class CrashReportCategory {
+         return this.stackTrace;
+     }
+ 
++    // NeoForge CrashReportExtender
++    public void setStackTrace(StackTraceElement[] stackTrace) {
++        this.stackTrace = stackTrace;
++    }
++
+     public static void populateBlockDetails(CrashReportCategory element, LevelHeightAccessor world, BlockPos pos, @Nullable BlockState state) {
+         if (state != null) {
+             element.setDetail("Block", state::toString);
+diff --git a/src/main/java/net/minecraft/core/MappedRegistry.java b/src/main/java/net/minecraft/core/MappedRegistry.java
+index f22d22ebcedcc9c20225677844c86a1ad27c4211..545ee62ebb9ce9bfc28428f98ae116c415f373c1 100644
+--- a/src/main/java/net/minecraft/core/MappedRegistry.java
++++ b/src/main/java/net/minecraft/core/MappedRegistry.java
+@@ -31,7 +31,7 @@ import net.minecraft.tags.TagKey;
+ import net.minecraft.util.RandomSource;
+ import org.slf4j.Logger;
+ 
+-public class MappedRegistry<T> implements WritableRegistry<T> {
++public class MappedRegistry<T> extends net.neoforged.neoforge.registries.BaseMappedRegistry<T> implements WritableRegistry<T> { // NeoForge
+     private static final Logger LOGGER = LogUtils.getLogger();
+     final ResourceKey<? extends Registry<T>> key;
+     private final ObjectList<Holder.Reference<T>> byId = new ObjectArrayList<>(256);
+@@ -441,6 +441,47 @@ public class MappedRegistry<T> implements WritableRegistry<T> {
+     public HolderLookup.RegistryLookup<T> asLookup() {
+         return this.lookup;
+     }
++
++    // NeoForge BaseMappedRegistry
++    /** @deprecated NeoForge: For internal use only. Use the Register events when registering values. */
++    @Deprecated
++    @Override
++    public void unfreeze() {
++        this.frozen = false;
++    }
++
++    @Override
++    protected void registerIdMapping(ResourceKey<T> key, int id) {
++        this.validateWrite(key);
++        if (id > this.getMaxId()) {
++            throw new IllegalStateException(String.format(java.util.Locale.ENGLISH, "Invalid id %d - maximum id range of %d exceeded.", id, this.getMaxId()));
++        }
++        if (0 <= id && id < this.byId.size() && this.byId.get(id) != null) {
++            throw new IllegalStateException("Duplicate id " + id + " for " + key + " and " + this.getKey(this.byId.get(id).value()));
++        }
++        Holder.Reference<T> holder = this.byKey.get(key);
++        while (this.byId.size() < (id + 1)) {
++            this.byId.add(null);
++        }
++        this.byId.set(id, holder);
++        this.toId.put(holder.value(), id);
++    }
++
++    @Override
++    public int getId(ResourceLocation name) {
++        return getId(get(name));
++    }
++
++    @Override
++    public int getId(ResourceKey<T> key) {
++        return getId(get(key));
++    }
++
++    @Override
++    public boolean containsValue(T value) {
++        return this.byValue.containsKey(value);
++    }
++
+     // Paper start
+     // used to clear intrusive holders from GameEvent, Item, Block, EntityType, and Fluid from unused instances of those types
+     public void clearIntrusiveHolder(final T instance) {
+diff --git a/src/main/java/net/minecraft/core/Registry.java b/src/main/java/net/minecraft/core/Registry.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..9fe833606a5e0dc1360af1aad7e9c82236e25246
+--- /dev/null
++++ b/src/main/java/net/minecraft/core/Registry.java
+@@ -0,0 +1,216 @@
++package net.minecraft.core;
++
++import com.mojang.datafixers.DataFixUtils;
++import com.mojang.datafixers.util.Pair;
++import com.mojang.serialization.Codec;
++import com.mojang.serialization.DataResult;
++import com.mojang.serialization.DynamicOps;
++import com.mojang.serialization.Keyable;
++import com.mojang.serialization.Lifecycle;
++import java.util.Iterator;
++import java.util.List;
++import java.util.Map;
++import java.util.Optional;
++import java.util.Set;
++import java.util.Map.Entry;
++import java.util.stream.Stream;
++import java.util.stream.StreamSupport;
++import javax.annotation.Nullable;
++import net.minecraft.resources.ResourceKey;
++import net.minecraft.resources.ResourceLocation;
++import net.minecraft.tags.TagKey;
++import net.minecraft.util.ExtraCodecs;
++import net.minecraft.util.RandomSource;
++
++public interface Registry<T> extends Keyable, IdMap<T>, net.neoforged.neoforge.registries.IRegistryExtension<T> { // NeoForge
++    ResourceKey<? extends Registry<T>> key();
++
++    default Codec<T> byNameCodec() {
++        return this.referenceHolderWithLifecycle().flatComapMap(Holder.Reference::value, value -> this.safeCastToReference(this.wrapAsHolder((T)value)));
++    }
++
++    default Codec<Holder<T>> holderByNameCodec() {
++        return this.referenceHolderWithLifecycle().flatComapMap(entry -> (Holder<T>)entry, this::safeCastToReference);
++    }
++
++    private Codec<Holder.Reference<T>> referenceHolderWithLifecycle() {
++        Codec<Holder.Reference<T>> codec = ResourceLocation.CODEC
++            .comapFlatMap(
++                id -> this.getHolder(id).map(DataResult::success).orElseGet(() -> DataResult.error(() -> "Unknown registry key in " + this.key() + ": " + id)),
++                entry -> entry.key().location()
++            );
++        return ExtraCodecs.overrideLifecycle(
++            codec, entry -> this.registrationInfo(entry.key()).map(RegistrationInfo::lifecycle).orElse(Lifecycle.experimental())
++        );
++    }
++
++    private DataResult<Holder.Reference<T>> safeCastToReference(Holder<T> entry) {
++        return entry instanceof Holder.Reference<T> reference
++            ? DataResult.success(reference)
++            : DataResult.error(() -> "Unregistered holder in " + this.key() + ": " + entry);
++    }
++
++    default <U> Stream<U> keys(DynamicOps<U> dynamicOps) {
++        return this.keySet().stream().map(id -> dynamicOps.createString(id.toString()));
++    }
++
++    @Nullable
++    ResourceLocation getKey(T value);
++
++    Optional<ResourceKey<T>> getResourceKey(T entry);
++
++    @Override
++    int getId(@Nullable T value);
++
++    @Nullable
++    T get(@Nullable ResourceKey<T> key);
++
++    @Nullable
++    T get(@Nullable ResourceLocation id);
++
++    Optional<RegistrationInfo> registrationInfo(ResourceKey<T> key);
++
++    Lifecycle registryLifecycle();
++
++    default Optional<T> getOptional(@Nullable ResourceLocation id) {
++        return Optional.ofNullable(this.get(id));
++    }
++
++    default Optional<T> getOptional(@Nullable ResourceKey<T> key) {
++        return Optional.ofNullable(this.get(key));
++    }
++
++    Optional<Holder.Reference<T>> getAny();
++
++    default T getOrThrow(ResourceKey<T> key) {
++        T object = this.get(key);
++        if (object == null) {
++            throw new IllegalStateException("Missing key in " + this.key() + ": " + key);
++        } else {
++            return object;
++        }
++    }
++
++    Set<ResourceLocation> keySet();
++
++    Set<Entry<ResourceKey<T>, T>> entrySet();
++
++    Set<ResourceKey<T>> registryKeySet();
++
++    Optional<Holder.Reference<T>> getRandom(RandomSource random);
++
++    default Stream<T> stream() {
++        return StreamSupport.stream(this.spliterator(), false);
++    }
++
++    boolean containsKey(ResourceLocation id);
++
++    boolean containsKey(ResourceKey<T> key);
++
++    static <T> T register(Registry<? super T> registry, String id, T entry) {
++        return register(registry, ResourceLocation.parse(id), entry);
++    }
++
++    static <V, T extends V> T register(Registry<V> registry, ResourceLocation id, T entry) {
++        return register(registry, ResourceKey.create(registry.key(), id), entry);
++    }
++
++    static <V, T extends V> T register(Registry<V> registry, ResourceKey<V> key, T entry) {
++        ((WritableRegistry)registry).register(key, (V)entry, RegistrationInfo.BUILT_IN);
++        return entry;
++    }
++
++    static <T> Holder.Reference<T> registerForHolder(Registry<T> registry, ResourceKey<T> key, T entry) {
++        return ((WritableRegistry)registry).register(key, entry, RegistrationInfo.BUILT_IN);
++    }
++
++    static <T> Holder.Reference<T> registerForHolder(Registry<T> registry, ResourceLocation id, T entry) {
++        return registerForHolder(registry, ResourceKey.create(registry.key(), id), entry);
++    }
++
++    Registry<T> freeze();
++
++    Holder.Reference<T> createIntrusiveHolder(T value);
++
++    Optional<Holder.Reference<T>> getHolder(int rawId);
++
++    Optional<Holder.Reference<T>> getHolder(ResourceLocation id);
++
++    Optional<Holder.Reference<T>> getHolder(ResourceKey<T> key);
++
++    Holder<T> wrapAsHolder(T value);
++
++    default Holder.Reference<T> getHolderOrThrow(ResourceKey<T> key) {
++        return this.getHolder(key).orElseThrow(() -> new IllegalStateException("Missing key in " + this.key() + ": " + key));
++    }
++
++    Stream<Holder.Reference<T>> holders();
++
++    Optional<HolderSet.Named<T>> getTag(TagKey<T> tag);
++
++    default Iterable<Holder<T>> getTagOrEmpty(TagKey<T> tag) {
++        return DataFixUtils.orElse(this.getTag(tag), List.<Holder<T>>of());
++    }
++
++    default Optional<Holder<T>> getRandomElementOf(TagKey<T> tag, RandomSource random) {
++        return this.getTag(tag).flatMap(entryList -> entryList.getRandomElement(random));
++    }
++
++    HolderSet.Named<T> getOrCreateTag(TagKey<T> tag);
++
++    Stream<Pair<TagKey<T>, HolderSet.Named<T>>> getTags();
++
++    Stream<TagKey<T>> getTagNames();
++
++    void resetTags();
++
++    void bindTags(Map<TagKey<T>, List<Holder<T>>> tagEntries);
++
++    default IdMap<Holder<T>> asHolderIdMap() {
++        return new IdMap<Holder<T>>() {
++            @Override
++            public int getId(Holder<T> value) {
++                return Registry.this.getId(value.value());
++            }
++
++            @Nullable
++            @Override
++            public Holder<T> byId(int i) {
++                return (Holder<T>)Registry.this.getHolder(i).orElse(null);
++            }
++
++            @Override
++            public int size() {
++                return Registry.this.size();
++            }
++
++            @Override
++            public Iterator<Holder<T>> iterator() {
++                return Registry.this.holders().map(entry -> (Holder<T>)entry).iterator();
++            }
++        };
++    }
++
++    HolderOwner<T> holderOwner();
++
++    HolderLookup.RegistryLookup<T> asLookup();
++
++    default HolderLookup.RegistryLookup<T> asTagAddingLookup() {
++        return new HolderLookup.RegistryLookup.Delegate<T>() {
++            @Override
++            public HolderLookup.RegistryLookup<T> parent() {
++                return Registry.this.asLookup();
++            }
++
++            @Override
++            public Optional<HolderSet.Named<T>> get(TagKey<T> tag) {
++                return Optional.of(this.getOrThrow(tag));
++            }
++
++            @Override
++            public HolderSet.Named<T> getOrThrow(TagKey<T> tag) {
++                return Registry.this.getOrCreateTag(tag);
++            }
++        };
++    }
++}
+diff --git a/src/main/java/net/minecraft/core/registries/BuiltInRegistries.java b/src/main/java/net/minecraft/core/registries/BuiltInRegistries.java
+index 0497318e8f647453f38f3a16a8be6bd9aa19253f..0c211bdefd4e35089287387d65b399dfae832a17 100644
+--- a/src/main/java/net/minecraft/core/registries/BuiltInRegistries.java
++++ b/src/main/java/net/minecraft/core/registries/BuiltInRegistries.java
+@@ -376,6 +376,11 @@ public class BuiltInRegistries {
+         });
+     }
+ 
++    // NeoForge
++    public static java.util.Set<ResourceLocation> getVanillaRegistrationOrder() {
++        return java.util.Collections.unmodifiableSet(LOADERS.keySet());
++    }
++
+     @FunctionalInterface
+     interface RegistryBootstrap<T> {
+         Object run(Registry<T> registry);
+diff --git a/src/main/java/net/minecraft/locale/Language.java b/src/main/java/net/minecraft/locale/Language.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..a1d809d4f250c8df2786fc623830f8bf4c58481a
+--- /dev/null
++++ b/src/main/java/net/minecraft/locale/Language.java
+@@ -0,0 +1,137 @@
++package net.minecraft.locale;
++
++import com.google.common.collect.ImmutableList;
++import com.google.common.collect.ImmutableMap;
++import com.google.common.collect.ImmutableMap.Builder;
++import com.google.gson.Gson;
++import com.google.gson.JsonElement;
++import com.google.gson.JsonObject;
++import com.google.gson.JsonParseException;
++import com.mojang.logging.LogUtils;
++import java.io.IOException;
++import java.io.InputStream;
++import java.io.InputStreamReader;
++import java.nio.charset.StandardCharsets;
++import java.util.List;
++import java.util.Map;
++import java.util.Optional;
++import java.util.Map.Entry;
++import java.util.function.BiConsumer;
++import java.util.regex.Pattern;
++import net.minecraft.network.chat.FormattedText;
++import net.minecraft.network.chat.Style;
++import net.minecraft.util.FormattedCharSequence;
++import net.minecraft.util.GsonHelper;
++import net.minecraft.util.StringDecomposer;
++import org.slf4j.Logger;
++
++public abstract class Language {
++    private static final Logger LOGGER = LogUtils.getLogger();
++    private static final Gson GSON = new Gson();
++    private static final Pattern UNSUPPORTED_FORMAT_PATTERN = Pattern.compile("%(\\d+\\$)?[\\d.]*[df]");
++    public static final String DEFAULT = "en_us";
++    private static volatile Language instance = loadDefault();
++
++    private static Language loadDefault() {
++        Builder<String, String> builder = ImmutableMap.builder();
++        BiConsumer<String, String> biConsumer = builder::put;
++        parseTranslations(biConsumer, "/assets/minecraft/lang/en_us.json");
++        final Map<String, String> map = builder.build();
++        return new Language() {
++            @Override
++            public String getOrDefault(String key, String fallback) {
++                return map.getOrDefault(key, fallback);
++            }
++
++            @Override
++            public boolean has(String key) {
++                return map.containsKey(key);
++            }
++
++            @Override
++            public boolean isDefaultRightToLeft() {
++                return false;
++            }
++
++            @Override
++            public FormattedCharSequence getVisualOrder(FormattedText text) {
++                return visitor -> text.visit(
++                            (style, string) -> StringDecomposer.iterateFormatted(string, style, visitor) ? Optional.empty() : FormattedText.STOP_ITERATION,
++                            Style.EMPTY
++                        )
++                        .isPresent();
++            }
++        };
++    }
++
++    private static void parseTranslations(BiConsumer<String, String> entryConsumer, String path) {
++        // NeoForge: also accept Component translations
++        parseTranslations(entryConsumer, (key, value) -> {}, path);
++    }
++
++    // NeoForge start - Component / rich translations
++    private static void parseTranslations(
++            BiConsumer<String, String> entryConsumer,
++            BiConsumer<String, net.minecraft.network.chat.Component> componentConsumer,
++            String path
++    ) {
++        try (InputStream inputStream = Language.class.getResourceAsStream(path)) {
++            loadFromJson(inputStream, entryConsumer, componentConsumer);
++        } catch (JsonParseException | IOException var7) {
++            LOGGER.error("Couldn't read strings from {}", path, var7);
++        }
++    }
++    // NeoForge end
++
++    public static void loadFromJson(InputStream inputStream, BiConsumer<String, String> entryConsumer) {
++        // NeoForge: delegate to Component-aware overload
++        loadFromJson(inputStream, entryConsumer, (key, value) -> {});
++    }
++
++    // NeoForge start - Component / rich translations (LanguageHook.loadBuiltinLanguages)
++    public static void loadFromJson(
++            InputStream inputStream,
++            BiConsumer<String, String> entryConsumer,
++            BiConsumer<String, net.minecraft.network.chat.Component> componentConsumer
++    ) {
++        JsonObject jsonObject = GSON.fromJson(new InputStreamReader(inputStream, StandardCharsets.UTF_8), JsonObject.class);
++
++        for (Entry<String, JsonElement> entry : jsonObject.entrySet()) {
++            if (entry.getValue().isJsonArray() || entry.getValue().isJsonObject()) {
++                var component = net.minecraft.network.chat.ComponentSerialization.CODEC
++                        .parse(com.mojang.serialization.JsonOps.INSTANCE, entry.getValue())
++                        .getOrThrow(msg -> new JsonParseException("Error parsing translation for " + entry.getKey() + ": " + msg));
++                entryConsumer.accept(entry.getKey(), component.getString());
++                componentConsumer.accept(entry.getKey(), component);
++                continue;
++            }
++            String string = UNSUPPORTED_FORMAT_PATTERN.matcher(GsonHelper.convertToString(entry.getValue(), entry.getKey())).replaceAll("%$1s");
++            entryConsumer.accept(entry.getKey(), string);
++        }
++    }
++    // NeoForge end
++
++    public static Language getInstance() {
++        return instance;
++    }
++
++    public static void inject(Language language) {
++        instance = language;
++    }
++
++    public String getOrDefault(String key) {
++        return this.getOrDefault(key, key);
++    }
++
++    public abstract String getOrDefault(String key, String fallback);
++
++    public abstract boolean has(String key);
++
++    public abstract boolean isDefaultRightToLeft();
++
++    public abstract FormattedCharSequence getVisualOrder(FormattedText text);
++
++    public List<FormattedCharSequence> getVisualOrder(List<FormattedText> texts) {
++        return texts.stream().map(this::getVisualOrder).collect(ImmutableList.toImmutableList());
++    }
++}
+diff --git a/src/main/java/net/minecraft/network/FriendlyByteBuf.java b/src/main/java/net/minecraft/network/FriendlyByteBuf.java
+index 0cd6a50837efce87ca052a0e1e24db2b75761196..77f93d6eddf76e4442112519f8c3e5e93b9530c7 100644
+--- a/src/main/java/net/minecraft/network/FriendlyByteBuf.java
++++ b/src/main/java/net/minecraft/network/FriendlyByteBuf.java
+@@ -1257,6 +1257,13 @@ public class FriendlyByteBuf extends ByteBuf {
+         return this;
+     }
+ 
++    // NeoForge IFriendlyByteBufExtension.writeByte(byte) — production NF minecraft jar
++    // declares this overload; GenericPacketSplitter calls it via invokevirtual.
++    public FriendlyByteBuf writeByte(byte value) {
++        this.source.writeByte(value);
++        return this;
++    }
++
+     public FriendlyByteBuf writeShort(int i) {
+         this.source.writeShort(i);
+         return this;
+diff --git a/src/main/java/net/minecraft/resources/ResourceLocation.java b/src/main/java/net/minecraft/resources/ResourceLocation.java
+index 1967c43ee3a12e63365cc40ee6565307e2fd73cf..4384ed2c99a360bbb988ec86d315d39dacce3865 100644
+--- a/src/main/java/net/minecraft/resources/ResourceLocation.java
++++ b/src/main/java/net/minecraft/resources/ResourceLocation.java
+@@ -171,6 +171,12 @@ public final class ResourceLocation implements Comparable<ResourceLocation> {
+         return i;
+     }
+ 
++    // NeoForge: Normal compare sorts by path first, this compares namespace first.
++    public int compareNamespaced(ResourceLocation o) {
++        int ret = this.namespace.compareTo(o.namespace);
++        return ret != 0 ? ret : this.path.compareTo(o.path);
++    }
++
+     public String toDebugFileName() {
+         return this.toString().replace('/', '_').replace(':', '_');
+     }
+diff --git a/src/main/java/net/minecraft/server/Main.java b/src/main/java/net/minecraft/server/Main.java
+index 581bd217304e0f9e0b2113c335694805dfb4e2a1..bb183cc65ca18937dd56a6dd00bd48385d901219 100644
+--- a/src/main/java/net/minecraft/server/Main.java
++++ b/src/main/java/net/minecraft/server/Main.java
+@@ -123,6 +123,20 @@ public class Main {
+             io.papermc.paper.plugin.PluginInitializerManager.load(optionset); // Paper
+             Bootstrap.bootStrap();
+             Bootstrap.validate();
++            // NeoForge: load mods after registries are bootstrapped (stock NF Main order)
++            try {
++                Class.forName("net.neoforged.neoforge.server.loading.ServerModLoader")
++                        .getMethod("load")
++                        .invoke(null);
++                LOGGER.info("NeoForge ServerModLoader.load() completed");
++            } catch (ClassNotFoundException e) {
++                LOGGER.warn("ServerModLoader not on classpath — NeoForge mods will not initialize");
++            } catch (ReflectiveOperationException e) {
++                Throwable cause = e.getCause() != null ? e.getCause() : e;
++                // WIP: NeoForge API patches (BlockTags.create, CrashReportCategory, …) still incomplete.
++                // Do not abort Folia boot — FML scan already ran under ModLauncher.
++                LOGGER.error("NeoForge ServerModLoader.load() failed (continuing Folia boot; mods may be partially uninitialized)", cause);
++            }
+             Util.startTimerHackThread();
+             Path path1 = Paths.get("server.properties");
+             DedicatedServerSettings dedicatedserversettings = new DedicatedServerSettings(optionset); // CraftBukkit - CLI argument support
+diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
+index 4b35c256ea3e6cf5405b950886ef621b4185dffb..659c6e45ae42199365d05334c6a7c2d0953c8a21 100644
+--- a/src/main/java/net/minecraft/server/MinecraftServer.java
++++ b/src/main/java/net/minecraft/server/MinecraftServer.java
+@@ -1068,7 +1068,12 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+ 
+     public void stopServer() {
+         // Folia start - region threading
+-        ServerLifecycleHooks.handleServerStopping(this); // NeoForge - fire ServerStoppingEvent
++        try {
++            ServerLifecycleHooks.handleServerStopping(this); // NeoForge - fire ServerStoppingEvent
++        } catch (Throwable t) {
++            LOGGER.warn("NeoForge handleServerStopping failed (Folia-first / FML incomplete): {}", (Object) t.toString());
++            LOGGER.debug("NeoForge handleServerStopping", t);
++        }
+         // halt scheduler
+         // don't wait, we may be on a scheduler thread
+         io.papermc.paper.threadedregions.TickRegions.getScheduler().halt(false, 0L);
+@@ -1159,7 +1164,12 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+     }
+     public void stopPart2() {
+         // Folia end - region threading
+-        ServerLifecycleHooks.handleServerStopped(this); // NeoForge - fire ServerStoppedEvent
++        try {
++            ServerLifecycleHooks.handleServerStopped(this); // NeoForge - fire ServerStoppedEvent
++        } catch (Throwable t) {
++            LOGGER.warn("NeoForge handleServerStopped failed (Folia-first / FML incomplete): {}", (Object) t.toString());
++            LOGGER.debug("NeoForge handleServerStopped", t);
++        }
+         this.resources.close();
+ 
+         try {
+@@ -1213,7 +1223,12 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+         // Paper end
+         this.running = false;
+         this.stopServer(); // Folia - region threading
+-        ServerLifecycleHooks.handleServerStopping(this); // NeoForge - fire ServerStoppingEvent (safeShutdown path)
++        try {
++            ServerLifecycleHooks.handleServerStopping(this); // NeoForge - fire ServerStoppingEvent (safeShutdown path)
++        } catch (Throwable t) {
++            LOGGER.warn("NeoForge handleServerStopping(safeShutdown) failed (Folia-first / FML incomplete): {}", (Object) t.toString());
++            LOGGER.debug("NeoForge handleServerStopping(safeShutdown)", t);
++        }
+         if (waitForShutdown) {
+             try {
+                 this.serverThread.join();
+@@ -1296,14 +1311,31 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+             // Folia start - region threading
+             if (true) {
+                 io.papermc.paper.threadedregions.RegionizedServer.getInstance().init(); // Folia - region threading - only after loading worlds
+-                ServerLifecycleHooks.handleServerAboutToStart(this); // NeoForge - fire ServerAboutToStartEvent
++                // NeoForge lifecycle: AboutToStart → Starting → Done → Started (outside Folia park loop).
++                // Folia-first may lack full FML (NeoForgeConfig unloaded); never abort before Done.
++                try {
++                    ServerLifecycleHooks.handleServerAboutToStart(this); // NeoForge - fire ServerAboutToStartEvent
++                } catch (Throwable t) {
++                    LOGGER.warn("NeoForge handleServerAboutToStart failed (Folia-first / FML incomplete): {}", (Object) t.toString());
++                    LOGGER.debug("NeoForge handleServerAboutToStart", t);
++                }
++                try {
++                    ServerLifecycleHooks.handleServerStarting(this); // NeoForge - fire ServerStartingEvent
++                } catch (Throwable t) {
++                    LOGGER.warn("NeoForge handleServerStarting failed (Folia-first / FML incomplete): {}", (Object) t.toString());
++                    LOGGER.debug("NeoForge handleServerStarting", t);
++                }
+                 String doneTime = String.format(java.util.Locale.ROOT, "%.3fs", (double) (Util.getNanos() - serverStartTime) / 1.0E9D);
+                 LOGGER.info("Done ({})! For help, type \"help\"", doneTime);
++                try {
++                    ServerLifecycleHooks.handleServerStarted(this); // NeoForge - fire ServerStartedEvent
++                } catch (Throwable t) {
++                    LOGGER.warn("NeoForge handleServerStarted failed (Folia-first / FML incomplete): {}", (Object) t.toString());
++                    LOGGER.debug("NeoForge handleServerStarted", t);
++                }
+                 for (;;) {
+-                ServerLifecycleHooks.handleServerStarting(this); // NeoForge - fire ServerStartingEvent
+                     try {
+                         Thread.sleep(Long.MAX_VALUE);
+-                ServerLifecycleHooks.handleServerStarted(this); // NeoForge - fire ServerStartedEvent
+                     } catch (final InterruptedException ex) {}
+                 }
+             }
+@@ -3036,6 +3068,11 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+         return this.resources.resourceManager;
+     }
+ 
++    // NeoForge LanguageHook / lifecycle expect this accessor (Mojang mapping name).
++    public MinecraftServer.ReloadableResources getServerResources() {
++        return this.resources;
++    }
++
+     public boolean isCurrentlySaving() {
+         return this.isSaving;
+     }
+diff --git a/src/main/java/net/minecraft/tags/BlockTags.java b/src/main/java/net/minecraft/tags/BlockTags.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..46fc8747aa29a43940717564c850655fc0a9b0a9
+--- /dev/null
++++ b/src/main/java/net/minecraft/tags/BlockTags.java
+@@ -0,0 +1,204 @@
++package net.minecraft.tags;
++
++import net.minecraft.core.registries.Registries;
++import net.minecraft.resources.ResourceLocation;
++import net.minecraft.world.level.block.Block;
++
++public final class BlockTags {
++    public static final TagKey<Block> WOOL = create("wool");
++    public static final TagKey<Block> PLANKS = create("planks");
++    public static final TagKey<Block> STONE_BRICKS = create("stone_bricks");
++    public static final TagKey<Block> WOODEN_BUTTONS = create("wooden_buttons");
++    public static final TagKey<Block> STONE_BUTTONS = create("stone_buttons");
++    public static final TagKey<Block> BUTTONS = create("buttons");
++    public static final TagKey<Block> WOOL_CARPETS = create("wool_carpets");
++    public static final TagKey<Block> WOODEN_DOORS = create("wooden_doors");
++    public static final TagKey<Block> MOB_INTERACTABLE_DOORS = create("mob_interactable_doors");
++    public static final TagKey<Block> WOODEN_STAIRS = create("wooden_stairs");
++    public static final TagKey<Block> WOODEN_SLABS = create("wooden_slabs");
++    public static final TagKey<Block> WOODEN_FENCES = create("wooden_fences");
++    public static final TagKey<Block> PRESSURE_PLATES = create("pressure_plates");
++    public static final TagKey<Block> WOODEN_PRESSURE_PLATES = create("wooden_pressure_plates");
++    public static final TagKey<Block> STONE_PRESSURE_PLATES = create("stone_pressure_plates");
++    public static final TagKey<Block> WOODEN_TRAPDOORS = create("wooden_trapdoors");
++    public static final TagKey<Block> DOORS = create("doors");
++    public static final TagKey<Block> SAPLINGS = create("saplings");
++    public static final TagKey<Block> LOGS_THAT_BURN = create("logs_that_burn");
++    public static final TagKey<Block> OVERWORLD_NATURAL_LOGS = create("overworld_natural_logs");
++    public static final TagKey<Block> LOGS = create("logs");
++    public static final TagKey<Block> DARK_OAK_LOGS = create("dark_oak_logs");
++    public static final TagKey<Block> OAK_LOGS = create("oak_logs");
++    public static final TagKey<Block> BIRCH_LOGS = create("birch_logs");
++    public static final TagKey<Block> ACACIA_LOGS = create("acacia_logs");
++    public static final TagKey<Block> CHERRY_LOGS = create("cherry_logs");
++    public static final TagKey<Block> JUNGLE_LOGS = create("jungle_logs");
++    public static final TagKey<Block> SPRUCE_LOGS = create("spruce_logs");
++    public static final TagKey<Block> MANGROVE_LOGS = create("mangrove_logs");
++    public static final TagKey<Block> CRIMSON_STEMS = create("crimson_stems");
++    public static final TagKey<Block> WARPED_STEMS = create("warped_stems");
++    public static final TagKey<Block> BAMBOO_BLOCKS = create("bamboo_blocks");
++    public static final TagKey<Block> WART_BLOCKS = create("wart_blocks");
++    public static final TagKey<Block> BANNERS = create("banners");
++    public static final TagKey<Block> SAND = create("sand");
++    public static final TagKey<Block> SMELTS_TO_GLASS = create("smelts_to_glass");
++    public static final TagKey<Block> STAIRS = create("stairs");
++    public static final TagKey<Block> SLABS = create("slabs");
++    public static final TagKey<Block> WALLS = create("walls");
++    public static final TagKey<Block> ANVIL = create("anvil");
++    public static final TagKey<Block> RAILS = create("rails");
++    public static final TagKey<Block> LEAVES = create("leaves");
++    public static final TagKey<Block> TRAPDOORS = create("trapdoors");
++    public static final TagKey<Block> SMALL_FLOWERS = create("small_flowers");
++    public static final TagKey<Block> BEDS = create("beds");
++    public static final TagKey<Block> FENCES = create("fences");
++    public static final TagKey<Block> TALL_FLOWERS = create("tall_flowers");
++    public static final TagKey<Block> FLOWERS = create("flowers");
++    public static final TagKey<Block> PIGLIN_REPELLENTS = create("piglin_repellents");
++    public static final TagKey<Block> GOLD_ORES = create("gold_ores");
++    public static final TagKey<Block> IRON_ORES = create("iron_ores");
++    public static final TagKey<Block> DIAMOND_ORES = create("diamond_ores");
++    public static final TagKey<Block> REDSTONE_ORES = create("redstone_ores");
++    public static final TagKey<Block> LAPIS_ORES = create("lapis_ores");
++    public static final TagKey<Block> COAL_ORES = create("coal_ores");
++    public static final TagKey<Block> EMERALD_ORES = create("emerald_ores");
++    public static final TagKey<Block> COPPER_ORES = create("copper_ores");
++    public static final TagKey<Block> CANDLES = create("candles");
++    public static final TagKey<Block> DIRT = create("dirt");
++    public static final TagKey<Block> TERRACOTTA = create("terracotta");
++    public static final TagKey<Block> BADLANDS_TERRACOTTA = create("badlands_terracotta");
++    public static final TagKey<Block> CONCRETE_POWDER = create("concrete_powder");
++    public static final TagKey<Block> COMPLETES_FIND_TREE_TUTORIAL = create("completes_find_tree_tutorial");
++    public static final TagKey<Block> FLOWER_POTS = create("flower_pots");
++    public static final TagKey<Block> ENDERMAN_HOLDABLE = create("enderman_holdable");
++    public static final TagKey<Block> ICE = create("ice");
++    public static final TagKey<Block> VALID_SPAWN = create("valid_spawn");
++    public static final TagKey<Block> IMPERMEABLE = create("impermeable");
++    public static final TagKey<Block> UNDERWATER_BONEMEALS = create("underwater_bonemeals");
++    public static final TagKey<Block> CORAL_BLOCKS = create("coral_blocks");
++    public static final TagKey<Block> WALL_CORALS = create("wall_corals");
++    public static final TagKey<Block> CORAL_PLANTS = create("coral_plants");
++    public static final TagKey<Block> CORALS = create("corals");
++    public static final TagKey<Block> BAMBOO_PLANTABLE_ON = create("bamboo_plantable_on");
++    public static final TagKey<Block> STANDING_SIGNS = create("standing_signs");
++    public static final TagKey<Block> WALL_SIGNS = create("wall_signs");
++    public static final TagKey<Block> SIGNS = create("signs");
++    public static final TagKey<Block> CEILING_HANGING_SIGNS = create("ceiling_hanging_signs");
++    public static final TagKey<Block> WALL_HANGING_SIGNS = create("wall_hanging_signs");
++    public static final TagKey<Block> ALL_HANGING_SIGNS = create("all_hanging_signs");
++    public static final TagKey<Block> ALL_SIGNS = create("all_signs");
++    public static final TagKey<Block> DRAGON_IMMUNE = create("dragon_immune");
++    public static final TagKey<Block> DRAGON_TRANSPARENT = create("dragon_transparent");
++    public static final TagKey<Block> WITHER_IMMUNE = create("wither_immune");
++    public static final TagKey<Block> WITHER_SUMMON_BASE_BLOCKS = create("wither_summon_base_blocks");
++    public static final TagKey<Block> BEEHIVES = create("beehives");
++    public static final TagKey<Block> CROPS = create("crops");
++    public static final TagKey<Block> BEE_GROWABLES = create("bee_growables");
++    public static final TagKey<Block> PORTALS = create("portals");
++    public static final TagKey<Block> FIRE = create("fire");
++    public static final TagKey<Block> NYLIUM = create("nylium");
++    public static final TagKey<Block> BEACON_BASE_BLOCKS = create("beacon_base_blocks");
++    public static final TagKey<Block> SOUL_SPEED_BLOCKS = create("soul_speed_blocks");
++    public static final TagKey<Block> WALL_POST_OVERRIDE = create("wall_post_override");
++    public static final TagKey<Block> CLIMBABLE = create("climbable");
++    public static final TagKey<Block> FALL_DAMAGE_RESETTING = create("fall_damage_resetting");
++    public static final TagKey<Block> SHULKER_BOXES = create("shulker_boxes");
++    public static final TagKey<Block> HOGLIN_REPELLENTS = create("hoglin_repellents");
++    public static final TagKey<Block> SOUL_FIRE_BASE_BLOCKS = create("soul_fire_base_blocks");
++    public static final TagKey<Block> STRIDER_WARM_BLOCKS = create("strider_warm_blocks");
++    public static final TagKey<Block> CAMPFIRES = create("campfires");
++    public static final TagKey<Block> GUARDED_BY_PIGLINS = create("guarded_by_piglins");
++    public static final TagKey<Block> PREVENT_MOB_SPAWNING_INSIDE = create("prevent_mob_spawning_inside");
++    public static final TagKey<Block> FENCE_GATES = create("fence_gates");
++    public static final TagKey<Block> UNSTABLE_BOTTOM_CENTER = create("unstable_bottom_center");
++    public static final TagKey<Block> MUSHROOM_GROW_BLOCK = create("mushroom_grow_block");
++    public static final TagKey<Block> INFINIBURN_OVERWORLD = create("infiniburn_overworld");
++    public static final TagKey<Block> INFINIBURN_NETHER = create("infiniburn_nether");
++    public static final TagKey<Block> INFINIBURN_END = create("infiniburn_end");
++    public static final TagKey<Block> BASE_STONE_OVERWORLD = create("base_stone_overworld");
++    public static final TagKey<Block> STONE_ORE_REPLACEABLES = create("stone_ore_replaceables");
++    public static final TagKey<Block> DEEPSLATE_ORE_REPLACEABLES = create("deepslate_ore_replaceables");
++    public static final TagKey<Block> BASE_STONE_NETHER = create("base_stone_nether");
++    public static final TagKey<Block> OVERWORLD_CARVER_REPLACEABLES = create("overworld_carver_replaceables");
++    public static final TagKey<Block> NETHER_CARVER_REPLACEABLES = create("nether_carver_replaceables");
++    public static final TagKey<Block> CANDLE_CAKES = create("candle_cakes");
++    public static final TagKey<Block> CAULDRONS = create("cauldrons");
++    public static final TagKey<Block> CRYSTAL_SOUND_BLOCKS = create("crystal_sound_blocks");
++    public static final TagKey<Block> INSIDE_STEP_SOUND_BLOCKS = create("inside_step_sound_blocks");
++    public static final TagKey<Block> COMBINATION_STEP_SOUND_BLOCKS = create("combination_step_sound_blocks");
++    public static final TagKey<Block> CAMEL_SAND_STEP_SOUND_BLOCKS = create("camel_sand_step_sound_blocks");
++    public static final TagKey<Block> OCCLUDES_VIBRATION_SIGNALS = create("occludes_vibration_signals");
++    public static final TagKey<Block> DAMPENS_VIBRATIONS = create("dampens_vibrations");
++    public static final TagKey<Block> DRIPSTONE_REPLACEABLE = create("dripstone_replaceable_blocks");
++    public static final TagKey<Block> CAVE_VINES = create("cave_vines");
++    public static final TagKey<Block> MOSS_REPLACEABLE = create("moss_replaceable");
++    public static final TagKey<Block> LUSH_GROUND_REPLACEABLE = create("lush_ground_replaceable");
++    public static final TagKey<Block> AZALEA_ROOT_REPLACEABLE = create("azalea_root_replaceable");
++    public static final TagKey<Block> SMALL_DRIPLEAF_PLACEABLE = create("small_dripleaf_placeable");
++    public static final TagKey<Block> BIG_DRIPLEAF_PLACEABLE = create("big_dripleaf_placeable");
++    public static final TagKey<Block> SNOW = create("snow");
++    public static final TagKey<Block> MINEABLE_WITH_AXE = create("mineable/axe");
++    public static final TagKey<Block> MINEABLE_WITH_HOE = create("mineable/hoe");
++    public static final TagKey<Block> MINEABLE_WITH_PICKAXE = create("mineable/pickaxe");
++    public static final TagKey<Block> MINEABLE_WITH_SHOVEL = create("mineable/shovel");
++    public static final TagKey<Block> SWORD_EFFICIENT = create("sword_efficient");
++    public static final TagKey<Block> NEEDS_DIAMOND_TOOL = create("needs_diamond_tool");
++    public static final TagKey<Block> NEEDS_IRON_TOOL = create("needs_iron_tool");
++    public static final TagKey<Block> NEEDS_STONE_TOOL = create("needs_stone_tool");
++    public static final TagKey<Block> INCORRECT_FOR_NETHERITE_TOOL = create("incorrect_for_netherite_tool");
++    public static final TagKey<Block> INCORRECT_FOR_DIAMOND_TOOL = create("incorrect_for_diamond_tool");
++    public static final TagKey<Block> INCORRECT_FOR_IRON_TOOL = create("incorrect_for_iron_tool");
++    public static final TagKey<Block> INCORRECT_FOR_STONE_TOOL = create("incorrect_for_stone_tool");
++    public static final TagKey<Block> INCORRECT_FOR_GOLD_TOOL = create("incorrect_for_gold_tool");
++    public static final TagKey<Block> INCORRECT_FOR_WOODEN_TOOL = create("incorrect_for_wooden_tool");
++    public static final TagKey<Block> FEATURES_CANNOT_REPLACE = create("features_cannot_replace");
++    public static final TagKey<Block> LAVA_POOL_STONE_CANNOT_REPLACE = create("lava_pool_stone_cannot_replace");
++    public static final TagKey<Block> GEODE_INVALID_BLOCKS = create("geode_invalid_blocks");
++    public static final TagKey<Block> FROG_PREFER_JUMP_TO = create("frog_prefer_jump_to");
++    public static final TagKey<Block> SCULK_REPLACEABLE = create("sculk_replaceable");
++    public static final TagKey<Block> SCULK_REPLACEABLE_WORLD_GEN = create("sculk_replaceable_world_gen");
++    public static final TagKey<Block> ANCIENT_CITY_REPLACEABLE = create("ancient_city_replaceable");
++    public static final TagKey<Block> VIBRATION_RESONATORS = create("vibration_resonators");
++    public static final TagKey<Block> ANIMALS_SPAWNABLE_ON = create("animals_spawnable_on");
++    public static final TagKey<Block> ARMADILLO_SPAWNABLE_ON = create("armadillo_spawnable_on");
++    public static final TagKey<Block> AXOLOTLS_SPAWNABLE_ON = create("axolotls_spawnable_on");
++    public static final TagKey<Block> GOATS_SPAWNABLE_ON = create("goats_spawnable_on");
++    public static final TagKey<Block> MOOSHROOMS_SPAWNABLE_ON = create("mooshrooms_spawnable_on");
++    public static final TagKey<Block> PARROTS_SPAWNABLE_ON = create("parrots_spawnable_on");
++    public static final TagKey<Block> POLAR_BEARS_SPAWNABLE_ON_ALTERNATE = create("polar_bears_spawnable_on_alternate");
++    public static final TagKey<Block> RABBITS_SPAWNABLE_ON = create("rabbits_spawnable_on");
++    public static final TagKey<Block> FOXES_SPAWNABLE_ON = create("foxes_spawnable_on");
++    public static final TagKey<Block> WOLVES_SPAWNABLE_ON = create("wolves_spawnable_on");
++    public static final TagKey<Block> FROGS_SPAWNABLE_ON = create("frogs_spawnable_on");
++    public static final TagKey<Block> AZALEA_GROWS_ON = create("azalea_grows_on");
++    public static final TagKey<Block> CONVERTABLE_TO_MUD = create("convertable_to_mud");
++    public static final TagKey<Block> MANGROVE_LOGS_CAN_GROW_THROUGH = create("mangrove_logs_can_grow_through");
++    public static final TagKey<Block> MANGROVE_ROOTS_CAN_GROW_THROUGH = create("mangrove_roots_can_grow_through");
++    public static final TagKey<Block> DEAD_BUSH_MAY_PLACE_ON = create("dead_bush_may_place_on");
++    public static final TagKey<Block> SNAPS_GOAT_HORN = create("snaps_goat_horn");
++    public static final TagKey<Block> REPLACEABLE_BY_TREES = create("replaceable_by_trees");
++    public static final TagKey<Block> SNOW_LAYER_CANNOT_SURVIVE_ON = create("snow_layer_cannot_survive_on");
++    public static final TagKey<Block> SNOW_LAYER_CAN_SURVIVE_ON = create("snow_layer_can_survive_on");
++    public static final TagKey<Block> INVALID_SPAWN_INSIDE = create("invalid_spawn_inside");
++    public static final TagKey<Block> SNIFFER_DIGGABLE_BLOCK = create("sniffer_diggable_block");
++    public static final TagKey<Block> SNIFFER_EGG_HATCH_BOOST = create("sniffer_egg_hatch_boost");
++    public static final TagKey<Block> TRAIL_RUINS_REPLACEABLE = create("trail_ruins_replaceable");
++    public static final TagKey<Block> REPLACEABLE = create("replaceable");
++    public static final TagKey<Block> ENCHANTMENT_POWER_PROVIDER = create("enchantment_power_provider");
++    public static final TagKey<Block> ENCHANTMENT_POWER_TRANSMITTER = create("enchantment_power_transmitter");
++    public static final TagKey<Block> MAINTAINS_FARMLAND = create("maintains_farmland");
++    public static final TagKey<Block> BLOCKS_WIND_CHARGE_EXPLOSIONS = create("blocks_wind_charge_explosions");
++    public static final TagKey<Block> DOES_NOT_BLOCK_HOPPERS = create("does_not_block_hoppers");
++    public static final TagKey<Block> AIR = create("air");
++
++    private BlockTags() {
++    }
++
++    private static TagKey<Block> create(String id) {
++        return TagKey.create(Registries.BLOCK, ResourceLocation.withDefaultNamespace(id));
++    }
++
++    // NeoForge: public create for mod/convention tags with custom namespaces
++    public static TagKey<Block> create(ResourceLocation name) {
++        return TagKey.create(Registries.BLOCK, name);
++    }
++}
+diff --git a/src/main/java/net/minecraft/tags/FluidTags.java b/src/main/java/net/minecraft/tags/FluidTags.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..981728e7de82769b2a22e1d0f5d5b5c38a4ebd56
+--- /dev/null
++++ b/src/main/java/net/minecraft/tags/FluidTags.java
+@@ -0,0 +1,22 @@
++package net.minecraft.tags;
++
++import net.minecraft.core.registries.Registries;
++import net.minecraft.resources.ResourceLocation;
++import net.minecraft.world.level.material.Fluid;
++
++public final class FluidTags {
++    public static final TagKey<Fluid> WATER = create("water");
++    public static final TagKey<Fluid> LAVA = create("lava");
++
++    private FluidTags() {
++    }
++
++    private static TagKey<Fluid> create(String id) {
++        return TagKey.create(Registries.FLUID, ResourceLocation.withDefaultNamespace(id));
++    }
++
++    // NeoForge: public create for mod/convention tags with custom namespaces
++    public static TagKey<Fluid> create(ResourceLocation name) {
++        return TagKey.create(Registries.FLUID, name);
++    }
++}
+diff --git a/src/main/java/net/minecraft/tags/ItemTags.java b/src/main/java/net/minecraft/tags/ItemTags.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..ec35b4bb4eeea708c612b24ae243f6b1468fd51d
+--- /dev/null
++++ b/src/main/java/net/minecraft/tags/ItemTags.java
+@@ -0,0 +1,167 @@
++package net.minecraft.tags;
++
++import net.minecraft.core.registries.Registries;
++import net.minecraft.resources.ResourceLocation;
++import net.minecraft.world.item.Item;
++
++public final class ItemTags {
++    public static final TagKey<Item> WOOL = bind("wool");
++    public static final TagKey<Item> PLANKS = bind("planks");
++    public static final TagKey<Item> STONE_BRICKS = bind("stone_bricks");
++    public static final TagKey<Item> WOODEN_BUTTONS = bind("wooden_buttons");
++    public static final TagKey<Item> STONE_BUTTONS = bind("stone_buttons");
++    public static final TagKey<Item> BUTTONS = bind("buttons");
++    public static final TagKey<Item> WOOL_CARPETS = bind("wool_carpets");
++    public static final TagKey<Item> WOODEN_DOORS = bind("wooden_doors");
++    public static final TagKey<Item> WOODEN_STAIRS = bind("wooden_stairs");
++    public static final TagKey<Item> WOODEN_SLABS = bind("wooden_slabs");
++    public static final TagKey<Item> WOODEN_FENCES = bind("wooden_fences");
++    public static final TagKey<Item> FENCE_GATES = bind("fence_gates");
++    public static final TagKey<Item> WOODEN_PRESSURE_PLATES = bind("wooden_pressure_plates");
++    public static final TagKey<Item> WOODEN_TRAPDOORS = bind("wooden_trapdoors");
++    public static final TagKey<Item> DOORS = bind("doors");
++    public static final TagKey<Item> SAPLINGS = bind("saplings");
++    public static final TagKey<Item> LOGS_THAT_BURN = bind("logs_that_burn");
++    public static final TagKey<Item> LOGS = bind("logs");
++    public static final TagKey<Item> DARK_OAK_LOGS = bind("dark_oak_logs");
++    public static final TagKey<Item> OAK_LOGS = bind("oak_logs");
++    public static final TagKey<Item> BIRCH_LOGS = bind("birch_logs");
++    public static final TagKey<Item> ACACIA_LOGS = bind("acacia_logs");
++    public static final TagKey<Item> CHERRY_LOGS = bind("cherry_logs");
++    public static final TagKey<Item> JUNGLE_LOGS = bind("jungle_logs");
++    public static final TagKey<Item> SPRUCE_LOGS = bind("spruce_logs");
++    public static final TagKey<Item> MANGROVE_LOGS = bind("mangrove_logs");
++    public static final TagKey<Item> CRIMSON_STEMS = bind("crimson_stems");
++    public static final TagKey<Item> WARPED_STEMS = bind("warped_stems");
++    public static final TagKey<Item> BAMBOO_BLOCKS = bind("bamboo_blocks");
++    public static final TagKey<Item> WART_BLOCKS = bind("wart_blocks");
++    public static final TagKey<Item> BANNERS = bind("banners");
++    public static final TagKey<Item> SAND = bind("sand");
++    public static final TagKey<Item> SMELTS_TO_GLASS = bind("smelts_to_glass");
++    public static final TagKey<Item> STAIRS = bind("stairs");
++    public static final TagKey<Item> SLABS = bind("slabs");
++    public static final TagKey<Item> WALLS = bind("walls");
++    public static final TagKey<Item> ANVIL = bind("anvil");
++    public static final TagKey<Item> RAILS = bind("rails");
++    public static final TagKey<Item> LEAVES = bind("leaves");
++    public static final TagKey<Item> TRAPDOORS = bind("trapdoors");
++    public static final TagKey<Item> SMALL_FLOWERS = bind("small_flowers");
++    public static final TagKey<Item> BEDS = bind("beds");
++    public static final TagKey<Item> FENCES = bind("fences");
++    public static final TagKey<Item> TALL_FLOWERS = bind("tall_flowers");
++    public static final TagKey<Item> FLOWERS = bind("flowers");
++    public static final TagKey<Item> PIGLIN_REPELLENTS = bind("piglin_repellents");
++    public static final TagKey<Item> PIGLIN_LOVED = bind("piglin_loved");
++    public static final TagKey<Item> IGNORED_BY_PIGLIN_BABIES = bind("ignored_by_piglin_babies");
++    public static final TagKey<Item> MEAT = bind("meat");
++    public static final TagKey<Item> SNIFFER_FOOD = bind("sniffer_food");
++    public static final TagKey<Item> PIGLIN_FOOD = bind("piglin_food");
++    public static final TagKey<Item> FOX_FOOD = bind("fox_food");
++    public static final TagKey<Item> COW_FOOD = bind("cow_food");
++    public static final TagKey<Item> GOAT_FOOD = bind("goat_food");
++    public static final TagKey<Item> SHEEP_FOOD = bind("sheep_food");
++    public static final TagKey<Item> WOLF_FOOD = bind("wolf_food");
++    public static final TagKey<Item> CAT_FOOD = bind("cat_food");
++    public static final TagKey<Item> HORSE_FOOD = bind("horse_food");
++    public static final TagKey<Item> HORSE_TEMPT_ITEMS = bind("horse_tempt_items");
++    public static final TagKey<Item> CAMEL_FOOD = bind("camel_food");
++    public static final TagKey<Item> ARMADILLO_FOOD = bind("armadillo_food");
++    public static final TagKey<Item> BEE_FOOD = bind("bee_food");
++    public static final TagKey<Item> CHICKEN_FOOD = bind("chicken_food");
++    public static final TagKey<Item> FROG_FOOD = bind("frog_food");
++    public static final TagKey<Item> HOGLIN_FOOD = bind("hoglin_food");
++    public static final TagKey<Item> LLAMA_FOOD = bind("llama_food");
++    public static final TagKey<Item> LLAMA_TEMPT_ITEMS = bind("llama_tempt_items");
++    public static final TagKey<Item> OCELOT_FOOD = bind("ocelot_food");
++    public static final TagKey<Item> PANDA_FOOD = bind("panda_food");
++    public static final TagKey<Item> PIG_FOOD = bind("pig_food");
++    public static final TagKey<Item> RABBIT_FOOD = bind("rabbit_food");
++    public static final TagKey<Item> STRIDER_FOOD = bind("strider_food");
++    public static final TagKey<Item> STRIDER_TEMPT_ITEMS = bind("strider_tempt_items");
++    public static final TagKey<Item> TURTLE_FOOD = bind("turtle_food");
++    public static final TagKey<Item> PARROT_FOOD = bind("parrot_food");
++    public static final TagKey<Item> PARROT_POISONOUS_FOOD = bind("parrot_poisonous_food");
++    public static final TagKey<Item> AXOLOTL_FOOD = bind("axolotl_food");
++    public static final TagKey<Item> GOLD_ORES = bind("gold_ores");
++    public static final TagKey<Item> IRON_ORES = bind("iron_ores");
++    public static final TagKey<Item> DIAMOND_ORES = bind("diamond_ores");
++    public static final TagKey<Item> REDSTONE_ORES = bind("redstone_ores");
++    public static final TagKey<Item> LAPIS_ORES = bind("lapis_ores");
++    public static final TagKey<Item> COAL_ORES = bind("coal_ores");
++    public static final TagKey<Item> EMERALD_ORES = bind("emerald_ores");
++    public static final TagKey<Item> COPPER_ORES = bind("copper_ores");
++    public static final TagKey<Item> NON_FLAMMABLE_WOOD = bind("non_flammable_wood");
++    public static final TagKey<Item> SOUL_FIRE_BASE_BLOCKS = bind("soul_fire_base_blocks");
++    public static final TagKey<Item> CANDLES = bind("candles");
++    public static final TagKey<Item> DIRT = bind("dirt");
++    public static final TagKey<Item> TERRACOTTA = bind("terracotta");
++    public static final TagKey<Item> COMPLETES_FIND_TREE_TUTORIAL = bind("completes_find_tree_tutorial");
++    public static final TagKey<Item> BOATS = bind("boats");
++    public static final TagKey<Item> CHEST_BOATS = bind("chest_boats");
++    public static final TagKey<Item> FISHES = bind("fishes");
++    public static final TagKey<Item> SIGNS = bind("signs");
++    public static final TagKey<Item> CREEPER_DROP_MUSIC_DISCS = bind("creeper_drop_music_discs");
++    public static final TagKey<Item> COALS = bind("coals");
++    public static final TagKey<Item> ARROWS = bind("arrows");
++    public static final TagKey<Item> LECTERN_BOOKS = bind("lectern_books");
++    public static final TagKey<Item> BOOKSHELF_BOOKS = bind("bookshelf_books");
++    public static final TagKey<Item> BEACON_PAYMENT_ITEMS = bind("beacon_payment_items");
++    public static final TagKey<Item> STONE_TOOL_MATERIALS = bind("stone_tool_materials");
++    public static final TagKey<Item> STONE_CRAFTING_MATERIALS = bind("stone_crafting_materials");
++    public static final TagKey<Item> FREEZE_IMMUNE_WEARABLES = bind("freeze_immune_wearables");
++    public static final TagKey<Item> DAMPENS_VIBRATIONS = bind("dampens_vibrations");
++    public static final TagKey<Item> CLUSTER_MAX_HARVESTABLES = bind("cluster_max_harvestables");
++    public static final TagKey<Item> COMPASSES = bind("compasses");
++    public static final TagKey<Item> HANGING_SIGNS = bind("hanging_signs");
++    public static final TagKey<Item> CREEPER_IGNITERS = bind("creeper_igniters");
++    public static final TagKey<Item> NOTE_BLOCK_TOP_INSTRUMENTS = bind("noteblock_top_instruments");
++    public static final TagKey<Item> FOOT_ARMOR = bind("foot_armor");
++    public static final TagKey<Item> LEG_ARMOR = bind("leg_armor");
++    public static final TagKey<Item> CHEST_ARMOR = bind("chest_armor");
++    public static final TagKey<Item> HEAD_ARMOR = bind("head_armor");
++    public static final TagKey<Item> SKULLS = bind("skulls");
++    public static final TagKey<Item> TRIMMABLE_ARMOR = bind("trimmable_armor");
++    public static final TagKey<Item> TRIM_MATERIALS = bind("trim_materials");
++    public static final TagKey<Item> TRIM_TEMPLATES = bind("trim_templates");
++    public static final TagKey<Item> DECORATED_POT_SHERDS = bind("decorated_pot_sherds");
++    public static final TagKey<Item> DECORATED_POT_INGREDIENTS = bind("decorated_pot_ingredients");
++    public static final TagKey<Item> SWORDS = bind("swords");
++    public static final TagKey<Item> AXES = bind("axes");
++    public static final TagKey<Item> HOES = bind("hoes");
++    public static final TagKey<Item> PICKAXES = bind("pickaxes");
++    public static final TagKey<Item> SHOVELS = bind("shovels");
++    public static final TagKey<Item> BREAKS_DECORATED_POTS = bind("breaks_decorated_pots");
++    public static final TagKey<Item> VILLAGER_PLANTABLE_SEEDS = bind("villager_plantable_seeds");
++    public static final TagKey<Item> DYEABLE = bind("dyeable");
++    public static final TagKey<Item> FOOT_ARMOR_ENCHANTABLE = bind("enchantable/foot_armor");
++    public static final TagKey<Item> LEG_ARMOR_ENCHANTABLE = bind("enchantable/leg_armor");
++    public static final TagKey<Item> CHEST_ARMOR_ENCHANTABLE = bind("enchantable/chest_armor");
++    public static final TagKey<Item> HEAD_ARMOR_ENCHANTABLE = bind("enchantable/head_armor");
++    public static final TagKey<Item> ARMOR_ENCHANTABLE = bind("enchantable/armor");
++    public static final TagKey<Item> SWORD_ENCHANTABLE = bind("enchantable/sword");
++    public static final TagKey<Item> FIRE_ASPECT_ENCHANTABLE = bind("enchantable/fire_aspect");
++    public static final TagKey<Item> SHARP_WEAPON_ENCHANTABLE = bind("enchantable/sharp_weapon");
++    public static final TagKey<Item> WEAPON_ENCHANTABLE = bind("enchantable/weapon");
++    public static final TagKey<Item> MINING_ENCHANTABLE = bind("enchantable/mining");
++    public static final TagKey<Item> MINING_LOOT_ENCHANTABLE = bind("enchantable/mining_loot");
++    public static final TagKey<Item> FISHING_ENCHANTABLE = bind("enchantable/fishing");
++    public static final TagKey<Item> TRIDENT_ENCHANTABLE = bind("enchantable/trident");
++    public static final TagKey<Item> DURABILITY_ENCHANTABLE = bind("enchantable/durability");
++    public static final TagKey<Item> BOW_ENCHANTABLE = bind("enchantable/bow");
++    public static final TagKey<Item> EQUIPPABLE_ENCHANTABLE = bind("enchantable/equippable");
++    public static final TagKey<Item> CROSSBOW_ENCHANTABLE = bind("enchantable/crossbow");
++    public static final TagKey<Item> VANISHING_ENCHANTABLE = bind("enchantable/vanishing");
++    public static final TagKey<Item> MACE_ENCHANTABLE = bind("enchantable/mace");
++
++    private ItemTags() {
++    }
++
++    private static TagKey<Item> bind(String id) {
++        return TagKey.create(Registries.ITEM, ResourceLocation.withDefaultNamespace(id));
++    }
++
++    // NeoForge: public create for mod/convention tags with custom namespaces
++    public static TagKey<Item> create(final ResourceLocation name) {
++        return TagKey.create(Registries.ITEM, name);
++    }
++}
+diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
+index 2ccc358daae43dcebf03db64526f17fbd9df23f8..9d53444cedacfc0c76344437dfc04e024088657b 100644
+--- a/src/main/java/net/minecraft/world/entity/Entity.java
++++ b/src/main/java/net/minecraft/world/entity/Entity.java
+@@ -167,7 +167,7 @@ import org.bukkit.event.player.PlayerTeleportEvent;
+ import org.bukkit.plugin.PluginManager;
+ // CraftBukkit end
+ 
+-public abstract class Entity implements SyncedDataHolder, Nameable, EntityAccess, CommandSource, ScoreHolder, ca.spottedleaf.moonrise.patches.chunk_system.entity.ChunkSystemEntity, ca.spottedleaf.moonrise.patches.entity_tracker.EntityTrackerEntity { // Paper - rewrite chunk system // Paper - optimise entity tracker
++public abstract class Entity extends net.neoforged.neoforge.attachment.AttachmentHolder implements SyncedDataHolder, Nameable, EntityAccess, CommandSource, ScoreHolder, ca.spottedleaf.moonrise.patches.chunk_system.entity.ChunkSystemEntity, ca.spottedleaf.moonrise.patches.entity_tracker.EntityTrackerEntity { // Paper - rewrite chunk system // Paper - optimise entity tracker // NeoForge - AttachmentHolder
+ 
+     // CraftBukkit start
+     private static final int CURRENT_LEVEL = 2;
+diff --git a/src/main/java/net/minecraft/world/entity/LivingEntity.java b/src/main/java/net/minecraft/world/entity/LivingEntity.java
+index 72b96e8733a0302ecaf38d25eda2660a39c9fe1f..6f1ab20d08e06d9cb4d71513d13ec4006827d9fb 100644
+--- a/src/main/java/net/minecraft/world/entity/LivingEntity.java
++++ b/src/main/java/net/minecraft/world/entity/LivingEntity.java
+@@ -2141,10 +2141,15 @@ public abstract class LivingEntity extends Entity implements Attackable {
+ 
+     @Override
+     public boolean causeFallDamage(float fallDistance, float damageMultiplier, DamageSource damageSource) {
+-        boolean flag = super.causeFallDamage(fallDistance, damageMultiplier, damageSource);
+         // NeoForge start - fire LivingFallEvent
+-        CommonHooks.onLivingFall(this, fallDistance, damageMultiplier, damageSource);
++        float[] fallEvent = CommonHooks.onLivingFall(this, fallDistance, damageMultiplier);
++        if (fallEvent == null) {
++            return false;
++        }
++        fallDistance = fallEvent[0];
++        damageMultiplier = fallEvent[1];
+         // NeoForge end
++        boolean flag = super.causeFallDamage(fallDistance, damageMultiplier, damageSource);
+         int i = this.calculateFallDamage(fallDistance, damageMultiplier);
+ 
+         if (i > 0) {
+diff --git a/src/main/java/net/minecraft/world/entity/item/ItemEntity.java b/src/main/java/net/minecraft/world/entity/item/ItemEntity.java
+index 820674e93c6fb32a84a9213af9f7e8eceb0f3baf..aa4402d29a92912ebd355e12b38f061c12672f40 100644
+--- a/src/main/java/net/minecraft/world/entity/item/ItemEntity.java
++++ b/src/main/java/net/minecraft/world/entity/item/ItemEntity.java
+@@ -469,8 +469,11 @@ public class ItemEntity extends Entity implements TraceableEntity {
+ 
+     @Override
+     public void playerTouch(net.minecraft.world.entity.player.Player player) {
+-        // NeoForge start - fire ItemEntityPickupEvent.Pre (cancelable)
+-        if (EventHooks.fireItemPickupPre(this, player)) return;
++        // NeoForge start - fire ItemEntityPickupEvent.Pre
++        var pickupResult = EventHooks.fireItemPickupPre(this, player).canPickup();
++        if (pickupResult.isFalse()) {
++            return;
++        }
+         // NeoForge end
+         if (!this.level().isClientSide) {
+             ItemStack itemstack = this.getItem();
+diff --git a/src/main/java/net/minecraft/world/item/DyeColor.java b/src/main/java/net/minecraft/world/item/DyeColor.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..01bcaa0ec801d04b0dfe303730afb2a949e3cf4b
+--- /dev/null
++++ b/src/main/java/net/minecraft/world/item/DyeColor.java
+@@ -0,0 +1,139 @@
++package net.minecraft.world.item;
++
++import io.netty.buffer.ByteBuf;
++import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
++import java.util.Arrays;
++import java.util.function.IntFunction;
++import java.util.stream.Collectors;
++import javax.annotation.Nullable;
++import net.minecraft.network.codec.ByteBufCodecs;
++import net.minecraft.network.codec.StreamCodec;
++import net.minecraft.resources.ResourceLocation;
++import net.minecraft.tags.ItemTags;
++import net.minecraft.tags.TagKey;
++import net.minecraft.util.ByIdMap;
++import net.minecraft.util.FastColor;
++import net.minecraft.util.StringRepresentable;
++import net.minecraft.world.item.Item;
++import net.minecraft.world.item.ItemStack;
++import net.minecraft.world.level.material.MapColor;
++import org.jetbrains.annotations.Contract;
++
++public enum DyeColor implements StringRepresentable {
++    WHITE(0, "white", 16383998, MapColor.SNOW, 15790320, 16777215),
++    ORANGE(1, "orange", 16351261, MapColor.COLOR_ORANGE, 15435844, 16738335),
++    MAGENTA(2, "magenta", 13061821, MapColor.COLOR_MAGENTA, 12801229, 16711935),
++    LIGHT_BLUE(3, "light_blue", 3847130, MapColor.COLOR_LIGHT_BLUE, 6719955, 10141901),
++    YELLOW(4, "yellow", 16701501, MapColor.COLOR_YELLOW, 14602026, 16776960),
++    LIME(5, "lime", 8439583, MapColor.COLOR_LIGHT_GREEN, 4312372, 12582656),
++    PINK(6, "pink", 15961002, MapColor.COLOR_PINK, 14188952, 16738740),
++    GRAY(7, "gray", 4673362, MapColor.COLOR_GRAY, 4408131, 8421504),
++    LIGHT_GRAY(8, "light_gray", 10329495, MapColor.COLOR_LIGHT_GRAY, 11250603, 13882323),
++    CYAN(9, "cyan", 1481884, MapColor.COLOR_CYAN, 2651799, 65535),
++    PURPLE(10, "purple", 8991416, MapColor.COLOR_PURPLE, 8073150, 10494192),
++    BLUE(11, "blue", 3949738, MapColor.COLOR_BLUE, 2437522, 255),
++    BROWN(12, "brown", 8606770, MapColor.COLOR_BROWN, 5320730, 9127187),
++    GREEN(13, "green", 6192150, MapColor.COLOR_GREEN, 3887386, 65280),
++    RED(14, "red", 11546150, MapColor.COLOR_RED, 11743532, 16711680),
++    BLACK(15, "black", 1908001, MapColor.COLOR_BLACK, 1973019, 0);
++
++    private static final IntFunction<DyeColor> BY_ID = ByIdMap.continuous(DyeColor::getId, values(), ByIdMap.OutOfBoundsStrategy.ZERO);
++    private static final Int2ObjectOpenHashMap<DyeColor> BY_FIREWORK_COLOR = new Int2ObjectOpenHashMap<>(
++        Arrays.stream(values()).collect(Collectors.toMap(color -> color.fireworkColor, color -> (DyeColor)color))
++    );
++    public static final StringRepresentable.EnumCodec<DyeColor> CODEC = StringRepresentable.fromEnum(DyeColor::values);
++    public static final StreamCodec<ByteBuf, DyeColor> STREAM_CODEC = ByteBufCodecs.idMapper(BY_ID, DyeColor::getId);
++    private final int id;
++    private final String name;
++    private final MapColor mapColor;
++    private final int textureDiffuseColor;
++    private final int fireworkColor;
++    // NeoForge: convention tags for dyes / dyed items
++    private final TagKey<Item> dyesTag;
++    private final TagKey<Item> dyedTag;
++    private final int textColor;
++
++    private DyeColor(final int id, final String name, final int entityColor, final MapColor mapColor, final int fireworkColor, final int signColor) {
++        this.id = id;
++        this.name = name;
++        this.mapColor = mapColor;
++        this.textColor = signColor;
++        this.dyesTag = ItemTags.create(ResourceLocation.fromNamespaceAndPath("c", "dyes/" + name));
++        this.dyedTag = ItemTags.create(ResourceLocation.fromNamespaceAndPath("c", "dyed/" + name));
++        this.textureDiffuseColor = FastColor.ARGB32.opaque(entityColor);
++        this.fireworkColor = fireworkColor;
++    }
++
++    public int getId() {
++        return this.id;
++    }
++
++    public String getName() {
++        return this.name;
++    }
++
++    public int getTextureDiffuseColor() {
++        return this.textureDiffuseColor;
++    }
++
++    public MapColor getMapColor() {
++        return this.mapColor;
++    }
++
++    public int getFireworkColor() {
++        return this.fireworkColor;
++    }
++
++    public int getTextColor() {
++        return this.textColor;
++    }
++
++    public static DyeColor byId(int id) {
++        return BY_ID.apply(id);
++    }
++
++    @Nullable
++    @Contract("_,!null->!null;_,null->_")
++    public static DyeColor byName(String name, @Nullable DyeColor defaultColor) {
++        DyeColor dyeColor = CODEC.byName(name);
++        return dyeColor != null ? dyeColor : defaultColor;
++    }
++
++    @Nullable
++    public static DyeColor byFireworkColor(int color) {
++        return BY_FIREWORK_COLOR.get(color);
++    }
++
++    @Override
++    public String toString() {
++        return this.name;
++    }
++
++    @Override
++    public String getSerializedName() {
++        return this.name;
++    }
++
++    // NeoForge
++    public TagKey<Item> getTag() {
++        return this.dyesTag;
++    }
++
++    public TagKey<Item> getDyedTag() {
++        return this.dyedTag;
++    }
++
++    @Nullable
++    public static DyeColor getColor(ItemStack stack) {
++        if (stack.getItem() instanceof DyeItem dyeItem) {
++            return dyeItem.getDyeColor();
++        }
++        for (int x = 0; x < BLACK.getId(); x++) {
++            DyeColor color = byId(x);
++            if (stack.is(color.getTag())) {
++                return color;
++            }
++        }
++        return null;
++    }
++}
+diff --git a/src/main/java/net/minecraft/world/level/Explosion.java b/src/main/java/net/minecraft/world/level/Explosion.java
+index d2dfbcd5aa578e492b57588e77a95deb6a5e0e32..074b24413c80c3f5f1584e5f4fb35e05990b2014 100644
+--- a/src/main/java/net/minecraft/world/level/Explosion.java
++++ b/src/main/java/net/minecraft/world/level/Explosion.java
+@@ -534,9 +534,8 @@ public class Explosion {
+         final BlockPos.MutableBlockPos blockPos = new BlockPos.MutableBlockPos();
+         // Paper end - optimise collisions
+ 
+-        // NeoForge start - fire ExplosionEvent.Detonate
+-        EventHooks.onExplosionDetonate(
+-            this.level, this, list, new java.util.ArrayList<>(this.toBlow));
++        // NeoForge start - fire ExplosionEvent.Detonate (radius diameter = radius * 2)
++        EventHooks.onExplosionDetonate(this.level, this, list, (double) f2);
+         // NeoForge end
+ 
+         while (iterator.hasNext()) {
+diff --git a/src/main/java/net/minecraft/world/level/Level.java b/src/main/java/net/minecraft/world/level/Level.java
+index 3e739362046d624dd46412f7c50a7220d26593cf..6d8f3410f84259ee1f5517af606cb3506a80f29f 100644
+--- a/src/main/java/net/minecraft/world/level/Level.java
++++ b/src/main/java/net/minecraft/world/level/Level.java
+@@ -103,7 +103,7 @@ import org.bukkit.entity.SpawnCategory;
+ import org.bukkit.event.block.BlockPhysicsEvent;
+ // CraftBukkit end
+ 
+-public abstract class Level implements LevelAccessor, AutoCloseable, ca.spottedleaf.moonrise.patches.chunk_system.level.ChunkSystemLevel, ca.spottedleaf.moonrise.patches.chunk_system.world.ChunkSystemEntityGetter, ca.spottedleaf.moonrise.patches.collisions.world.CollisionLevel { // Paper - rewrite chunk system // Paper - optimise collisions
++public abstract class Level extends net.neoforged.neoforge.attachment.AttachmentHolder implements LevelAccessor, AutoCloseable, ca.spottedleaf.moonrise.patches.chunk_system.level.ChunkSystemLevel, ca.spottedleaf.moonrise.patches.chunk_system.world.ChunkSystemEntityGetter, ca.spottedleaf.moonrise.patches.collisions.world.CollisionLevel { // Paper - rewrite chunk system // Paper - optimise collisions // NeoForge - AttachmentHolder
+ 
+     public static final Codec<ResourceKey<Level>> RESOURCE_KEY_CODEC = ResourceKey.codec(Registries.DIMENSION);
+     public static final ResourceKey<Level> OVERWORLD = ResourceKey.create(Registries.DIMENSION, ResourceLocation.withDefaultNamespace("overworld"));
+diff --git a/src/main/java/net/minecraft/world/level/biome/Biome.java b/src/main/java/net/minecraft/world/level/biome/Biome.java
+index 5b8b0d139132d5f7b588fd3936eaeb997f15ee82..435bdda38366e57f707366df8e09b3997b6e6600 100644
+--- a/src/main/java/net/minecraft/world/level/biome/Biome.java
++++ b/src/main/java/net/minecraft/world/level/biome/Biome.java
+@@ -34,8 +34,8 @@ import net.minecraft.world.level.material.Fluids;
+ public final class Biome {
+     public static final Codec<Biome> DIRECT_CODEC = RecordCodecBuilder.create(
+         instance -> instance.group(
+-                    Biome.ClimateSettings.CODEC.forGetter(biome -> biome.climateSettings),
+-                    BiomeSpecialEffects.CODEC.fieldOf("effects").forGetter(biome -> biome.specialEffects),
++                    Biome.ClimateSettings.CODEC.forGetter(Biome::getModifiedClimateSettings),
++                    BiomeSpecialEffects.CODEC.fieldOf("effects").forGetter(Biome::getModifiedSpecialEffects),
+                     BiomeGenerationSettings.CODEC.forGetter(biome -> biome.generationSettings),
+                     MobSpawnSettings.CODEC.forGetter(biome -> biome.mobSettings)
+                 )
+@@ -43,8 +43,8 @@ public final class Biome {
+     );
+     public static final Codec<Biome> NETWORK_CODEC = RecordCodecBuilder.create(
+         instance -> instance.group(
+-                    Biome.ClimateSettings.CODEC.forGetter(biome -> biome.climateSettings),
+-                    BiomeSpecialEffects.CODEC.fieldOf("effects").forGetter(biome -> biome.specialEffects)
++                    Biome.ClimateSettings.CODEC.forGetter(Biome::getModifiedClimateSettings),
++                    BiomeSpecialEffects.CODEC.fieldOf("effects").forGetter(Biome::getModifiedSpecialEffects)
+                 )
+                 .apply(instance, (weather, effects) -> new Biome(weather, effects, BiomeGenerationSettings.EMPTY, MobSpawnSettings.EMPTY))
+     );
+@@ -59,7 +59,8 @@ public final class Biome {
+     )
+     public static final PerlinSimplexNoise BIOME_INFO_NOISE = new PerlinSimplexNoise(new WorldgenRandom(new LegacyRandomSource(2345L)), ImmutableList.of(0));
+     private static final int TEMPERATURE_CACHE_SIZE = 1024;
+-    public final Biome.ClimateSettings climateSettings;
++    // NeoForge coremod ReplaceFieldWithGetterAccess requires this field to be private
++    private final Biome.ClimateSettings climateSettings;
+     private final BiomeGenerationSettings generationSettings;
+     private final MobSpawnSettings mobSettings;
+     private final BiomeSpecialEffects specialEffects;
+diff --git a/src/main/java/net/minecraft/world/level/block/entity/BlockEntity.java b/src/main/java/net/minecraft/world/level/block/entity/BlockEntity.java
+index b7c1c8e3701fc2d67df34aaf5cebdf78e340f155..df2482fccdb317c263a7096bf3b70972649aee5a 100644
+--- a/src/main/java/net/minecraft/world/level/block/entity/BlockEntity.java
++++ b/src/main/java/net/minecraft/world/level/block/entity/BlockEntity.java
+@@ -37,7 +37,7 @@ import org.spigotmc.CustomTimingsHandler; // Spigot
+ import co.aikar.timings.MinecraftTimings; // Paper
+ import co.aikar.timings.Timing; // Paper
+ 
+-public abstract class BlockEntity {
++public abstract class BlockEntity extends net.neoforged.neoforge.attachment.AttachmentHolder { // NeoForge - AttachmentHolder
+     static final ThreadLocal<Boolean> IGNORE_TILE_UPDATES = ThreadLocal.withInitial(() -> Boolean.FALSE); // Paper - Perf: Optimize Hoppers // Folia - region threading
+ 
+     public Timing tickTimer = MinecraftTimings.getTileEntityTimings(this); // Paper
+diff --git a/src/main/java/net/minecraft/world/level/levelgen/structure/Structure.java b/src/main/java/net/minecraft/world/level/levelgen/structure/Structure.java
+index 457e677dc3c7f80507d8a44957d3f6f3314718cb..47c5257491d8b86d9c53b83e02947157fbadf86f 100644
+--- a/src/main/java/net/minecraft/world/level/levelgen/structure/Structure.java
++++ b/src/main/java/net/minecraft/world/level/levelgen/structure/Structure.java
+@@ -42,10 +42,11 @@ import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemp
+ public abstract class Structure {
+     public static final Codec<Structure> DIRECT_CODEC = BuiltInRegistries.STRUCTURE_TYPE.byNameCodec().dispatch(Structure::type, StructureType::codec);
+     public static final Codec<Holder<Structure>> CODEC = RegistryFileCodec.create(Registries.STRUCTURE, DIRECT_CODEC);
+-    protected final Structure.StructureSettings settings;
++    // NeoForge coremod ReplaceFieldWithGetterAccess requires this field to be private
++    private final Structure.StructureSettings settings;
+ 
+     public static <S extends Structure> RecordCodecBuilder<S, Structure.StructureSettings> settingsCodec(Instance<S> instance) {
+-        return Structure.StructureSettings.CODEC.forGetter(feature -> feature.settings);
++        return Structure.StructureSettings.CODEC.forGetter(Structure::getModifiedStructureSettings);
+     }
+ 
+     public static <S extends Structure> MapCodec<S> simpleCodec(Function<Structure.StructureSettings, S> featureCreator) {
+diff --git a/src/main/java/org/bukkit/craftbukkit/CraftWorld.java b/src/main/java/org/bukkit/craftbukkit/CraftWorld.java
+index e6e83eb3974f0963916b36281b5e2ab647ae7cb8..0a7b7ae7649855d8cbd66eccc5b95d656c74ec16 100644
+--- a/src/main/java/org/bukkit/craftbukkit/CraftWorld.java
++++ b/src/main/java/org/bukkit/craftbukkit/CraftWorld.java
+@@ -1099,7 +1099,7 @@ public class CraftWorld extends CraftRegionAccessor implements World {
+ 
+     @Override
+     public double getHumidity(int x, int y, int z) {
+-        return this.world.getNoiseBiome(x >> 2, y >> 2, z >> 2).value().climateSettings.downfall();
++        return this.world.getNoiseBiome(x >> 2, y >> 2, z >> 2).value().getModifiedClimateSettings().downfall();
+     }
+ 
+     @Override

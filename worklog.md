@@ -19,6 +19,6 @@ Stage Summary:
 - patches/server/0038: Chunk System + Server Tick (ChunkHolder, ServerChunkCache, ServerLifecycleHooks)
 - patches/server/0039: Injected Interfaces (20+ vanilla classes get implements IXxxExtension)
 - patches/server/0040: Stat/Advancement/Permission/Remaining hooks (final batch)
-- 21 extension interface shims created under build-data/crelia-neoforge-shims/
+- 21 extension interface shims created under build-data/eturlia-neoforge-shims/
 - Total server patches: 40 (8 Folia + 32 NeoForge)
 - Estimated coverage: ~95%+ of all NeoForge event hooks documented in MISSING_PATCHES_ANALYSIS.md
