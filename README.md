@@ -32,7 +32,7 @@
 | **Артефакт** | `eturlia-1.21.1-neoforge-21.1.248.jar` |
 | **Launch target** | `eturliaserver` |
 | **Точка входа** | `eturlia.EturliaServer` |
-| **Релиз** | [v0.2.0](https://github.com/eturnercus/Core/releases/tag/v0.2.0) |
+| **Релиз** | [v0.1.0](https://github.com/eturnercus/Core/releases/tag/v0.1.0) |
 
 ## Как это работает
 
@@ -179,7 +179,7 @@ The goal is Folia’s multi-core scaling without giving up the NeoForge ecosyste
 | **Artifact** | `eturlia-1.21.1-neoforge-21.1.248.jar` |
 | **Launch target** | `eturliaserver` |
 | **Entry point** | `eturlia.EturliaServer` |
-| **Release** | [v0.2.0](https://github.com/eturnercus/Core/releases/tag/v0.2.0) |
+| **Release** | [v0.1.0](https://github.com/eturnercus/Core/releases/tag/v0.1.0) |
 
 ## How it works
 
