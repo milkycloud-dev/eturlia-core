@@ -181,6 +181,14 @@ public final class Main {
         command.add("-Dnet.kyori.adventure.text.warnWhenLegacyFormattingDetected=true");
         command.add("-Dio.papermc.paper.suppress.sout.nags=true");
         command.add("-Dpaper.maxChatCommandInputSize=32767");
+        // NeoForge %highlightForge paints INFO green by default — swap in Eturlia's calm palette
+        // unless the operator opts into full/off via -Deturlia.console.color=
+        Path calmLog4j = installEturliaLog4jConfig(outputDir);
+        if (calmLog4j != null) {
+            String uri = calmLog4j.toAbsolutePath().normalize().toUri().toString();
+            command.add("-Dlog4j2.configurationFile=" + uri);
+            command.add("-Dlog4j.configurationFile=" + uri);
+        }
         command.add("cpw.mods.bootstraplauncher.BootstrapLauncher");
         command.add("--launchTarget");
         command.add("eturliaserver");
@@ -321,6 +329,49 @@ public final class Main {
         } catch (UnsupportedOperationException | IOException e) {
             Files.copy(target, clientExtra, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
         }
+    }
+
+    /**
+     * Install Eturlia's Log4j2 config so the console is not flooded with green INFO lines.
+     *
+     * <p>NeoForge FML's {@code %highlightForge} uses Log4j's default palette ({@code INFO=green}).
+     * Default mode {@code calm} keeps WARN/ERROR colored and leaves INFO plain. Modes:</p>
+     * <ul>
+     *   <li>{@code calm} (default) — WARN yellow, ERROR red, INFO uncolored</li>
+     *   <li>{@code off}/{@code plain}/{@code none} — no level ANSI colors</li>
+     *   <li>{@code full} — stock NeoForge green INFO (no override)</li>
+     * </ul>
+     *
+     * @return config path to pass as {@code log4j2.configurationFile}, or {@code null} for stock FML
+     */
+    private static Path installEturliaLog4jConfig(Path outputDir) throws IOException {
+        String mode = System.getProperty("eturlia.console.color", "calm").trim().toLowerCase(Locale.ROOT);
+        if ("full".equals(mode) || "neoforge".equals(mode) || "default".equals(mode)) {
+            System.out.println("Eturlia console colors: full (stock NeoForge)");
+            return null;
+        }
+
+        String resource;
+        String destName;
+        if ("off".equals(mode) || "none".equals(mode) || "plain".equals(mode)) {
+            resource = "/eturlia/log4j2-eturlia-plain.xml";
+            destName = "log4j2-eturlia-plain.xml";
+            System.out.println("Eturlia console colors: plain (no level ANSI)");
+        } else {
+            resource = "/eturlia/log4j2-eturlia.xml";
+            destName = "log4j2-eturlia.xml";
+            System.out.println("Eturlia console colors: calm (INFO plain, WARN/ERROR colored)");
+        }
+
+        Path dest = outputDir.resolve(destName);
+        try (InputStream in = Main.class.getResourceAsStream(resource)) {
+            if (in == null) {
+                System.out.println("Missing " + resource + " — keeping stock FML console colors");
+                return null;
+            }
+            Files.copy(in, dest, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        }
+        return dest;
     }
 
     /**
