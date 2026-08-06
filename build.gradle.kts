@@ -213,8 +213,8 @@ gradle.projectsEvaluated {
     val neoforgeCoremodsJar = coremods.tasks.named("jar", Jar::class.java)
     val fmlLoaderConfig = server.configurations.findByName("fmlLoader")
     val runtimeClasspath = server.configurations.named("runtimeClasspath")
-    // Do NOT exclude folia-api — CraftBukkit needs org.bukkit.* / Paper lifecycle APIs.
-    // Keep spark-* on the classpath too (Paper embeds spark; missing PaperClassLookup crashes boot).
+    // Fat classpath: keep EVERYTHING needed at runtime — including folia-api and spark-*.
+    // Do not filter paper/spark jars out; Paper embeds spark (PaperClassLookup) and Folia needs API.
     val excludeNamePrefixes = listOf<String>()
     val stagingDir = server.layout.buildDirectory.dir("crelia/standalone")
     val neoforgeVersion = providers.gradleProperty("neoforgeVersion").get()
