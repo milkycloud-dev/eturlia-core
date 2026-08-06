@@ -1,0 +1,1441 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 11:56:41 +0000
+Subject: [PATCH] NeoForge ModLauncher runtime hooks for ServerModLoader
+ completion
+
+Add ArgumentTypeInfos.registerByClass, Ingredient list codecs,
+SpawnPlacements/CreativeModeTab/BlockEntityType hooks, datapack
+registry sync (RegistryDataLoader/WorldLoader), biome/structure
+modifier accessors, ChunkGenerator.refreshFeaturesPerStep, and
+ServerLevel capability listener cleanup so ServerModLoader.load()
+and handleServerAboutToStart complete under Folia.
+
+diff --git a/src/main/java/net/minecraft/commands/synchronization/ArgumentTypeInfos.java b/src/main/java/net/minecraft/commands/synchronization/ArgumentTypeInfos.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..f96e0ce808bf532bed6e1644bc6911abbf983865
+--- /dev/null
++++ b/src/main/java/net/minecraft/commands/synchronization/ArgumentTypeInfos.java
+@@ -0,0 +1,179 @@
++package net.minecraft.commands.synchronization;
++
++import com.google.common.collect.Maps;
++import com.mojang.brigadier.arguments.ArgumentType;
++import com.mojang.brigadier.arguments.BoolArgumentType;
++import com.mojang.brigadier.arguments.DoubleArgumentType;
++import com.mojang.brigadier.arguments.FloatArgumentType;
++import com.mojang.brigadier.arguments.IntegerArgumentType;
++import com.mojang.brigadier.arguments.LongArgumentType;
++import com.mojang.brigadier.arguments.StringArgumentType;
++import java.util.Locale;
++import java.util.Map;
++import net.minecraft.commands.arguments.AngleArgument;
++import net.minecraft.commands.arguments.ColorArgument;
++import net.minecraft.commands.arguments.ComponentArgument;
++import net.minecraft.commands.arguments.CompoundTagArgument;
++import net.minecraft.commands.arguments.DimensionArgument;
++import net.minecraft.commands.arguments.EntityAnchorArgument;
++import net.minecraft.commands.arguments.EntityArgument;
++import net.minecraft.commands.arguments.GameModeArgument;
++import net.minecraft.commands.arguments.GameProfileArgument;
++import net.minecraft.commands.arguments.HeightmapTypeArgument;
++import net.minecraft.commands.arguments.MessageArgument;
++import net.minecraft.commands.arguments.NbtPathArgument;
++import net.minecraft.commands.arguments.NbtTagArgument;
++import net.minecraft.commands.arguments.ObjectiveArgument;
++import net.minecraft.commands.arguments.ObjectiveCriteriaArgument;
++import net.minecraft.commands.arguments.OperationArgument;
++import net.minecraft.commands.arguments.ParticleArgument;
++import net.minecraft.commands.arguments.RangeArgument;
++import net.minecraft.commands.arguments.ResourceArgument;
++import net.minecraft.commands.arguments.ResourceKeyArgument;
++import net.minecraft.commands.arguments.ResourceLocationArgument;
++import net.minecraft.commands.arguments.ResourceOrIdArgument;
++import net.minecraft.commands.arguments.ResourceOrTagArgument;
++import net.minecraft.commands.arguments.ResourceOrTagKeyArgument;
++import net.minecraft.commands.arguments.ScoreHolderArgument;
++import net.minecraft.commands.arguments.ScoreboardSlotArgument;
++import net.minecraft.commands.arguments.SlotArgument;
++import net.minecraft.commands.arguments.SlotsArgument;
++import net.minecraft.commands.arguments.StyleArgument;
++import net.minecraft.commands.arguments.TeamArgument;
++import net.minecraft.commands.arguments.TemplateMirrorArgument;
++import net.minecraft.commands.arguments.TemplateRotationArgument;
++import net.minecraft.commands.arguments.TimeArgument;
++import net.minecraft.commands.arguments.UuidArgument;
++import net.minecraft.commands.arguments.blocks.BlockPredicateArgument;
++import net.minecraft.commands.arguments.blocks.BlockStateArgument;
++import net.minecraft.commands.arguments.coordinates.BlockPosArgument;
++import net.minecraft.commands.arguments.coordinates.ColumnPosArgument;
++import net.minecraft.commands.arguments.coordinates.RotationArgument;
++import net.minecraft.commands.arguments.coordinates.SwizzleArgument;
++import net.minecraft.commands.arguments.coordinates.Vec2Argument;
++import net.minecraft.commands.arguments.coordinates.Vec3Argument;
++import net.minecraft.commands.arguments.item.FunctionArgument;
++import net.minecraft.commands.arguments.item.ItemArgument;
++import net.minecraft.commands.arguments.item.ItemPredicateArgument;
++import net.minecraft.commands.synchronization.brigadier.DoubleArgumentInfo;
++import net.minecraft.commands.synchronization.brigadier.FloatArgumentInfo;
++import net.minecraft.commands.synchronization.brigadier.IntegerArgumentInfo;
++import net.minecraft.commands.synchronization.brigadier.LongArgumentInfo;
++import net.minecraft.commands.synchronization.brigadier.StringArgumentSerializer;
++import net.minecraft.core.Registry;
++import net.minecraft.gametest.framework.TestClassNameArgument;
++import net.minecraft.gametest.framework.TestFunctionArgument;
++
++public class ArgumentTypeInfos {
++    private static final Map<Class<?>, ArgumentTypeInfo<?, ?>> BY_CLASS = Maps.newHashMap();
++
++    /**
++     * NeoForge: Use with DeferredRegister#register(String, Supplier) to populate BY_CLASS
++     * and register the argument type info for command sync.
++     */
++    public static synchronized <A extends ArgumentType<?>, T extends ArgumentTypeInfo.Template<A>, I extends ArgumentTypeInfo<A, T>> I registerByClass(
++        Class<A> infoClass, I argumentTypeInfo
++    ) {
++        BY_CLASS.put(infoClass, argumentTypeInfo);
++        return argumentTypeInfo;
++    }
++
++    private static <A extends ArgumentType<?>, T extends ArgumentTypeInfo.Template<A>> ArgumentTypeInfo<A, T> register(
++        Registry<ArgumentTypeInfo<?, ?>> registry, String id, Class<?> clazz, ArgumentTypeInfo<A, T> serializer
++    ) {
++        BY_CLASS.put(clazz, serializer);
++        return Registry.register(registry, id, serializer);
++    }
++
++    public static ArgumentTypeInfo<?, ?> bootstrap(Registry<ArgumentTypeInfo<?, ?>> registry) {
++        register(registry, "brigadier:bool", BoolArgumentType.class, SingletonArgumentInfo.contextFree(BoolArgumentType::bool));
++        register(registry, "brigadier:float", FloatArgumentType.class, new FloatArgumentInfo());
++        register(registry, "brigadier:double", DoubleArgumentType.class, new DoubleArgumentInfo());
++        register(registry, "brigadier:integer", IntegerArgumentType.class, new IntegerArgumentInfo());
++        register(registry, "brigadier:long", LongArgumentType.class, new LongArgumentInfo());
++        register(registry, "brigadier:string", StringArgumentType.class, new StringArgumentSerializer());
++        register(registry, "entity", EntityArgument.class, new EntityArgument.Info());
++        register(registry, "game_profile", GameProfileArgument.class, SingletonArgumentInfo.contextFree(GameProfileArgument::gameProfile));
++        register(registry, "block_pos", BlockPosArgument.class, SingletonArgumentInfo.contextFree(BlockPosArgument::blockPos));
++        register(registry, "column_pos", ColumnPosArgument.class, SingletonArgumentInfo.contextFree(ColumnPosArgument::columnPos));
++        register(registry, "vec3", Vec3Argument.class, SingletonArgumentInfo.contextFree(Vec3Argument::vec3));
++        register(registry, "vec2", Vec2Argument.class, SingletonArgumentInfo.contextFree(Vec2Argument::vec2));
++        register(registry, "block_state", BlockStateArgument.class, SingletonArgumentInfo.contextAware(BlockStateArgument::block));
++        register(registry, "block_predicate", BlockPredicateArgument.class, SingletonArgumentInfo.contextAware(BlockPredicateArgument::blockPredicate));
++        register(registry, "item_stack", ItemArgument.class, SingletonArgumentInfo.contextAware(ItemArgument::item));
++        register(registry, "item_predicate", ItemPredicateArgument.class, SingletonArgumentInfo.contextAware(ItemPredicateArgument::itemPredicate));
++        register(registry, "color", ColorArgument.class, SingletonArgumentInfo.contextFree(ColorArgument::color));
++        register(registry, "component", ComponentArgument.class, SingletonArgumentInfo.contextAware(ComponentArgument::textComponent));
++        register(registry, "style", StyleArgument.class, SingletonArgumentInfo.contextAware(StyleArgument::style));
++        register(registry, "message", MessageArgument.class, SingletonArgumentInfo.contextFree(MessageArgument::message));
++        register(registry, "nbt_compound_tag", CompoundTagArgument.class, SingletonArgumentInfo.contextFree(CompoundTagArgument::compoundTag));
++        register(registry, "nbt_tag", NbtTagArgument.class, SingletonArgumentInfo.contextFree(NbtTagArgument::nbtTag));
++        register(registry, "nbt_path", NbtPathArgument.class, SingletonArgumentInfo.contextFree(NbtPathArgument::nbtPath));
++        register(registry, "objective", ObjectiveArgument.class, SingletonArgumentInfo.contextFree(ObjectiveArgument::objective));
++        register(registry, "objective_criteria", ObjectiveCriteriaArgument.class, SingletonArgumentInfo.contextFree(ObjectiveCriteriaArgument::criteria));
++        register(registry, "operation", OperationArgument.class, SingletonArgumentInfo.contextFree(OperationArgument::operation));
++        register(registry, "particle", ParticleArgument.class, SingletonArgumentInfo.contextAware(ParticleArgument::particle));
++        register(registry, "angle", AngleArgument.class, SingletonArgumentInfo.contextFree(AngleArgument::angle));
++        register(registry, "rotation", RotationArgument.class, SingletonArgumentInfo.contextFree(RotationArgument::rotation));
++        register(registry, "scoreboard_slot", ScoreboardSlotArgument.class, SingletonArgumentInfo.contextFree(ScoreboardSlotArgument::displaySlot));
++        register(registry, "score_holder", ScoreHolderArgument.class, new ScoreHolderArgument.Info());
++        register(registry, "swizzle", SwizzleArgument.class, SingletonArgumentInfo.contextFree(SwizzleArgument::swizzle));
++        register(registry, "team", TeamArgument.class, SingletonArgumentInfo.contextFree(TeamArgument::team));
++        register(registry, "item_slot", SlotArgument.class, SingletonArgumentInfo.contextFree(SlotArgument::slot));
++        register(registry, "item_slots", SlotsArgument.class, SingletonArgumentInfo.contextFree(SlotsArgument::slots));
++        register(registry, "resource_location", ResourceLocationArgument.class, SingletonArgumentInfo.contextFree(ResourceLocationArgument::id));
++        register(registry, "function", FunctionArgument.class, SingletonArgumentInfo.contextFree(FunctionArgument::functions));
++        register(registry, "entity_anchor", EntityAnchorArgument.class, SingletonArgumentInfo.contextFree(EntityAnchorArgument::anchor));
++        register(registry, "int_range", RangeArgument.Ints.class, SingletonArgumentInfo.contextFree(RangeArgument::intRange));
++        register(registry, "float_range", RangeArgument.Floats.class, SingletonArgumentInfo.contextFree(RangeArgument::floatRange));
++        register(registry, "dimension", DimensionArgument.class, SingletonArgumentInfo.contextFree(DimensionArgument::dimension));
++        register(registry, "gamemode", GameModeArgument.class, SingletonArgumentInfo.contextFree(GameModeArgument::gameMode));
++        register(registry, "time", TimeArgument.class, new TimeArgument.Info());
++        register(registry, "resource_or_tag", fixClassType(ResourceOrTagArgument.class), new ResourceOrTagArgument.Info());
++        register(registry, "resource_or_tag_key", fixClassType(ResourceOrTagKeyArgument.class), new ResourceOrTagKeyArgument.Info());
++        register(registry, "resource", fixClassType(ResourceArgument.class), new ResourceArgument.Info());
++        register(registry, "resource_key", fixClassType(ResourceKeyArgument.class), new ResourceKeyArgument.Info());
++        register(registry, "template_mirror", TemplateMirrorArgument.class, SingletonArgumentInfo.contextFree(TemplateMirrorArgument::templateMirror));
++        register(registry, "template_rotation", TemplateRotationArgument.class, SingletonArgumentInfo.contextFree(TemplateRotationArgument::templateRotation));
++        register(registry, "heightmap", HeightmapTypeArgument.class, SingletonArgumentInfo.contextFree(HeightmapTypeArgument::heightmap));
++        register(registry, "loot_table", ResourceOrIdArgument.LootTableArgument.class, SingletonArgumentInfo.contextAware(ResourceOrIdArgument::lootTable));
++        register(
++            registry,
++            "loot_predicate",
++            ResourceOrIdArgument.LootPredicateArgument.class,
++            SingletonArgumentInfo.contextAware(ResourceOrIdArgument::lootPredicate)
++        );
++        register(
++            registry, "loot_modifier", ResourceOrIdArgument.LootModifierArgument.class, SingletonArgumentInfo.contextAware(ResourceOrIdArgument::lootModifier)
++        );
++        // NeoForge: register uuid before gametest args for stable network ids / vanilla client interop
++        var uuidInfo = register(registry, "uuid", UuidArgument.class, SingletonArgumentInfo.contextFree(UuidArgument::uuid));
++        if (true) { // NeoForge: always register gametest arguments
++            register(registry, "test_argument", TestFunctionArgument.class, SingletonArgumentInfo.contextFree(TestFunctionArgument::testFunctionArgument));
++            register(registry, "test_class", TestClassNameArgument.class, SingletonArgumentInfo.contextFree(TestClassNameArgument::testClassName));
++        }
++
++        return uuidInfo;
++    }
++
++    private static <T extends ArgumentType<?>> Class<T> fixClassType(Class<? super T> clazz) {
++        return (Class<T>)clazz;
++    }
++
++    public static boolean isClassRecognized(Class<?> clazz) {
++        return BY_CLASS.containsKey(clazz);
++    }
++
++    public static <A extends ArgumentType<?>> ArgumentTypeInfo<A, ?> byClass(A argumentType) {
++        ArgumentTypeInfo<?, ?> argumentTypeInfo = BY_CLASS.get(argumentType.getClass());
++        if (argumentTypeInfo == null) {
++            throw new IllegalArgumentException(String.format(Locale.ROOT, "Unrecognized argument type %s (%s)", argumentType, argumentType.getClass()));
++        } else {
++            return (ArgumentTypeInfo<A, ?>)argumentTypeInfo;
++        }
++    }
++
++    public static <A extends ArgumentType<?>> ArgumentTypeInfo.Template<A> unpack(A argumentType) {
++        return byClass(argumentType).unpack(argumentType);
++    }
++}
+diff --git a/src/main/java/net/minecraft/resources/RegistryDataLoader.java b/src/main/java/net/minecraft/resources/RegistryDataLoader.java
+index 3053243866c655829fe2e980446b4abf1da6d37c..f1a5ffcf9eef3db38bd17bc2d2cfa9d02c5755fc 100644
+--- a/src/main/java/net/minecraft/resources/RegistryDataLoader.java
++++ b/src/main/java/net/minecraft/resources/RegistryDataLoader.java
+@@ -100,7 +100,7 @@ public class RegistryDataLoader {
+     public static final List<RegistryDataLoader.RegistryData<?>> DIMENSION_REGISTRIES = List.of(
+         new RegistryDataLoader.RegistryData<>(Registries.LEVEL_STEM, LevelStem.CODEC)
+     );
+-    public static final List<RegistryDataLoader.RegistryData<?>> SYNCHRONIZED_REGISTRIES = List.of(
++    public static final List<RegistryDataLoader.RegistryData<?>> SYNCHRONIZED_REGISTRIES = net.neoforged.neoforge.registries.DataPackRegistriesHooks.grabNetworkableRegistries(List.of(
+         new RegistryDataLoader.RegistryData<>(Registries.BIOME, Biome.NETWORK_CODEC),
+         new RegistryDataLoader.RegistryData<>(Registries.CHAT_TYPE, ChatType.DIRECT_CODEC),
+         new RegistryDataLoader.RegistryData<>(Registries.TRIM_PATTERN, TrimPattern.DIRECT_CODEC),
+@@ -112,7 +112,7 @@ public class RegistryDataLoader {
+         new RegistryDataLoader.RegistryData<>(Registries.BANNER_PATTERN, BannerPattern.DIRECT_CODEC),
+         new RegistryDataLoader.RegistryData<>(Registries.ENCHANTMENT, Enchantment.DIRECT_CODEC),
+         new RegistryDataLoader.RegistryData<>(Registries.JUKEBOX_SONG, JukeboxSong.DIRECT_CODEC)
+-    );
++    )); // Neo: keep list so custom registries can be added later
+ 
+     public static RegistryAccess.Frozen load(ResourceManager resourceManager, RegistryAccess registryManager, List<RegistryDataLoader.RegistryData<?>> entries) {
+         return load((loader, infoGetter, conversions) -> loader.loadFromResources(resourceManager, infoGetter, conversions), registryManager, entries); // Paper - pass conversions
+@@ -297,13 +297,24 @@ public class RegistryDataLoader {
+         void apply(RegistryDataLoader.Loader<?> loader, RegistryOps.RegistryInfoLookup infoGetter, io.papermc.paper.registry.data.util.Conversions conversions); // Paper - pass conversions
+     }
+ 
+-    public static record RegistryData<T>(ResourceKey<? extends Registry<T>> key, Codec<T> elementCodec, boolean requiredNonEmpty) {
++    public static record RegistryData<T>(
++        ResourceKey<? extends Registry<T>> key,
++        Codec<T> elementCodec,
++        boolean requiredNonEmpty,
++        java.util.function.Consumer<net.neoforged.neoforge.registries.RegistryBuilder<T>> registryBuilderConsumer
++    ) {
++        public RegistryData(ResourceKey<? extends Registry<T>> resourceKey, Codec<T> codec, boolean requiredNonEmpty) {
++            this(resourceKey, codec, requiredNonEmpty, registryBuilder -> {});
++        }
++
+         RegistryData(ResourceKey<? extends Registry<T>> resourceKey, Codec<T> codec) {
+             this(resourceKey, codec, false);
+         }
+ 
+         RegistryDataLoader.Loader<T> create(Lifecycle lifecycle, Map<ResourceKey<?>, Exception> errors) {
+-            WritableRegistry<T> writableRegistry = new MappedRegistry<>(this.key, lifecycle);
++            net.neoforged.neoforge.registries.RegistryBuilder<T> registryBuilder = new net.neoforged.neoforge.registries.RegistryBuilder<>(this.key);
++            this.registryBuilderConsumer.accept(registryBuilder);
++            WritableRegistry<T> writableRegistry = (WritableRegistry<T>) registryBuilder.disableRegistrationCheck().create();
+             io.papermc.paper.registry.PaperRegistryAccess.instance().registerRegistry(this.key, writableRegistry); // Paper - initialize API registry
+             return new RegistryDataLoader.Loader<>(this, writableRegistry, errors);
+         }
+diff --git a/src/main/java/net/minecraft/server/WorldLoader.java b/src/main/java/net/minecraft/server/WorldLoader.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..786d83f332563f91048fb1ed2b123f34f6697ea8
+--- /dev/null
++++ b/src/main/java/net/minecraft/server/WorldLoader.java
+@@ -0,0 +1,126 @@
++package net.minecraft.server;
++
++import com.mojang.datafixers.util.Pair;
++import com.mojang.logging.LogUtils;
++import java.util.List;
++import java.util.concurrent.CompletableFuture;
++import java.util.concurrent.Executor;
++import net.minecraft.commands.Commands;
++import net.minecraft.core.LayeredRegistryAccess;
++import net.minecraft.core.RegistryAccess;
++import net.minecraft.resources.RegistryDataLoader;
++import net.minecraft.server.packs.PackResources;
++import net.minecraft.server.packs.PackType;
++import net.minecraft.server.packs.repository.PackRepository;
++import net.minecraft.server.packs.resources.CloseableResourceManager;
++import net.minecraft.server.packs.resources.MultiPackResourceManager;
++import net.minecraft.server.packs.resources.ResourceManager;
++import net.minecraft.world.level.WorldDataConfiguration;
++import org.slf4j.Logger;
++
++public class WorldLoader {
++    private static final Logger LOGGER = LogUtils.getLogger();
++
++    public static <D, R> CompletableFuture<R> load(
++        WorldLoader.InitConfig serverConfig,
++        WorldLoader.WorldDataSupplier<D> loadContextSupplier,
++        WorldLoader.ResultFactory<D, R> saveApplierFactory,
++        Executor prepareExecutor,
++        Executor applyExecutor
++    ) {
++        try {
++            Pair<WorldDataConfiguration, CloseableResourceManager> pair = serverConfig.packConfig.createResourceManager();
++            CloseableResourceManager closeableResourceManager = pair.getSecond();
++            LayeredRegistryAccess<RegistryLayer> layeredRegistryAccess = RegistryLayer.createRegistryAccess();
++            LayeredRegistryAccess<RegistryLayer> layeredRegistryAccess2 = loadAndReplaceLayer(
++                closeableResourceManager, layeredRegistryAccess, RegistryLayer.WORLDGEN, net.neoforged.neoforge.registries.DataPackRegistriesHooks.getDataPackRegistries()
++            );
++            RegistryAccess.Frozen frozen = layeredRegistryAccess2.getAccessForLoading(RegistryLayer.DIMENSIONS);
++            RegistryAccess.Frozen frozen2 = RegistryDataLoader.load(closeableResourceManager, frozen, RegistryDataLoader.DIMENSION_REGISTRIES);
++            WorldDataConfiguration worldDataConfiguration = pair.getFirst();
++            WorldLoader.DataLoadOutput<D> dataLoadOutput = loadContextSupplier.get(
++                new WorldLoader.DataLoadContext(closeableResourceManager, worldDataConfiguration, frozen, frozen2)
++            );
++            LayeredRegistryAccess<RegistryLayer> layeredRegistryAccess3 = layeredRegistryAccess2.replaceFrom(
++                RegistryLayer.DIMENSIONS, dataLoadOutput.finalDimensions
++            );
++            return ReloadableServerResources.loadResources(
++                    closeableResourceManager,
++                    layeredRegistryAccess3,
++                    worldDataConfiguration.enabledFeatures(),
++                    serverConfig.commandSelection(),
++                    serverConfig.functionCompilationLevel(),
++                    prepareExecutor,
++                    applyExecutor
++                )
++                .whenComplete((dataPackContents, throwable) -> {
++                    if (throwable != null) {
++                        closeableResourceManager.close();
++                    }
++                })
++                .thenApplyAsync(dataPackContents -> {
++                    dataPackContents.updateRegistryTags();
++                    return saveApplierFactory.create(closeableResourceManager, dataPackContents, layeredRegistryAccess3, dataLoadOutput.cookie);
++                }, applyExecutor);
++        } catch (Exception var14) {
++            return CompletableFuture.failedFuture(var14);
++        }
++    }
++
++    private static RegistryAccess.Frozen loadLayer(
++        ResourceManager resourceManager,
++        LayeredRegistryAccess<RegistryLayer> combinedDynamicRegistries,
++        RegistryLayer type,
++        List<RegistryDataLoader.RegistryData<?>> entries
++    ) {
++        RegistryAccess.Frozen frozen = combinedDynamicRegistries.getAccessForLoading(type);
++        return RegistryDataLoader.load(resourceManager, frozen, entries);
++    }
++
++    public static LayeredRegistryAccess<RegistryLayer> loadAndReplaceLayer(
++        ResourceManager resourceManager,
++        LayeredRegistryAccess<RegistryLayer> combinedDynamicRegistries,
++        RegistryLayer type,
++        List<RegistryDataLoader.RegistryData<?>> entries
++    ) {
++        RegistryAccess.Frozen frozen = loadLayer(resourceManager, combinedDynamicRegistries, type, entries);
++        return combinedDynamicRegistries.replaceFrom(type, frozen);
++    }
++
++    public static record DataLoadContext(
++        ResourceManager resources, WorldDataConfiguration dataConfiguration, RegistryAccess.Frozen datapackWorldgen, RegistryAccess.Frozen datapackDimensions
++    ) {
++    }
++
++    public static record DataLoadOutput<D>(D cookie, RegistryAccess.Frozen finalDimensions) {
++    }
++
++    public static record InitConfig(WorldLoader.PackConfig packConfig, Commands.CommandSelection commandSelection, int functionCompilationLevel) {
++    }
++
++    public static record PackConfig(PackRepository packRepository, WorldDataConfiguration initialDataConfig, boolean safeMode, boolean initMode) {
++        public Pair<WorldDataConfiguration, CloseableResourceManager> createResourceManager() {
++            WorldDataConfiguration worldDataConfiguration = MinecraftServer.configurePackRepository(
++                this.packRepository, this.initialDataConfig, this.initMode, this.safeMode
++            );
++            List<PackResources> list = this.packRepository.openAllSelected();
++            CloseableResourceManager closeableResourceManager = new MultiPackResourceManager(PackType.SERVER_DATA, list);
++            return Pair.of(worldDataConfiguration, closeableResourceManager);
++        }
++    }
++
++    @FunctionalInterface
++    public interface ResultFactory<D, R> {
++        R create(
++            CloseableResourceManager resourceManager,
++            ReloadableServerResources dataPackContents,
++            LayeredRegistryAccess<RegistryLayer> combinedDynamicRegistries,
++            D loadContext
++        );
++    }
++
++    @FunctionalInterface
++    public interface WorldDataSupplier<D> {
++        WorldLoader.DataLoadOutput<D> get(WorldLoader.DataLoadContext context);
++    }
++}
+diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
+index 46998045a6342750ad0c4bb9af9fa7e18e6eec84..b7283958d50d2d7a9007df0e1c69c652046084f1 100644
+--- a/src/main/java/net/minecraft/server/level/ServerLevel.java
++++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
+@@ -226,6 +226,9 @@ public class ServerLevel extends Level implements WorldGenLevel, ca.spottedleaf.
+     public final boolean tickTime; // Folia - region threading
+     private final RandomSequences randomSequences;
+ 
++    // NeoForge - capability invalidation listeners
++    private final net.neoforged.neoforge.capabilities.CapabilityListenerHolder capListenerHolder = new net.neoforged.neoforge.capabilities.CapabilityListenerHolder();
++
+     // CraftBukkit start
+     public final LevelStorageSource.LevelStorageAccess convertable;
+     public final UUID uuid;
+@@ -2884,4 +2887,22 @@ public class ServerLevel extends Level implements WorldGenLevel, ca.spottedleaf.
+         return this.server.getPlayerList().getPlayer(uuid);
+     }
+     // Paper end - check global player list where appropriate
++
++    // NeoForge - capability invalidation (ILevelExtension injected at runtime)
++    public void invalidateCapabilities(BlockPos pos) {
++        this.capListenerHolder.invalidatePos(pos);
++    }
++
++    public void invalidateCapabilities(ChunkPos pos) {
++        this.capListenerHolder.invalidateChunk(pos);
++    }
++
++    public void registerCapabilityListener(BlockPos pos, net.neoforged.neoforge.capabilities.ICapabilityInvalidationListener listener) {
++        this.capListenerHolder.addListener(pos, listener);
++    }
++
++    @org.jetbrains.annotations.ApiStatus.Internal
++    public void cleanCapabilityListenerReferences() {
++        this.capListenerHolder.clean();
++    }
+ }
+diff --git a/src/main/java/net/minecraft/world/entity/SpawnPlacements.java b/src/main/java/net/minecraft/world/entity/SpawnPlacements.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..b709f5f2e8758c117dfb7798f92d4ce3724d0db4
+--- /dev/null
++++ b/src/main/java/net/minecraft/world/entity/SpawnPlacements.java
+@@ -0,0 +1,193 @@
++package net.minecraft.world.entity;
++
++import com.google.common.collect.Maps;
++import java.util.Map;
++import javax.annotation.Nullable;
++import net.minecraft.core.BlockPos;
++import net.minecraft.core.registries.BuiltInRegistries;
++import net.minecraft.util.RandomSource;
++import net.minecraft.world.entity.ambient.Bat;
++import net.minecraft.world.entity.animal.Animal;
++import net.minecraft.world.entity.animal.Fox;
++import net.minecraft.world.entity.animal.MushroomCow;
++import net.minecraft.world.entity.animal.Ocelot;
++import net.minecraft.world.entity.animal.Parrot;
++import net.minecraft.world.entity.animal.PolarBear;
++import net.minecraft.world.entity.animal.Rabbit;
++import net.minecraft.world.entity.animal.TropicalFish;
++import net.minecraft.world.entity.animal.Turtle;
++import net.minecraft.world.entity.animal.WaterAnimal;
++import net.minecraft.world.entity.animal.Wolf;
++import net.minecraft.world.entity.animal.armadillo.Armadillo;
++import net.minecraft.world.entity.animal.axolotl.Axolotl;
++import net.minecraft.world.entity.animal.frog.Frog;
++import net.minecraft.world.entity.animal.goat.Goat;
++import net.minecraft.world.entity.animal.horse.SkeletonHorse;
++import net.minecraft.world.entity.animal.horse.ZombieHorse;
++import net.minecraft.world.entity.monster.Drowned;
++import net.minecraft.world.entity.monster.Endermite;
++import net.minecraft.world.entity.monster.Ghast;
++import net.minecraft.world.entity.monster.Guardian;
++import net.minecraft.world.entity.monster.Husk;
++import net.minecraft.world.entity.monster.MagmaCube;
++import net.minecraft.world.entity.monster.Monster;
++import net.minecraft.world.entity.monster.PatrollingMonster;
++import net.minecraft.world.entity.monster.Silverfish;
++import net.minecraft.world.entity.monster.Slime;
++import net.minecraft.world.entity.monster.Stray;
++import net.minecraft.world.entity.monster.Strider;
++import net.minecraft.world.entity.monster.ZombifiedPiglin;
++import net.minecraft.world.entity.monster.hoglin.Hoglin;
++import net.minecraft.world.entity.monster.piglin.Piglin;
++import net.minecraft.world.level.LevelReader;
++import net.minecraft.world.level.ServerLevelAccessor;
++import net.minecraft.world.level.levelgen.Heightmap;
++
++public class SpawnPlacements {
++    private static final Map<EntityType<?>, SpawnPlacements.Data> DATA_BY_TYPE = Maps.newHashMap();
++
++    /**
++     * @deprecated Neo: Modders should use {@link net.neoforged.neoforge.event.entity.RegisterSpawnPlacementsEvent} instead.
++     */
++    @Deprecated
++    private static <T extends Mob> void register(
++        EntityType<T> type, SpawnPlacementType location, Heightmap.Types heightmapType, SpawnPlacements.SpawnPredicate<T> predicate
++    ) {
++        SpawnPlacements.Data data = DATA_BY_TYPE.put(type, new SpawnPlacements.Data(heightmapType, location, predicate));
++        if (data != null) {
++            throw new IllegalStateException("Duplicate registration for type " + BuiltInRegistries.ENTITY_TYPE.getKey(type));
++        }
++    }
++
++    public static SpawnPlacementType getPlacementType(EntityType<?> type) {
++        SpawnPlacements.Data data = DATA_BY_TYPE.get(type);
++        return data == null ? SpawnPlacementTypes.NO_RESTRICTIONS : data.placement;
++    }
++
++    public static boolean isSpawnPositionOk(EntityType<?> type, LevelReader world, BlockPos pos) {
++        return getPlacementType(type).isSpawnPositionOk(world, pos, type);
++    }
++
++    public static Heightmap.Types getHeightmapType(@Nullable EntityType<?> type) {
++        SpawnPlacements.Data data = DATA_BY_TYPE.get(type);
++        return data == null ? Heightmap.Types.MOTION_BLOCKING_NO_LEAVES : data.heightMap;
++    }
++
++    public static <T extends Entity> boolean checkSpawnRules(
++        EntityType<T> type, ServerLevelAccessor world, MobSpawnType spawnReason, BlockPos pos, RandomSource random
++    ) {
++        SpawnPlacements.Data data = DATA_BY_TYPE.get(type);
++        boolean vanillaResult = data == null || data.predicate.test((EntityType) type, world, spawnReason, pos, random);
++        return net.neoforged.neoforge.event.EventHooks.checkSpawnPlacements(type, world, spawnReason, pos, random, vanillaResult);
++    }
++
++    // Neo: Added to allow for checking if an entity has a spawn placement
++    public static boolean hasPlacement(EntityType<?> type) {
++        return DATA_BY_TYPE.containsKey(type);
++    }
++
++    static {
++        register(EntityType.AXOLOTL, SpawnPlacementTypes.IN_WATER, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Axolotl::checkAxolotlSpawnRules);
++        register(EntityType.COD, SpawnPlacementTypes.IN_WATER, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, WaterAnimal::checkSurfaceWaterAnimalSpawnRules);
++        register(EntityType.DOLPHIN, SpawnPlacementTypes.IN_WATER, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, WaterAnimal::checkSurfaceWaterAnimalSpawnRules);
++        register(EntityType.DROWNED, SpawnPlacementTypes.IN_WATER, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Drowned::checkDrownedSpawnRules);
++        register(EntityType.GUARDIAN, SpawnPlacementTypes.IN_WATER, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Guardian::checkGuardianSpawnRules);
++        register(EntityType.PUFFERFISH, SpawnPlacementTypes.IN_WATER, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, WaterAnimal::checkSurfaceWaterAnimalSpawnRules);
++        register(EntityType.SALMON, SpawnPlacementTypes.IN_WATER, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, WaterAnimal::checkSurfaceWaterAnimalSpawnRules);
++        register(EntityType.SQUID, SpawnPlacementTypes.IN_WATER, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, WaterAnimal::checkSurfaceWaterAnimalSpawnRules);
++        register(EntityType.TROPICAL_FISH, SpawnPlacementTypes.IN_WATER, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, TropicalFish::checkTropicalFishSpawnRules);
++        register(EntityType.ARMADILLO, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Armadillo::checkArmadilloSpawnRules);
++        register(EntityType.BAT, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Bat::checkBatSpawnRules);
++        register(EntityType.BLAZE, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Monster::checkAnyLightMonsterSpawnRules);
++        register(EntityType.BOGGED, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Monster::checkMonsterSpawnRules);
++        register(EntityType.CAVE_SPIDER, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Monster::checkMonsterSpawnRules);
++        register(EntityType.CHICKEN, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Animal::checkAnimalSpawnRules);
++        register(EntityType.COW, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Animal::checkAnimalSpawnRules);
++        register(EntityType.CREEPER, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Monster::checkMonsterSpawnRules);
++        register(EntityType.DONKEY, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Animal::checkAnimalSpawnRules);
++        register(EntityType.ENDERMAN, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Monster::checkMonsterSpawnRules);
++        register(EntityType.ENDERMITE, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Endermite::checkEndermiteSpawnRules);
++        register(EntityType.ENDER_DRAGON, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Mob::checkMobSpawnRules);
++        register(EntityType.FROG, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Frog::checkFrogSpawnRules);
++        register(EntityType.GHAST, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Ghast::checkGhastSpawnRules);
++        register(EntityType.GIANT, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Monster::checkMonsterSpawnRules);
++        register(EntityType.GLOW_SQUID, SpawnPlacementTypes.IN_WATER, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, GlowSquid::checkGlowSquidSpawnRules);
++        register(EntityType.GOAT, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Goat::checkGoatSpawnRules);
++        register(EntityType.HORSE, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Animal::checkAnimalSpawnRules);
++        register(EntityType.HUSK, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Husk::checkHuskSpawnRules);
++        register(EntityType.IRON_GOLEM, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Mob::checkMobSpawnRules);
++        register(EntityType.LLAMA, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Animal::checkAnimalSpawnRules);
++        register(EntityType.MAGMA_CUBE, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, MagmaCube::checkMagmaCubeSpawnRules);
++        register(EntityType.MOOSHROOM, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, MushroomCow::checkMushroomSpawnRules);
++        register(EntityType.MULE, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Animal::checkAnimalSpawnRules);
++        register(EntityType.OCELOT, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING, Ocelot::checkOcelotSpawnRules);
++        register(EntityType.PARROT, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING, Parrot::checkParrotSpawnRules);
++        register(EntityType.PIG, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Animal::checkAnimalSpawnRules);
++        register(EntityType.HOGLIN, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Hoglin::checkHoglinSpawnRules);
++        register(EntityType.PIGLIN, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Piglin::checkPiglinSpawnRules);
++        register(
++            EntityType.PILLAGER, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, PatrollingMonster::checkPatrollingMonsterSpawnRules
++        );
++        register(EntityType.POLAR_BEAR, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, PolarBear::checkPolarBearSpawnRules);
++        register(EntityType.RABBIT, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Rabbit::checkRabbitSpawnRules);
++        register(EntityType.SHEEP, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Animal::checkAnimalSpawnRules);
++        register(EntityType.SILVERFISH, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Silverfish::checkSilverfishSpawnRules);
++        register(EntityType.SKELETON, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Monster::checkMonsterSpawnRules);
++        register(
++            EntityType.SKELETON_HORSE, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, SkeletonHorse::checkSkeletonHorseSpawnRules
++        );
++        register(EntityType.SLIME, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Slime::checkSlimeSpawnRules);
++        register(EntityType.SNOW_GOLEM, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Mob::checkMobSpawnRules);
++        register(EntityType.SPIDER, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Monster::checkMonsterSpawnRules);
++        register(EntityType.STRAY, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Stray::checkStraySpawnRules);
++        register(EntityType.STRIDER, SpawnPlacementTypes.IN_LAVA, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Strider::checkStriderSpawnRules);
++        register(EntityType.TURTLE, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Turtle::checkTurtleSpawnRules);
++        register(EntityType.VILLAGER, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Mob::checkMobSpawnRules);
++        register(EntityType.WITCH, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Monster::checkMonsterSpawnRules);
++        register(EntityType.WITHER, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Monster::checkMonsterSpawnRules);
++        register(EntityType.WITHER_SKELETON, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Monster::checkMonsterSpawnRules);
++        register(EntityType.WOLF, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Wolf::checkWolfSpawnRules);
++        register(EntityType.ZOMBIE, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Monster::checkMonsterSpawnRules);
++        register(EntityType.ZOMBIE_HORSE, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, ZombieHorse::checkZombieHorseSpawnRules);
++        register(
++            EntityType.ZOMBIFIED_PIGLIN,
++            SpawnPlacementTypes.ON_GROUND,
++            Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
++            ZombifiedPiglin::checkZombifiedPiglinSpawnRules
++        );
++        register(EntityType.ZOMBIE_VILLAGER, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Monster::checkMonsterSpawnRules);
++        register(EntityType.CAT, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Animal::checkAnimalSpawnRules);
++        register(EntityType.ELDER_GUARDIAN, SpawnPlacementTypes.IN_WATER, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Guardian::checkGuardianSpawnRules);
++        register(EntityType.EVOKER, SpawnPlacementTypes.NO_RESTRICTIONS, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Monster::checkMonsterSpawnRules);
++        register(EntityType.FOX, SpawnPlacementTypes.NO_RESTRICTIONS, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Fox::checkFoxSpawnRules);
++        register(EntityType.ILLUSIONER, SpawnPlacementTypes.NO_RESTRICTIONS, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Monster::checkMonsterSpawnRules);
++        register(EntityType.PANDA, SpawnPlacementTypes.NO_RESTRICTIONS, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Animal::checkAnimalSpawnRules);
++        register(EntityType.PHANTOM, SpawnPlacementTypes.NO_RESTRICTIONS, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Mob::checkMobSpawnRules);
++        register(EntityType.RAVAGER, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Monster::checkMonsterSpawnRules);
++        register(EntityType.SHULKER, SpawnPlacementTypes.NO_RESTRICTIONS, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Mob::checkMobSpawnRules);
++        register(EntityType.TRADER_LLAMA, SpawnPlacementTypes.NO_RESTRICTIONS, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Animal::checkAnimalSpawnRules);
++        register(EntityType.VEX, SpawnPlacementTypes.NO_RESTRICTIONS, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Monster::checkMonsterSpawnRules);
++        register(EntityType.VINDICATOR, SpawnPlacementTypes.NO_RESTRICTIONS, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Monster::checkMonsterSpawnRules);
++        register(EntityType.WANDERING_TRADER, SpawnPlacementTypes.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Mob::checkMobSpawnRules);
++        register(EntityType.WARDEN, SpawnPlacementTypes.NO_RESTRICTIONS, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, Mob::checkMobSpawnRules);
++    }
++
++    static record Data(Heightmap.Types heightMap, SpawnPlacementType placement, SpawnPlacements.SpawnPredicate<?> predicate) {
++    }
++
++    @FunctionalInterface
++    public interface SpawnPredicate<T extends Entity> {
++        boolean test(EntityType<T> type, ServerLevelAccessor world, MobSpawnType spawnReason, BlockPos pos, RandomSource random);
++    }
++
++    /**
++     * Neo: Purely for Neo usage to fire off the spawn registering events.
++     */
++    @org.jetbrains.annotations.ApiStatus.Internal
++    public static void fireSpawnPlacementEvent() {
++        Map<EntityType<?>, net.neoforged.neoforge.event.entity.RegisterSpawnPlacementsEvent.MergedSpawnPredicate<?>> map = Maps.newHashMap();
++        DATA_BY_TYPE.forEach((type, data) -> map.put(type, new net.neoforged.neoforge.event.entity.RegisterSpawnPlacementsEvent.MergedSpawnPredicate<>(data.predicate, data.placement, data.heightMap)));
++        net.neoforged.fml.ModLoader.postEvent(new net.neoforged.neoforge.event.entity.RegisterSpawnPlacementsEvent(map));
++        map.forEach((entityType, merged) -> DATA_BY_TYPE.put(entityType, new SpawnPlacements.Data(merged.getHeightmapType(), merged.getSpawnType(), merged.build())));
++    }
++}
+diff --git a/src/main/java/net/minecraft/world/item/CreativeModeTab.java b/src/main/java/net/minecraft/world/item/CreativeModeTab.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..4beaf01130cb67c2376b9213348cfbf68380f835
+--- /dev/null
++++ b/src/main/java/net/minecraft/world/item/CreativeModeTab.java
+@@ -0,0 +1,464 @@
++package net.minecraft.world.item;
++
++import java.util.Collection;
++import java.util.List;
++import java.util.Set;
++import java.util.function.Function;
++import java.util.function.Supplier;
++import javax.annotation.Nullable;
++import net.minecraft.core.Holder;
++import net.minecraft.core.HolderLookup;
++import net.minecraft.core.registries.BuiltInRegistries;
++import net.minecraft.network.chat.Component;
++import net.minecraft.resources.ResourceKey;
++import net.minecraft.resources.ResourceLocation;
++import net.minecraft.world.flag.FeatureFlagSet;
++import net.minecraft.world.level.ItemLike;
++
++public class CreativeModeTab {
++    private static final ResourceLocation SCROLLER_SPRITE = ResourceLocation.withDefaultNamespace("container/creative_inventory/scroller");
++    private static final ResourceLocation SCROLLER_DISABLED_SPRITE = ResourceLocation.withDefaultNamespace("container/creative_inventory/scroller_disabled");
++    static final ResourceLocation DEFAULT_BACKGROUND = createTextureLocation("items");
++    private final Component displayName;
++    ResourceLocation backgroundTexture = DEFAULT_BACKGROUND;
++    boolean canScroll = true;
++    boolean showTitle = true;
++    boolean alignedRight = false;
++    private final CreativeModeTab.Row row;
++    private final int column;
++    private final CreativeModeTab.Type type;
++    @Nullable
++    private ItemStack iconItemStack;
++    private Collection<ItemStack> displayItems = ItemStackLinkedSet.createTypeAndComponentsSet();
++    private Set<ItemStack> displayItemsSearchTab = ItemStackLinkedSet.createTypeAndComponentsSet();
++    private final Supplier<ItemStack> iconGenerator;
++    private final CreativeModeTab.DisplayItemsGenerator displayItemsGenerator;
++    @Nullable
++    private final ResourceLocation scrollerSpriteLocation;
++    private final boolean hasSearchBar;
++    private final int searchBarWidth;
++    private final ResourceLocation tabsImage;
++    private final int labelColor;
++    private final int slotColor;
++    public final List<ResourceLocation> tabsBefore;
++    public final List<ResourceLocation> tabsAfter;
++
++    CreativeModeTab(
++        CreativeModeTab.Row row,
++        int column,
++        CreativeModeTab.Type type,
++        Component displayName,
++        Supplier<ItemStack> iconSupplier,
++        CreativeModeTab.DisplayItemsGenerator entryCollector,
++        @Nullable ResourceLocation scrollerSpriteLocation,
++        boolean hasSearchBar,
++        int searchBarWidth,
++        ResourceLocation tabsImage,
++        int labelColor,
++        int slotColor,
++        List<ResourceLocation> tabsBefore,
++        List<ResourceLocation> tabsAfter
++    ) {
++        this.row = row;
++        this.column = column;
++        this.displayName = displayName;
++        this.iconGenerator = iconSupplier;
++        this.displayItemsGenerator = entryCollector;
++        this.type = type;
++        this.scrollerSpriteLocation = scrollerSpriteLocation;
++        this.hasSearchBar = hasSearchBar;
++        this.searchBarWidth = searchBarWidth;
++        this.tabsImage = tabsImage;
++        this.labelColor = labelColor;
++        this.slotColor = slotColor;
++        this.tabsBefore = List.copyOf(tabsBefore);
++        this.tabsAfter = List.copyOf(tabsAfter);
++    }
++
++    protected CreativeModeTab(CreativeModeTab.Builder builder) {
++        this(
++            builder.row,
++            builder.column,
++            builder.type,
++            builder.displayName,
++            builder.iconGenerator,
++            builder.displayItemsGenerator,
++            builder.spriteScrollerLocation,
++            builder.hasSearchBar,
++            builder.searchBarWidth,
++            builder.tabsImage,
++            builder.labelColor,
++            builder.slotColor,
++            builder.tabsBefore,
++            builder.tabsAfter
++        );
++    }
++
++    public static ResourceLocation createTextureLocation(String name) {
++        return ResourceLocation.withDefaultNamespace("textures/gui/container/creative_inventory/tab_" + name + ".png");
++    }
++
++    public static CreativeModeTab.Builder builder() {
++        return new CreativeModeTab.Builder(Row.TOP, 0);
++    }
++
++    /** @deprecated Forge: use {@link #builder()} */
++    @Deprecated
++    public static CreativeModeTab.Builder builder(CreativeModeTab.Row location, int column) {
++        return new CreativeModeTab.Builder(location, column);
++    }
++
++    public Component getDisplayName() {
++        return this.displayName;
++    }
++
++    public ItemStack getIconItem() {
++        if (this.iconItemStack == null) {
++            this.iconItemStack = this.iconGenerator.get();
++        }
++
++        return this.iconItemStack;
++    }
++
++    public ResourceLocation getBackgroundTexture() {
++        return this.backgroundTexture;
++    }
++
++    public boolean showTitle() {
++        return this.showTitle;
++    }
++
++    public boolean canScroll() {
++        return this.canScroll;
++    }
++
++    public int column() {
++        return this.column;
++    }
++
++    public CreativeModeTab.Row row() {
++        return this.row;
++    }
++
++    public boolean hasAnyItems() {
++        return !this.displayItems.isEmpty();
++    }
++
++    public boolean shouldDisplay() {
++        return this.type != CreativeModeTab.Type.CATEGORY || this.hasAnyItems();
++    }
++
++    public boolean isAlignedRight() {
++        return this.alignedRight;
++    }
++
++    public CreativeModeTab.Type getType() {
++        return this.type;
++    }
++
++    public void buildContents(CreativeModeTab.ItemDisplayParameters displayContext) {
++        CreativeModeTab.ItemDisplayBuilder itemDisplayBuilder = new CreativeModeTab.ItemDisplayBuilder(this, displayContext.enabledFeatures);
++        ResourceKey<CreativeModeTab> resourceKey = BuiltInRegistries.CREATIVE_MODE_TAB
++            .getResourceKey(this)
++            .orElseThrow(() -> new IllegalStateException("Unregistered creative tab: " + this));
++        net.neoforged.neoforge.event.EventHooks.onCreativeModeTabBuildContents(
++            this, resourceKey, this.displayItemsGenerator, displayContext, itemDisplayBuilder
++        );
++        this.displayItems = itemDisplayBuilder.tabContents;
++        this.displayItemsSearchTab = itemDisplayBuilder.searchTabContents;
++    }
++
++    public Collection<ItemStack> getDisplayItems() {
++        return this.displayItems;
++    }
++
++    public Collection<ItemStack> getSearchTabDisplayItems() {
++        return this.displayItemsSearchTab;
++    }
++
++    public boolean contains(ItemStack stack) {
++        return this.displayItemsSearchTab.contains(stack);
++    }
++
++    public boolean hasSearchBar() {
++        return this.hasSearchBar;
++    }
++
++    public int getSearchBarWidth() {
++        return this.searchBarWidth;
++    }
++
++    public ResourceLocation getTabsImage() {
++        return this.tabsImage;
++    }
++
++    public int getLabelColor() {
++        return this.labelColor;
++    }
++
++    public int getSlotColor() {
++        return this.slotColor;
++    }
++
++    public ResourceLocation getScrollerSprite() {
++        if (this.scrollerSpriteLocation == null) {
++            return this.canScroll() ? SCROLLER_SPRITE : SCROLLER_DISABLED_SPRITE;
++        }
++        return this.scrollerSpriteLocation;
++    }
++
++    public static class Builder {
++        private static final CreativeModeTab.DisplayItemsGenerator EMPTY_GENERATOR = (displayContext, entries) -> {
++        };
++        private static final ResourceLocation CREATIVE_INVENTORY_TABS_IMAGE = ResourceLocation.withDefaultNamespace(
++            "textures/gui/container/creative_inventory/tabs.png"
++        );
++        private static final ResourceLocation CREATIVE_ITEM_SEARCH_BACKGROUND = createTextureLocation("item_search");
++        private final CreativeModeTab.Row row;
++        private final int column;
++        private Component displayName = Component.empty();
++        private Supplier<ItemStack> iconGenerator = () -> ItemStack.EMPTY;
++        private CreativeModeTab.DisplayItemsGenerator displayItemsGenerator = EMPTY_GENERATOR;
++        private boolean canScroll = true;
++        private boolean showTitle = true;
++        private boolean alignedRight = false;
++        private CreativeModeTab.Type type = CreativeModeTab.Type.CATEGORY;
++        private ResourceLocation backgroundTexture = CreativeModeTab.DEFAULT_BACKGROUND;
++        @Nullable
++        private ResourceLocation spriteScrollerLocation;
++        private boolean hasSearchBar = false;
++        private int searchBarWidth = 89;
++        private ResourceLocation tabsImage = CREATIVE_INVENTORY_TABS_IMAGE;
++        private int labelColor = 4210752;
++        private int slotColor = -2130706433;
++        private Function<CreativeModeTab.Builder, CreativeModeTab> tabFactory = CreativeModeTab::new;
++        private final java.util.List<ResourceLocation> tabsBefore = new java.util.ArrayList<>();
++        private final java.util.List<ResourceLocation> tabsAfter = new java.util.ArrayList<>();
++
++        public Builder(CreativeModeTab.Row row, int column) {
++            this.row = row;
++            this.column = column;
++        }
++
++        public CreativeModeTab.Builder title(Component displayName) {
++            this.displayName = displayName;
++            return this;
++        }
++
++        public CreativeModeTab.Builder icon(Supplier<ItemStack> iconSupplier) {
++            this.iconGenerator = iconSupplier;
++            return this;
++        }
++
++        public CreativeModeTab.Builder displayItems(CreativeModeTab.DisplayItemsGenerator entryCollector) {
++            this.displayItemsGenerator = entryCollector;
++            return this;
++        }
++
++        public CreativeModeTab.Builder alignedRight() {
++            this.alignedRight = true;
++            return this;
++        }
++
++        public CreativeModeTab.Builder hideTitle() {
++            this.showTitle = false;
++            return this;
++        }
++
++        public CreativeModeTab.Builder noScrollBar() {
++            this.canScroll = false;
++            return this;
++        }
++
++        protected CreativeModeTab.Builder type(CreativeModeTab.Type type) {
++            this.type = type;
++            if (type == Type.SEARCH) {
++                return this.withSearchBar();
++            }
++            return this;
++        }
++
++        public CreativeModeTab.Builder backgroundTexture(ResourceLocation resourceLocation) {
++            this.backgroundTexture = resourceLocation;
++            return this;
++        }
++
++        public CreativeModeTab.Builder withSearchBar() {
++            this.hasSearchBar = true;
++            if (this.backgroundTexture == CreativeModeTab.DEFAULT_BACKGROUND) {
++                return this.backgroundTexture(CREATIVE_ITEM_SEARCH_BACKGROUND);
++            }
++            return this;
++        }
++
++        public CreativeModeTab.Builder withSearchBar(int searchBarWidth) {
++            this.searchBarWidth = searchBarWidth;
++            return withSearchBar();
++        }
++
++        public CreativeModeTab.Builder withScrollBarSpriteLocation(ResourceLocation scrollBarSpriteLocation) {
++            this.spriteScrollerLocation = scrollBarSpriteLocation;
++            return this;
++        }
++
++        public CreativeModeTab.Builder withTabsImage(ResourceLocation tabsImage) {
++            this.tabsImage = tabsImage;
++            return this;
++        }
++
++        public CreativeModeTab.Builder withLabelColor(int labelColor) {
++            this.labelColor = labelColor;
++            return this;
++        }
++
++        public CreativeModeTab.Builder withSlotColor(int slotColor) {
++            this.slotColor = slotColor;
++            return this;
++        }
++
++        public CreativeModeTab.Builder withTabFactory(Function<CreativeModeTab.Builder, CreativeModeTab> tabFactory) {
++            this.tabFactory = tabFactory;
++            return this;
++        }
++
++        public CreativeModeTab.Builder withTabsBefore(ResourceLocation... tabs) {
++            this.tabsBefore.addAll(List.of(tabs));
++            return this;
++        }
++
++        public CreativeModeTab.Builder withTabsAfter(ResourceLocation... tabs) {
++            this.tabsAfter.addAll(List.of(tabs));
++            return this;
++        }
++
++        @SafeVarargs
++        public final CreativeModeTab.Builder withTabsBefore(ResourceKey<CreativeModeTab>... tabs) {
++            java.util.stream.Stream.of(tabs).map(ResourceKey::location).forEach(this.tabsBefore::add);
++            return this;
++        }
++
++        @SafeVarargs
++        public final CreativeModeTab.Builder withTabsAfter(ResourceKey<CreativeModeTab>... tabs) {
++            java.util.stream.Stream.of(tabs).map(ResourceKey::location).forEach(this.tabsAfter::add);
++            return this;
++        }
++
++        public CreativeModeTab.Builder displayItems(Collection<? extends Holder<? extends ItemLike>> collection) {
++            return this.displayItems((params, output) -> collection.stream()
++                .map(Holder::value)
++                .map(ItemLike::asItem)
++                .filter(i -> i != Items.AIR)
++                .filter(i -> i.isEnabled(params.enabledFeatures()))
++                .forEach(output::accept));
++        }
++
++        public CreativeModeTab build() {
++            if ((this.type == CreativeModeTab.Type.HOTBAR || this.type == CreativeModeTab.Type.INVENTORY) && this.displayItemsGenerator != EMPTY_GENERATOR) {
++                throw new IllegalStateException("Special tabs can't have display items");
++            } else {
++                CreativeModeTab creativeModeTab = this.tabFactory.apply(this);
++                creativeModeTab.alignedRight = this.alignedRight;
++                creativeModeTab.showTitle = this.showTitle;
++                creativeModeTab.canScroll = this.canScroll;
++                creativeModeTab.backgroundTexture = this.backgroundTexture;
++                return creativeModeTab;
++            }
++        }
++    }
++
++    @FunctionalInterface
++    public interface DisplayItemsGenerator {
++        void accept(CreativeModeTab.ItemDisplayParameters displayContext, CreativeModeTab.Output entries);
++    }
++
++    static class ItemDisplayBuilder implements CreativeModeTab.Output {
++        public final Collection<ItemStack> tabContents = ItemStackLinkedSet.createTypeAndComponentsSet();
++        public final Set<ItemStack> searchTabContents = ItemStackLinkedSet.createTypeAndComponentsSet();
++        private final CreativeModeTab tab;
++        private final FeatureFlagSet featureFlagSet;
++
++        public ItemDisplayBuilder(CreativeModeTab group, FeatureFlagSet enabledFeatures) {
++            this.tab = group;
++            this.featureFlagSet = enabledFeatures;
++        }
++
++        @Override
++        public void accept(ItemStack stack, CreativeModeTab.TabVisibility visibility) {
++            if (stack.getCount() != 1) {
++                throw new IllegalArgumentException("Stack size must be exactly 1");
++            } else {
++                boolean bl = this.tabContents.contains(stack) && visibility != CreativeModeTab.TabVisibility.SEARCH_TAB_ONLY;
++                if (bl) {
++                    throw new IllegalStateException(
++                        "Accidentally adding the same item stack twice "
++                            + stack.getDisplayName().getString()
++                            + " to a Creative Mode Tab: "
++                            + this.tab.getDisplayName().getString()
++                    );
++                } else {
++                    if (stack.getItem().isEnabled(this.featureFlagSet)) {
++                        switch (visibility) {
++                            case PARENT_AND_SEARCH_TABS:
++                                this.tabContents.add(stack);
++                                this.searchTabContents.add(stack);
++                                break;
++                            case PARENT_TAB_ONLY:
++                                this.tabContents.add(stack);
++                                break;
++                            case SEARCH_TAB_ONLY:
++                                this.searchTabContents.add(stack);
++                        }
++                    }
++                }
++            }
++        }
++    }
++
++    public static record ItemDisplayParameters(FeatureFlagSet enabledFeatures, boolean hasPermissions, HolderLookup.Provider holders) {
++        public boolean needsUpdate(FeatureFlagSet enabledFeatures, boolean hasPermissions, HolderLookup.Provider lookup) {
++            return !this.enabledFeatures.equals(enabledFeatures) || this.hasPermissions != hasPermissions || this.holders != lookup;
++        }
++    }
++
++    public interface Output {
++        void accept(ItemStack stack, CreativeModeTab.TabVisibility visibility);
++
++        default void accept(ItemStack stack) {
++            this.accept(stack, CreativeModeTab.TabVisibility.PARENT_AND_SEARCH_TABS);
++        }
++
++        default void accept(ItemLike item, CreativeModeTab.TabVisibility visibility) {
++            this.accept(new ItemStack(item), visibility);
++        }
++
++        default void accept(ItemLike item) {
++            this.accept(new ItemStack(item), CreativeModeTab.TabVisibility.PARENT_AND_SEARCH_TABS);
++        }
++
++        default void acceptAll(Collection<ItemStack> stacks, CreativeModeTab.TabVisibility visibility) {
++            stacks.forEach(stack -> this.accept(stack, visibility));
++        }
++
++        default void acceptAll(Collection<ItemStack> stacks) {
++            this.acceptAll(stacks, CreativeModeTab.TabVisibility.PARENT_AND_SEARCH_TABS);
++        }
++    }
++
++    public static enum Row {
++        TOP,
++        BOTTOM;
++    }
++
++    protected static enum TabVisibility {
++        PARENT_AND_SEARCH_TABS,
++        PARENT_TAB_ONLY,
++        SEARCH_TAB_ONLY;
++    }
++
++    public static enum Type {
++        CATEGORY,
++        INVENTORY,
++        HOTBAR,
++        SEARCH;
++    }
++}
+diff --git a/src/main/java/net/minecraft/world/item/crafting/Ingredient.java b/src/main/java/net/minecraft/world/item/crafting/Ingredient.java
+index e314f36951e9ac15c57137e24fce8c410373130a..86c8c9e43ac99beafed233583cf46f01b1ce104d 100644
+--- a/src/main/java/net/minecraft/world/item/crafting/Ingredient.java
++++ b/src/main/java/net/minecraft/world/item/crafting/Ingredient.java
+@@ -43,6 +43,13 @@ public final class Ingredient implements Predicate<ItemStack> {
+     public boolean exact; // CraftBukkit
+     public static final Codec<Ingredient> CODEC = Ingredient.codec(true);
+     public static final Codec<Ingredient> CODEC_NONEMPTY = Ingredient.codec(false);
++    // NeoForge: list codecs expected by CompoundIngredient / CraftingHelper (vanilla-backed shim until full custom-ingredient port)
++    public static final Codec<List<Ingredient>> LIST_CODEC = CODEC.listOf();
++    public static final Codec<List<Ingredient>> LIST_CODEC_NONEMPTY = CODEC_NONEMPTY.listOf().validate(list -> {
++        return list.isEmpty()
++            ? DataResult.error(() -> "Item array cannot be empty, at least one item must be defined")
++            : DataResult.success(list);
++    });
+ 
+     public Ingredient(Stream<? extends Ingredient.Value> entries) {
+         this.values = (Ingredient.Value[]) entries.toArray((i) -> {
+diff --git a/src/main/java/net/minecraft/world/level/biome/Biome.java b/src/main/java/net/minecraft/world/level/biome/Biome.java
+index 435bdda38366e57f707366df8e09b3997b6e6600..eea6375272347de0438f0d9b020e38c3c95f71b5 100644
+--- a/src/main/java/net/minecraft/world/level/biome/Biome.java
++++ b/src/main/java/net/minecraft/world/level/biome/Biome.java
+@@ -64,6 +64,7 @@ public final class Biome {
+     private final BiomeGenerationSettings generationSettings;
+     private final MobSpawnSettings mobSettings;
+     private final BiomeSpecialEffects specialEffects;
++    private final net.neoforged.neoforge.common.world.ModifiableBiomeInfo modifiableBiomeInfo;
+     private final ThreadLocal<Long2FloatLinkedOpenHashMap> temperatureCache = ThreadLocal.withInitial(() -> Util.make(() -> {
+             Long2FloatLinkedOpenHashMap long2FloatLinkedOpenHashMap = new Long2FloatLinkedOpenHashMap(1024, 0.25F) {
+                 protected void rehash(int i) {
+@@ -78,6 +79,9 @@ public final class Biome {
+         this.generationSettings = generationSettings;
+         this.mobSettings = spawnSettings;
+         this.specialEffects = effects;
++        this.modifiableBiomeInfo = new net.neoforged.neoforge.common.world.ModifiableBiomeInfo(
++            new net.neoforged.neoforge.common.world.ModifiableBiomeInfo.BiomeInfo(weather, effects, generationSettings, spawnSettings)
++        );
+     }
+ 
+     public int getSkyColor() {
+@@ -85,16 +89,20 @@ public final class Biome {
+     }
+ 
+     public MobSpawnSettings getMobSettings() {
+-        return this.mobSettings;
++        return this.modifiableBiomeInfo().get().mobSpawnSettings();
++    }
++
++    // NeoForge start - modifiable biome accessors
++    public net.neoforged.neoforge.common.world.ModifiableBiomeInfo modifiableBiomeInfo() {
++        return this.modifiableBiomeInfo;
+     }
+ 
+-    // NeoForge start - modifiable biome accessors (compile-time stubs)
+     /**
+      * Returns the (possibly modified) climate settings for this biome.
+      * NeoForge's coremod replaces direct field access to climateSettings with this method.
+      */
+     public ClimateSettings getModifiedClimateSettings() {
+-        return this.climateSettings;
++        return this.modifiableBiomeInfo().get().climateSettings();
+     }
+ 
+     /**
+@@ -102,7 +110,7 @@ public final class Biome {
+      * NeoForge's coremod replaces direct field access to specialEffects with this method.
+      */
+     public BiomeSpecialEffects getModifiedSpecialEffects() {
+-        return this.specialEffects;
++        return this.modifiableBiomeInfo().get().effects();
+     }
+     // NeoForge end
+ 
+@@ -188,7 +196,7 @@ public final class Biome {
+     }
+ 
+     public BiomeGenerationSettings getGenerationSettings() {
+-        return this.generationSettings;
++        return this.modifiableBiomeInfo().get().generationSettings();
+     }
+ 
+     public int getFogColor() {
+diff --git a/src/main/java/net/minecraft/world/level/biome/BiomeGenerationSettings.java b/src/main/java/net/minecraft/world/level/biome/BiomeGenerationSettings.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..20772ec276f193aee7529b4238c5f0d48cdc86f5
+--- /dev/null
++++ b/src/main/java/net/minecraft/world/level/biome/BiomeGenerationSettings.java
+@@ -0,0 +1,144 @@
++package net.minecraft.world.level.biome;
++
++import com.google.common.base.Suppliers;
++import com.google.common.collect.ImmutableList;
++import com.google.common.collect.ImmutableMap;
++import com.google.common.collect.Lists;
++import com.google.common.collect.Maps;
++import com.mojang.logging.LogUtils;
++import com.mojang.serialization.Codec;
++import com.mojang.serialization.MapCodec;
++import com.mojang.serialization.codecs.RecordCodecBuilder;
++import java.util.List;
++import java.util.Map;
++import java.util.Objects;
++import java.util.Set;
++import java.util.Map.Entry;
++import java.util.function.Supplier;
++import java.util.stream.Collectors;
++import net.minecraft.Util;
++import net.minecraft.core.Holder;
++import net.minecraft.core.HolderGetter;
++import net.minecraft.core.HolderSet;
++import net.minecraft.resources.ResourceKey;
++import net.minecraft.util.StringRepresentable;
++import net.minecraft.world.level.levelgen.GenerationStep;
++import net.minecraft.world.level.levelgen.carver.ConfiguredWorldCarver;
++import net.minecraft.world.level.levelgen.feature.ConfiguredFeature;
++import net.minecraft.world.level.levelgen.feature.Feature;
++import net.minecraft.world.level.levelgen.placement.PlacedFeature;
++import org.slf4j.Logger;
++
++public class BiomeGenerationSettings {
++    private static final Logger LOGGER = LogUtils.getLogger();
++    public static final BiomeGenerationSettings EMPTY = new BiomeGenerationSettings(ImmutableMap.of(), ImmutableList.of());
++    public static final MapCodec<BiomeGenerationSettings> CODEC = RecordCodecBuilder.mapCodec(
++        instance -> instance.group(
++                    Codec.simpleMap(
++                            GenerationStep.Carving.CODEC,
++                            ConfiguredWorldCarver.LIST_CODEC.promotePartial(Util.prefix("Carver: ", LOGGER::error)),
++                            StringRepresentable.keys(GenerationStep.Carving.values())
++                        )
++                        .fieldOf("carvers")
++                        .forGetter(generationSettings -> generationSettings.carvers),
++                    PlacedFeature.LIST_OF_LISTS_CODEC
++                        .promotePartial(Util.prefix("Features: ", LOGGER::error))
++                        .fieldOf("features")
++                        .forGetter(generationSettings -> generationSettings.features)
++                )
++                .apply(instance, BiomeGenerationSettings::new)
++    );
++    private final Map<GenerationStep.Carving, HolderSet<ConfiguredWorldCarver<?>>> carvers;
++    private final java.util.Set<GenerationStep.Carving> carversView;
++    private final List<HolderSet<PlacedFeature>> features;
++    private final Supplier<List<ConfiguredFeature<?, ?>>> flowerFeatures;
++    private final Supplier<Set<PlacedFeature>> featureSet;
++
++    BiomeGenerationSettings(Map<GenerationStep.Carving, HolderSet<ConfiguredWorldCarver<?>>> carvers, List<HolderSet<PlacedFeature>> features) {
++        this.carvers = carvers;
++        this.features = features;
++        this.flowerFeatures = Suppliers.memoize(
++            () -> features.stream()
++                    .flatMap(HolderSet::stream)
++                    .map(Holder::value)
++                    .flatMap(PlacedFeature::getFeatures)
++                    .filter(feature -> feature.feature() == Feature.FLOWER)
++                    .collect(ImmutableList.toImmutableList())
++        );
++        this.featureSet = Suppliers.memoize(() -> features.stream().flatMap(HolderSet::stream).map(Holder::value).collect(Collectors.toSet()));
++        this.carversView = java.util.Collections.unmodifiableSet(carvers.keySet());
++    }
++
++    public Iterable<Holder<ConfiguredWorldCarver<?>>> getCarvers(GenerationStep.Carving carverStep) {
++        return Objects.requireNonNullElseGet(this.carvers.get(carverStep), List::of);
++    }
++
++    public java.util.Set<GenerationStep.Carving> getCarvingStages() {
++        return this.carversView;
++    }
++
++    public List<ConfiguredFeature<?, ?>> getFlowerFeatures() {
++        return this.flowerFeatures.get();
++    }
++
++    public List<HolderSet<PlacedFeature>> features() {
++        return this.features;
++    }
++
++    public boolean hasFeature(PlacedFeature feature) {
++        return this.featureSet.get().contains(feature);
++    }
++
++    public static class Builder extends BiomeGenerationSettings.PlainBuilder {
++        private final HolderGetter<PlacedFeature> placedFeatures;
++        private final HolderGetter<ConfiguredWorldCarver<?>> worldCarvers;
++
++        public Builder(HolderGetter<PlacedFeature> placedFeatureLookup, HolderGetter<ConfiguredWorldCarver<?>> configuredCarverLookup) {
++            this.placedFeatures = placedFeatureLookup;
++            this.worldCarvers = configuredCarverLookup;
++        }
++
++        public BiomeGenerationSettings.Builder addFeature(GenerationStep.Decoration featureStep, ResourceKey<PlacedFeature> featureKey) {
++            this.addFeature(featureStep.ordinal(), this.placedFeatures.getOrThrow(featureKey));
++            return this;
++        }
++
++        public BiomeGenerationSettings.Builder addCarver(GenerationStep.Carving carverStep, ResourceKey<ConfiguredWorldCarver<?>> carverKey) {
++            this.addCarver(carverStep, this.worldCarvers.getOrThrow(carverKey));
++            return this;
++        }
++    }
++
++    public static class PlainBuilder {
++        private final Map<GenerationStep.Carving, List<Holder<ConfiguredWorldCarver<?>>>> carvers = Maps.newLinkedHashMap();
++        private final List<List<Holder<PlacedFeature>>> features = Lists.newArrayList();
++
++        public BiomeGenerationSettings.PlainBuilder addFeature(GenerationStep.Decoration featureStep, Holder<PlacedFeature> featureEntry) {
++            return this.addFeature(featureStep.ordinal(), featureEntry);
++        }
++
++        public BiomeGenerationSettings.PlainBuilder addFeature(int ordinal, Holder<PlacedFeature> featureEntry) {
++            this.addFeatureStepsUpTo(ordinal);
++            this.features.get(ordinal).add(featureEntry);
++            return this;
++        }
++
++        public BiomeGenerationSettings.PlainBuilder addCarver(GenerationStep.Carving carverStep, Holder<ConfiguredWorldCarver<?>> carverEntry) {
++            this.carvers.computeIfAbsent(carverStep, step -> Lists.newArrayList()).add(carverEntry);
++            return this;
++        }
++
++        private void addFeatureStepsUpTo(int size) {
++            while (this.features.size() <= size) {
++                this.features.add(Lists.newArrayList());
++            }
++        }
++
++        public BiomeGenerationSettings build() {
++            return new BiomeGenerationSettings(
++                this.carvers.entrySet().stream().collect(ImmutableMap.toImmutableMap(Entry::getKey, entry -> HolderSet.direct(entry.getValue()))),
++                this.features.stream().map(HolderSet::direct).collect(ImmutableList.toImmutableList())
++            );
++        }
++    }
++}
+diff --git a/src/main/java/net/minecraft/world/level/biome/MobSpawnSettings.java b/src/main/java/net/minecraft/world/level/biome/MobSpawnSettings.java
+index cb7465ed9bdebe1b31f02d11725e75ff8b44ca66..b9fbf17db5c1135bb771f5f3609cbc5dbbab6110 100644
+--- a/src/main/java/net/minecraft/world/level/biome/MobSpawnSettings.java
++++ b/src/main/java/net/minecraft/world/level/biome/MobSpawnSettings.java
+@@ -50,6 +50,8 @@ public class MobSpawnSettings {
+     private final float creatureGenerationProbability;
+     private final Map<MobCategory, WeightedRandomList<MobSpawnSettings.SpawnerData>> spawners;
+     private final Map<EntityType<?>, MobSpawnSettings.MobSpawnCost> mobSpawnCosts;
++    private final java.util.Set<MobCategory> typesView;
++    private final java.util.Set<EntityType<?>> costView;
+ 
+     MobSpawnSettings(
+         float creatureSpawnProbability,
+@@ -59,17 +61,27 @@ public class MobSpawnSettings {
+         this.creatureGenerationProbability = creatureSpawnProbability;
+         this.spawners = ImmutableMap.copyOf(spawners);
+         this.mobSpawnCosts = ImmutableMap.copyOf(spawnCosts);
++        this.typesView = java.util.Collections.unmodifiableSet(this.spawners.keySet());
++        this.costView = java.util.Collections.unmodifiableSet(this.mobSpawnCosts.keySet());
+     }
+ 
+     public WeightedRandomList<MobSpawnSettings.SpawnerData> getMobs(MobCategory spawnGroup) {
+         return this.spawners.getOrDefault(spawnGroup, EMPTY_MOB_LIST);
+     }
+ 
++    public java.util.Set<MobCategory> getSpawnerTypes() {
++        return this.typesView;
++    }
++
+     @Nullable
+     public MobSpawnSettings.MobSpawnCost getMobSpawnCost(EntityType<?> entityType) {
+         return this.mobSpawnCosts.get(entityType);
+     }
+ 
++    public java.util.Set<EntityType<?>> getEntityTypes() {
++        return this.costView;
++    }
++
+     public float getCreatureProbability() {
+         return this.creatureGenerationProbability;
+     }
+diff --git a/src/main/java/net/minecraft/world/level/block/entity/BlockEntityType.java b/src/main/java/net/minecraft/world/level/block/entity/BlockEntityType.java
+index e7691f856f85469c06f2b5a2a3db3120ec6f193d..42a451f26030b07484decd7f693294a288749334 100644
+--- a/src/main/java/net/minecraft/world/level/block/entity/BlockEntityType.java
++++ b/src/main/java/net/minecraft/world/level/block/entity/BlockEntityType.java
+@@ -304,6 +304,13 @@ public class BlockEntityType<T extends BlockEntity> {
+         return (T)this.factory.create(pos, state);
+     }
+ 
++    /**
++     * Neo: immutable view of valid blocks (BlockEntityTypeAddBlocksEvent may mutate the backing set).
++     */
++    public Set<Block> getValidBlocks() {
++        return java.util.Collections.unmodifiableSet(this.validBlocks);
++    }
++
+     public boolean isValid(BlockState state) {
+         return this.validBlocks.contains(state.getBlock());
+     }
+diff --git a/src/main/java/net/minecraft/world/level/chunk/ChunkGenerator.java b/src/main/java/net/minecraft/world/level/chunk/ChunkGenerator.java
+index cead18e4f8ea278b999fa0e1aff58580a6604645..1d895a3af69180763424e4918f49e64e76c2b82f 100644
+--- a/src/main/java/net/minecraft/world/level/chunk/ChunkGenerator.java
++++ b/src/main/java/net/minecraft/world/level/chunk/ChunkGenerator.java
+@@ -94,13 +94,18 @@ public abstract class ChunkGenerator {
+     public ChunkGenerator(BiomeSource biomeSource, Function<Holder<Biome>, BiomeGenerationSettings> generationSettingsGetter) {
+         this.biomeSource = biomeSource;
+         this.generationSettingsGetter = generationSettingsGetter;
+-        this.featuresPerStep = Suppliers.memoize(() -> {
++        this.featuresPerStep = net.neoforged.neoforge.common.util.Lazy.of(() -> {
+             return FeatureSorter.buildFeaturesPerStep(List.copyOf(biomeSource.possibleBiomes()), (holder) -> {
+                 return ((BiomeGenerationSettings) generationSettingsGetter.apply(holder)).features();
+             }, true);
+         });
+     }
+ 
++    @org.jetbrains.annotations.ApiStatus.Internal
++    public void refreshFeaturesPerStep() {
++        ((net.neoforged.neoforge.common.util.Lazy<?>) this.featuresPerStep).invalidate();
++    }
++
+     public void validate() {
+         this.featuresPerStep.get();
+     }
+diff --git a/src/main/java/net/minecraft/world/level/levelgen/structure/Structure.java b/src/main/java/net/minecraft/world/level/levelgen/structure/Structure.java
+index 47c5257491d8b86d9c53b83e02947157fbadf86f..eb0c586f28bd5551b760bfb7b62d520c5b76ecaa 100644
+--- a/src/main/java/net/minecraft/world/level/levelgen/structure/Structure.java
++++ b/src/main/java/net/minecraft/world/level/levelgen/structure/Structure.java
+@@ -44,6 +44,7 @@ public abstract class Structure {
+     public static final Codec<Holder<Structure>> CODEC = RegistryFileCodec.create(Registries.STRUCTURE, DIRECT_CODEC);
+     // NeoForge coremod ReplaceFieldWithGetterAccess requires this field to be private
+     private final Structure.StructureSettings settings;
++    private final net.neoforged.neoforge.common.world.ModifiableStructureInfo modifiableStructureInfo;
+ 
+     public static <S extends Structure> RecordCodecBuilder<S, Structure.StructureSettings> settingsCodec(Instance<S> instance) {
+         return Structure.StructureSettings.CODEC.forGetter(Structure::getModifiedStructureSettings);
+@@ -55,19 +56,26 @@ public abstract class Structure {
+ 
+     protected Structure(Structure.StructureSettings config) {
+         this.settings = config;
++        this.modifiableStructureInfo = new net.neoforged.neoforge.common.world.ModifiableStructureInfo(
++            new net.neoforged.neoforge.common.world.ModifiableStructureInfo.StructureInfo(config)
++        );
+     }
+ 
+     public HolderSet<Biome> biomes() {
+         return this.settings.biomes;
+     }
+ 
+-    // NeoForge start - modifiable structure accessor (compile-time stub)
++    // NeoForge start - modifiable structure accessors
++    public net.neoforged.neoforge.common.world.ModifiableStructureInfo modifiableStructureInfo() {
++        return this.modifiableStructureInfo;
++    }
++
+     /**
+      * Returns the (possibly modified) structure settings.
+      * NeoForge's coremod replaces direct field access to settings with this method.
+      */
+     public StructureSettings getModifiedStructureSettings() {
+-        return this.settings;
++        return this.modifiableStructureInfo().get().structureSettings();
+     }
+     // NeoForge end
+ 
