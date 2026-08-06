@@ -36,7 +36,7 @@
 
 **Lithostitched / Terralith / Incendium** — больше не BLOCK: в v0.2.0+ патчи `0041`–`0042` (RegistryDataLoader 6-arg, Beardifier `$2`, `loadLevel()`). Берите **Lithostitched ≥ 1.7.13**.
 
-**Sable:** убрать оригинальный `arclight_sable_patch`; поставить shim из релиза + `sable-neoforge`. Boot ещё **WIP** (Folia `explode` WrapMethod) — см. секцию Sable ниже.
+**Sable:** убрать оригинальный `arclight_sable_patch`; поставить shim из релиза + `sable-neoforge`. Smoke **OK\*** (`Done` + все миры + тики) на патчах `0050`–`0066` — см. секцию Sable ниже.
 
 ---
 
@@ -94,7 +94,9 @@ Smoke на Eturlia: `Done` с `lithostitched-1.7.13` + Terralith 2.6.2 + Incendi
 
 Ядро уже даёт: FluidType height / `updateFluidHeightAndDoFluidPushing()`, `saveWithoutId` 1-arg, `lambda$stopSleeping$12`, `playBlockFallSound` local, vanilla `Level.<init>`, `ServerLevel.tick(BooleanSupplier)`, CraftWorld absurd-AABB guard (вместо Arclight rayTrace eject).
 
-**Осталось для полного boot:** Folia/Paper `explode(..., Consumer)` vs Sable `@WrapMethod` на vanilla `explode` — в работе. До фикса Sable = **RISK/WIP**, не BLOCK по смыслу «чужой гибрид».
+Доп. мосты для Sable 2.0.3 (`0050`–`0066`): vanilla `explode` + Holder, `save`/`saveLevelData`, DistanceManager/ChunkMap anchors, `LevelChunk.level` as `Level`, `GroundPathNavigation.createPath`, `tickServer(BooleanSupplier)`, Explosion/placeNewPlayer/respawn, `isPositionTickingEntity`, `unloadQueue`/`hasWork`, `Holder`→`IHolderExtension`, `TrackedEntity.updatePlayer` `position()`, `ChunkHolder.get*ChunkFuture` snapshots.
+
+**Статус:** smoke sable+shim → **OK\*** (`Done`, overworld/nether/end init, тики без region fail). Геймплей на Folia-регионах всё ещё **RISK** (физика/sublevels) — не BLOCK.
 
 ---
 
@@ -162,7 +164,7 @@ Smoke на Eturlia: `Done` с `lithostitched-1.7.13` + Terralith 2.6.2 + Incendi
 
 **Нет / пока нет:** spark-neoforge, оригинальный Arclight sable patch, клиентские jars, битые `.jar1`/`.bak`.
 
-**At own risk / WIP:** Create + Aeronautics, **Sable** (ядерные bridges есть, explode mixin ещё ломает boot), Alex's Mobs/Citadel, EasyNPC, Twilight Forest, BetterEnd/BCLib, Malum, тяжёлый dungeon-pack, curios-heavy, combat-моды.
+**At own risk / OK\* boot:** Create + Aeronautics, **Sable** (+ Eturlia shim; boot OK\*, region physics RISK), Alex's Mobs/Citadel, EasyNPC, Twilight Forest, BetterEnd/BCLib, Malum, тяжёлый dungeon-pack, curios-heavy, combat-моды.
 
 Оптимизаторы (`ferritecore`, `packetfixer`, `manas_queue`, …) — **вне** требования «должны работать».
 
