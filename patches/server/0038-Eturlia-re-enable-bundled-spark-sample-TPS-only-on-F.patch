@@ -1,0 +1,89 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 17:52:50 +0000
+Subject: [PATCH] Eturlia: re-enable bundled spark; sample TPS only on Folia
+ global tick
+
+Region threads racing SparkTickStatistics$TpsRollingAverage caused AIOOBE
+and inflated TPS. Accept spark tick hooks only on the global tick thread
+and drive samples from GlobalTickTickHandle.
+
+diff --git a/src/main/java/io/papermc/paper/SparksFly.java b/src/main/java/io/papermc/paper/SparksFly.java
+index cf80817381a47985101d9f34179f874a986bd441..1d3962a6802e66176cb34083b34e99a05482bddb 100644
+--- a/src/main/java/io/papermc/paper/SparksFly.java
++++ b/src/main/java/io/papermc/paper/SparksFly.java
+@@ -109,15 +109,15 @@ public final class SparksFly {
+ 
+     private void enable() {
+         if (!this.enabled) {
+-            // Folia/Eturlia: bundled spark TPS hooks are not region-thread-safe
+-            // (ArrayIndexOutOfBoundsException in SparkTickStatistics$TpsRollingAverage.add
+-            // when multiple regions call onTick concurrently). Prefer the spark plugin.
+-            if (false) { // Folia - disable in-built spark profiler
++            // Eturlia/Folia: re-enable bundled spark. TPS samples are only accepted on the
++            // global tick thread (see tickStart/tickEnd) so region threads cannot race
++            // SparkTickStatistics$TpsRollingAverage or inflate TPS by region count.
++            if (GlobalConfiguration.get().spark.enabled) {
+                 this.enabled = true;
+                 this.spark.enable();
+             } else {
+                 if (!this.disabledInConfigurationWarningLogged) {
+-                    this.logger.log(Level.INFO, "The bundled spark profiler is disabled on Folia/Eturlia (not region-thread-safe). Use the Folia-compatible spark plugin if needed.");
++                    this.logger.log(Level.INFO, "The spark profiler will not be enabled because it is currently disabled in the configuration.");
+                     this.disabledInConfigurationWarningLogged = true;
+                 }
+             }
+@@ -148,8 +148,9 @@ public final class SparksFly {
+     }
+ 
+     public void tickStart() {
+-        // Eturlia: never feed Folia multi-region ticks into spark's shared rolling average.
+-        if (!this.enabled) {
++        // Eturlia: only the Folia global tick thread may feed spark TPS. Region threads
++        // call MinecraftServer.tickServer concurrently and would race TpsRollingAverage.
++        if (!this.enabled || !io.papermc.paper.threadedregions.RegionizedServer.isGlobalTickThread()) {
+             return;
+         }
+         synchronized (this) {
+@@ -162,7 +163,7 @@ public final class SparksFly {
+     }
+ 
+     public void tickEnd(final double duration) {
+-        if (!this.enabled) {
++        if (!this.enabled || !io.papermc.paper.threadedregions.RegionizedServer.isGlobalTickThread()) {
+             return;
+         }
+         synchronized (this) {
+@@ -183,7 +184,9 @@ public final class SparksFly {
+     }
+ 
+     public static boolean isPluginPreferred() {
+-        return true; // Folia/Eturlia - disable in-built spark profiler (not region-thread-safe)
++        // Eturlia: bundled spark is Folia-safe when TPS is sampled only on the global tick.
++        // Set -Dpaper.preferSparkPlugin=true to prefer an external spark-folia plugin instead.
++        return Boolean.getBoolean(PREFER_SPARK_PLUGIN_PROPERTY);
+     }
+ 
+     private static boolean isPluginEnabled(final Server server) {
+diff --git a/src/main/java/io/papermc/paper/threadedregions/RegionizedServer.java b/src/main/java/io/papermc/paper/threadedregions/RegionizedServer.java
+index 1d41a6a204068122daa1b5b2cd7541bfeae52f4c..58053560a3776036361b1df939fcf7c6602e2f8b 100644
+--- a/src/main/java/io/papermc/paper/threadedregions/RegionizedServer.java
++++ b/src/main/java/io/papermc/paper/threadedregions/RegionizedServer.java
+@@ -145,7 +145,17 @@ public final class RegionizedServer {
+         @Override
+         protected void tickRegion(final int tickCount, final long startTime, final long scheduledEnd) {
+             this.drainTasks();
++            // Eturlia: feed spark TPS from the single global tick thread only (not per-region).
++            final org.bukkit.craftbukkit.CraftServer craft =
++                    (org.bukkit.craftbukkit.CraftServer) org.bukkit.Bukkit.getServer();
++            if (craft != null) {
++                craft.spark.tickStart();
++            }
++            final long sparkStart = System.nanoTime();
+             this.server.globalTick(tickCount);
++            if (craft != null) {
++                craft.spark.tickEnd((System.nanoTime() - sparkStart) / 1_000_000.0D);
++            }
+         }
+ 
+         private void drainTasks() {

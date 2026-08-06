@@ -1,0 +1,463 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 17:03:00 +0000
+Subject: [PATCH] Eturlia: Moonlight Folia bridges + NeoForge interaction +
+ FluidType
+
+- ServerPlayer adjustSpawnLocation + soft basePos (ServerPlayerMixin)
+- reloadResources lambda$29 + CloseableResourceManager LVT (MinecraftServerMixin)
+- PlaceCommand StructureStart local at TAIL (PlaceStructureCommandMixin)
+- TeleportCommand keep Entity.teleportTo for WrapOperation
+- Fluid.getFluidType via CommonHooks.getVanillaFluidType (Moonlight SoftFluid)
+- Port CommonHooks interaction / break / EntityInteractSpecific hooks
+
+diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
+index 659c6e45ae42199365d05334c6a7c2d0953c8a21..e213967dc1dd97ff43552e0a6cb630d91ce3ddb6 100644
+--- a/src/main/java/net/minecraft/server/MinecraftServer.java
++++ b/src/main/java/net/minecraft/server/MinecraftServer.java
+@@ -2457,18 +2457,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+ 
+             Objects.requireNonNull(this.packRepository);
+             return stream.<Pack>map(resourcepackrepository::getPack).filter(Objects::nonNull).map(Pack::open).collect(ImmutableList.toImmutableList()); // CraftBukkit - decompile error // Paper - decompile error // todo: is this needed anymore?
+-        }, this).thenCompose((immutablelist) -> {
+-            MultiPackResourceManager resourcemanager = new MultiPackResourceManager(PackType.SERVER_DATA, immutablelist);
+-
+-            return ReloadableServerResources.loadResources(resourcemanager, this.registries, this.worldData.enabledFeatures(), this.isDedicatedServer() ? Commands.CommandSelection.DEDICATED : Commands.CommandSelection.INTEGRATED, this.getFunctionCompilationLevel(), this.executor, this).whenComplete((datapackresources, throwable) -> {
+-                if (throwable != null) {
+-                    resourcemanager.close();
+-                }
+-
+-            }).thenApply((datapackresources) -> {
+-                return new MinecraftServer.ReloadableResources(resourcemanager, datapackresources);
+-            });
+-        }).thenAcceptAsync((minecraftserver_reloadableresources) -> {
++        }, this).thenCompose(this::lambda$reloadResources$29).thenAcceptAsync((minecraftserver_reloadableresources) -> {
+             io.papermc.paper.command.brigadier.PaperBrigadier.moveBukkitCommands(this.resources.managers().getCommands(), minecraftserver_reloadableresources.managers().commands); // Paper
+             this.resources.close();
+             this.resources = minecraftserver_reloadableresources;
+@@ -2511,6 +2500,28 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+         return completablefuture;
+     }
+ 
++    /**
++     * Eturlia: named like vanilla's {@code lambda$reloadResources$29} so Moonlight's
++     * {@code MinecraftServerMixin} ({@code @Inject} into that method at
++     * {@code ReloadableServerResources.loadResources} BEFORE) can apply under Paper,
++     * where Paper's overload renumbered the compiler-generated lambdas.
++     */
++    private java.util.concurrent.CompletionStage<MinecraftServer.ReloadableResources> lambda$reloadResources$29(ImmutableList<? extends net.minecraft.server.packs.PackResources> immutablelist) {
++        // Typed as CloseableResourceManager so Moonlight MixinExtras @Local can see it
++        // (exact LVT type match — MultiPackResourceManager alone is not enough).
++        @SuppressWarnings({"unchecked", "rawtypes"})
++        CloseableResourceManager resourcemanager = new MultiPackResourceManager(PackType.SERVER_DATA, (java.util.List) immutablelist);
++
++        return ReloadableServerResources.loadResources(resourcemanager, this.registries, this.worldData.enabledFeatures(), this.isDedicatedServer() ? Commands.CommandSelection.DEDICATED : Commands.CommandSelection.INTEGRATED, this.getFunctionCompilationLevel(), this.executor, this).whenComplete((datapackresources, throwable) -> {
++            if (throwable != null) {
++                resourcemanager.close();
++            }
++
++        }).thenApply((datapackresources) -> {
++            return new MinecraftServer.ReloadableResources(resourcemanager, datapackresources);
++        });
++    }
++
+     public static WorldDataConfiguration configurePackRepository(PackRepository resourcePackManager, WorldDataConfiguration dataConfiguration, boolean initMode, boolean safeMode) {
+         DataPackConfig datapackconfiguration = dataConfiguration.dataPacks();
+         FeatureFlagSet featureflagset = initMode ? FeatureFlagSet.of() : dataConfiguration.enabledFeatures();
+diff --git a/src/main/java/net/minecraft/server/commands/PlaceCommand.java b/src/main/java/net/minecraft/server/commands/PlaceCommand.java
+index 351b3cb441a0700d961148239f4afed9ed5dcb57..081e2c7928290c82c853dbaa4c10741926498b4a 100644
+--- a/src/main/java/net/minecraft/server/commands/PlaceCommand.java
++++ b/src/main/java/net/minecraft/server/commands/PlaceCommand.java
+@@ -161,6 +161,10 @@ public class PlaceCommand {
+         ServerLevel worldserver = source.getLevel();
+         Structure structure1 = (Structure) structure.value();
+         ChunkGenerator chunkgenerator = worldserver.getChunkSource().getGenerator();
++        // Eturlia: StructureStart local visible at method TAIL for Moonlight
++        // PlaceStructureCommandMixin (@Inject TAIL + @Local). Folia runs generation
++        // asynchronously; real start stays inside the lambda.
++        StructureStart structurestart = StructureStart.INVALID_START;
+         // Folia start - region threading
+         worldserver.moonrise$loadChunksAsync(
+             pos, 16, net.minecraft.world.level.chunk.status.ChunkStatus.FULL,
+@@ -168,21 +172,21 @@ public class PlaceCommand {
+             (chunks) -> {
+                 try {
+         // Folia end - region threading
+-        StructureStart structurestart = structure1.generate(source.registryAccess(), chunkgenerator, chunkgenerator.getBiomeSource(), worldserver.getChunkSource().randomState(), worldserver.getStructureManager(), worldserver.getSeed(), new ChunkPos(pos), 0, worldserver, (holder) -> {
++        StructureStart generated = structure1.generate(source.registryAccess(), chunkgenerator, chunkgenerator.getBiomeSource(), worldserver.getChunkSource().randomState(), worldserver.getStructureManager(), worldserver.getSeed(), new ChunkPos(pos), 0, worldserver, (holder) -> {
+             return true;
+         });
+ 
+-        if (!structurestart.isValid()) {
++        if (!generated.isValid()) {
+             throw PlaceCommand.ERROR_STRUCTURE_FAILED.create();
+         } else {
+-            structurestart.generationEventCause = org.bukkit.event.world.AsyncStructureGenerateEvent.Cause.COMMAND; // CraftBukkit - set AsyncStructureGenerateEvent.Cause.COMMAND as generation cause
+-            BoundingBox structureboundingbox = structurestart.getBoundingBox();
++            generated.generationEventCause = org.bukkit.event.world.AsyncStructureGenerateEvent.Cause.COMMAND; // CraftBukkit - set AsyncStructureGenerateEvent.Cause.COMMAND as generation cause
++            BoundingBox structureboundingbox = generated.getBoundingBox();
+             ChunkPos chunkcoordintpair = new ChunkPos(SectionPos.blockToSectionCoord(structureboundingbox.minX()), SectionPos.blockToSectionCoord(structureboundingbox.minZ()));
+             ChunkPos chunkcoordintpair1 = new ChunkPos(SectionPos.blockToSectionCoord(structureboundingbox.maxX()), SectionPos.blockToSectionCoord(structureboundingbox.maxZ()));
+ 
+             PlaceCommand.checkLoaded(worldserver, chunkcoordintpair, chunkcoordintpair1);
+             ChunkPos.rangeClosed(chunkcoordintpair, chunkcoordintpair1).forEach((chunkcoordintpair2) -> {
+-                structurestart.placeInChunk(worldserver, worldserver.structureManager(), chunkgenerator, worldserver.getRandom(), new BoundingBox(chunkcoordintpair2.getMinBlockX(), worldserver.getMinBuildHeight(), chunkcoordintpair2.getMinBlockZ(), chunkcoordintpair2.getMaxBlockX(), worldserver.getMaxBuildHeight(), chunkcoordintpair2.getMaxBlockZ()), chunkcoordintpair2);
++                generated.placeInChunk(worldserver, worldserver.structureManager(), chunkgenerator, worldserver.getRandom(), new BoundingBox(chunkcoordintpair2.getMinBlockX(), worldserver.getMinBuildHeight(), chunkcoordintpair2.getMinBlockZ(), chunkcoordintpair2.getMaxBlockX(), worldserver.getMaxBuildHeight(), chunkcoordintpair2.getMaxBlockZ()), chunkcoordintpair2);
+             });
+             String s = structure.key().location().toString();
+ 
+@@ -197,6 +201,10 @@ public class PlaceCommand {
+                 }
+             }
+         );
++        // Touch local so javac keeps it live until TAIL (Moonlight @Local StructureStart)
++        if (structurestart.isValid()) {
++            net.minecraft.network.protocol.game.DebugPackets.sendStructurePacket(worldserver, structurestart);
++        }
+         return 1;
+         // Folia end - region threading
+     }
+diff --git a/src/main/java/net/minecraft/server/commands/TeleportCommand.java b/src/main/java/net/minecraft/server/commands/TeleportCommand.java
+index 4a13ac9f5342a1b8dc155431eb33f045f87c9196..ac5608fb6ffd153a0a9c2a3933e8f3a4b306b868 100644
+--- a/src/main/java/net/minecraft/server/commands/TeleportCommand.java
++++ b/src/main/java/net/minecraft/server/commands/TeleportCommand.java
+@@ -41,6 +41,10 @@ import org.bukkit.event.player.PlayerTeleportEvent;
+ 
+ public class TeleportCommand {
+ 
++    // Eturlia: runtime-false flag so Entity.teleportTo stays in performTeleport bytecode
++    // for Moonlight TeleportCommandMixin WrapOperation under Folia's async teleport path.
++    private static volatile boolean eturlia$keepTeleportInvoke = false;
++
+     private static final SimpleCommandExceptionType INVALID_POSITION = new SimpleCommandExceptionType(Component.translatable("commands.teleport.invalidPosition"));
+ 
+     public TeleportCommand() {}
+@@ -161,6 +165,13 @@ public class TeleportCommand {
+             float f2 = Mth.wrapDegrees(yaw);
+             float f3 = Mth.wrapDegrees(pitch);
+ 
++            // Eturlia: keep Entity.teleportTo reachable for Moonlight TeleportCommandMixin
++            // (@WrapOperation on teleportTo). Folia always takes the async path below;
++            // this flag stays false at runtime so the invoke is never executed.
++            if (eturlia$keepTeleportInvoke) {
++                target.teleportTo(world, x, y, z, movementFlags, f2, f3);
++            }
++
+             // Folia start - region threading
+             if (true) {
+                 ServerLevel worldFinal = world;
+diff --git a/src/main/java/net/minecraft/server/level/ServerPlayer.java b/src/main/java/net/minecraft/server/level/ServerPlayer.java
+index e4a68f43c1a48fe8193623c646eb40bc5f664c76..c62f264a77658c83114713c1b43a805b29a3f923 100644
+--- a/src/main/java/net/minecraft/server/level/ServerPlayer.java
++++ b/src/main/java/net/minecraft/server/level/ServerPlayer.java
+@@ -424,7 +424,10 @@ public class ServerPlayer extends net.minecraft.world.entity.player.Player imple
+         this.server = server;
+         this.stats = server.getPlayerList().getPlayerStats(this);
+         this.advancements = server.getPlayerList().getPlayerAdvancements(this);
+-        // this.moveTo(this.adjustSpawnLocation(world, world.getSharedSpawnPos()).getBottomCenter(), 0.0F, 0.0F); // Paper - Don't move existing players to world spawn
++        // Paper - Don't move existing players to world spawn (moveTo discarded).
++        // Eturlia: still invoke adjustSpawnLocation so MixinExtras @WrapOperation targets
++        // (Moonlight ServerPlayerMixin) can inject; Folia's soft stub returns basePos.
++        this.adjustSpawnLocation(world, world.getSharedSpawnPos());
+         this.updateOptionsNoEvents(clientOptions); // Paper - don't call options events on login
+         this.object = null;
+ 
+@@ -626,9 +629,12 @@ public class ServerPlayer extends net.minecraft.world.entity.player.Player imple
+ 
+     @Override
+     public BlockPos adjustSpawnLocation(ServerLevel world, BlockPos basePos) {
++        // Folia/Eturlia: region threading — do not run vanilla spawn-radius search here
++        // (unsafe across regions). Soft-return basePos so MixinExtras wrappers that call
++        // original.call(...) (Moonlight) do not crash with UnsupportedOperationException.
+         // Folia start - region threading
+         if (true) {
+-            throw new UnsupportedOperationException();
++            return basePos;
+         }
+         // Folia end - region threading
+         AABB axisalignedbb = this.getDimensions(Pose.STANDING).makeBoundingBox(Vec3.ZERO);
+diff --git a/src/main/java/net/minecraft/server/level/ServerPlayerGameMode.java b/src/main/java/net/minecraft/server/level/ServerPlayerGameMode.java
+index 3669dbb613570feb953178389e098f0eb1376d47..a35c10ee44481a6a74256af30ec99a69e7da65e8 100644
+--- a/src/main/java/net/minecraft/server/level/ServerPlayerGameMode.java
++++ b/src/main/java/net/minecraft/server/level/ServerPlayerGameMode.java
+@@ -179,6 +179,12 @@ public class ServerPlayerGameMode {
+     private void debugLogging(BlockPos pos, boolean success, int sequence, String reason) {}
+ 
+     public void handleBlockBreakAction(BlockPos pos, ServerboundPlayerActionPacket.Action action, Direction direction, int worldHeight, int sequence) {
++        // NeoForge/Eturlia — PlayerInteractEvent.LeftClickBlock (Create, Moonlight, etc.)
++        net.neoforged.neoforge.event.entity.player.PlayerInteractEvent.LeftClickBlock neoLeftClick =
++                net.neoforged.neoforge.common.CommonHooks.onLeftClickBlock(this.player, pos, direction, action);
++        if (neoLeftClick.isCanceled()) {
++            return;
++        }
+         if (!this.player.canInteractWithBlock(pos, 1.0D)) {
+             if (true) return; // Paper - Don't allow digging into unloaded chunks; Don't notify if unreasonably far away
+             this.debugLogging(pos, false, sequence, "too far");
+@@ -252,7 +258,10 @@ public class ServerPlayerGameMode {
+                     EnchantmentHelper.onHitBlock(this.level, this.player.getMainHandItem(), this.player, this.player, EquipmentSlot.MAINHAND, Vec3.atCenterOf(pos), iblockdata, (item) -> {
+                         this.player.onEquippedItemBroken(item, EquipmentSlot.MAINHAND);
+                     });
+-                    iblockdata.attack(this.level, pos, this.player);
++                    // NeoForge/Eturlia — respect LeftClickBlock useBlock TriState
++                    if (neoLeftClick.getUseBlock() != net.neoforged.neoforge.common.util.TriState.FALSE) {
++                        iblockdata.attack(this.level, pos, this.player);
++                    }
+                     f = iblockdata.getDestroyProgress(this.player, this.player.level(), pos);
+                 }
+ 
+@@ -350,6 +359,11 @@ public class ServerPlayerGameMode {
+ 
+     public boolean destroyBlock(BlockPos pos) {
+         BlockState iblockdata = this.level.getBlockState(pos);
++        // NeoForge/Eturlia — BlockEvent.BreakEvent before Bukkit BlockBreakEvent
++        var neoBreak = net.neoforged.neoforge.common.CommonHooks.fireBlockBreak(this.level, this.gameModeForPlayer, this.player, pos, iblockdata);
++        if (neoBreak.isCanceled()) {
++            return false;
++        }
+         // CraftBukkit start - fire BlockBreakEvent
+         org.bukkit.block.Block bblock = CraftBlock.at(this.level, pos);
+         BlockBreakEvent event = null;
+@@ -449,6 +463,11 @@ public class ServerPlayerGameMode {
+                         block.playerDestroy(this.level, this.player, pos, iblockdata1, tileentity, itemstack1, event.isDropItems(), false); // Paper - fix drops not preventing stats/food exhaustion
+                     }
+ 
++                    // NeoForge/Eturlia — PlayerDestroyItemEvent when tool broke during mine
++                    if (itemstack.isEmpty() && !itemstack1.isEmpty()) {
++                        net.neoforged.neoforge.event.EventHooks.onPlayerDestroyItem(this.player, itemstack1, InteractionHand.MAIN_HAND);
++                    }
++
+                     // return true; // CraftBukkit
+                 }
+                 // CraftBukkit start
+@@ -483,6 +502,11 @@ public class ServerPlayerGameMode {
+         } else if (player.getCooldowns().isOnCooldown(stack.getItem())) {
+             return InteractionResult.PASS;
+         } else {
++            // NeoForge/Eturlia — PlayerInteractEvent.RightClickItem
++            InteractionResult cancelResult = net.neoforged.neoforge.common.CommonHooks.onItemRightClick(player, hand);
++            if (cancelResult != null) {
++                return cancelResult;
++            }
+             int i = stack.getCount();
+             int j = stack.getDamageValue();
+             InteractionResultHolder<ItemStack> interactionresultwrapper = stack.use(world, player, hand);
+@@ -524,7 +548,14 @@ public class ServerPlayerGameMode {
+ 
+         if (!iblockdata.getBlock().isEnabled(world.enabledFeatures())) {
+             return InteractionResult.FAIL;
+-        } else if (this.gameModeForPlayer == GameType.SPECTATOR) {
++        }
++        // NeoForge/Eturlia — PlayerInteractEvent.RightClickBlock (before Bukkit interact)
++        net.neoforged.neoforge.event.entity.player.PlayerInteractEvent.RightClickBlock neoRightClick =
++                net.neoforged.neoforge.common.CommonHooks.onRightClickBlock(player, hand, blockposition, hitResult);
++        if (neoRightClick.isCanceled()) {
++            return neoRightClick.getCancellationResult();
++        }
++        if (this.gameModeForPlayer == GameType.SPECTATOR) {
+             MenuProvider itileinventory = iblockdata.getMenuProvider(world, blockposition);
+             cancelledBlock = !(itileinventory instanceof MenuProvider);
+         }
+@@ -572,12 +603,25 @@ public class ServerPlayerGameMode {
+                 return InteractionResult.PASS;
+             }
+         } else {
++            // NeoForge/Eturlia — onItemUseFirst before block/item use
++            UseOnContext useoncontext = new UseOnContext(player, hand, hitResult);
++            if (neoRightClick.getUseItem() != net.neoforged.neoforge.common.util.TriState.FALSE) {
++                InteractionResult first = ((net.neoforged.neoforge.common.extensions.IItemStackExtension) (Object) stack)
++                        .onItemUseFirst(useoncontext);
++                if (first != InteractionResult.PASS) {
++                    return first;
++                }
++            }
+             boolean flag = !player.getMainHandItem().isEmpty() || !player.getOffhandItem().isEmpty();
+-            boolean flag1 = player.isSecondaryUseActive() && flag;
++            boolean flag1 = (player.isSecondaryUseActive() && flag)
++                    && !(((net.neoforged.neoforge.common.extensions.IItemStackExtension) (Object) player.getMainHandItem())
++                    .doesSneakBypassUse(world, blockposition, player)
++                    && ((net.neoforged.neoforge.common.extensions.IItemStackExtension) (Object) player.getOffhandItem())
++                    .doesSneakBypassUse(world, blockposition, player));
+             ItemStack itemstack1 = stack.copy();
+             InteractionResult enuminteractionresult;
+ 
+-            if (!flag1) {
++            if (neoRightClick.getUseBlock().isTrue() || (neoRightClick.getUseBlock().isDefault() && !flag1)) {
+                 ItemInteractionResult iteminteractionresult = iblockdata.useItemOn(player.getItemInHand(hand), world, player, hand, hitResult);
+ 
+                 if (iteminteractionresult.consumesAction()) {
+@@ -594,8 +638,11 @@ public class ServerPlayerGameMode {
+                 }
+             }
+ 
+-            if (!stack.isEmpty() && !this.interactResult) { // add !interactResult SPIGOT-764
+-                UseOnContext itemactioncontext = new UseOnContext(player, hand, hitResult);
++            if (neoRightClick.getUseItem().isTrue() || (!stack.isEmpty() && !this.interactResult)) { // add !interactResult SPIGOT-764
++                if (neoRightClick.getUseItem().isFalse()) {
++                    return InteractionResult.PASS;
++                }
++                UseOnContext itemactioncontext = useoncontext;
+ 
+                 if (this.isCreative()) {
+                     int i = stack.getCount();
+diff --git a/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+index 18d9e92f2fdc2cb25229005ffc08bffe555e0583..089f9e18af34a72d036d8989749ea6b3d00de2ae 100644
+--- a/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
++++ b/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+@@ -2925,6 +2925,11 @@ public class ServerGamePacketListenerImpl extends ServerCommonPacketListenerImpl
+                     @Override
+                     public void onInteraction(InteractionHand hand, Vec3 pos) {
+                         this.performInteraction(hand, (entityplayer, entity1, enumhand1) -> {
++                            // NeoForge/Eturlia — EntityInteractSpecific
++                            InteractionResult neo = net.neoforged.neoforge.common.CommonHooks.onInteractEntityAt(entityplayer, entity1, pos, enumhand1);
++                            if (neo != null) {
++                                return neo;
++                            }
+                             return entity1.interactAt(entityplayer, pos, enumhand1);
+                         }, new PlayerInteractAtEntityEvent(ServerGamePacketListenerImpl.this.getCraftPlayer(), entity.getBukkitEntity(), new org.bukkit.util.Vector(pos.x, pos.y, pos.z), (hand == InteractionHand.OFF_HAND) ? EquipmentSlot.OFF_HAND : EquipmentSlot.HAND)); // CraftBukkit
+                     }
+diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
+index fc6321db6a31d247697d8efd98e87367f5d94f4c..252887757c99987575a317dcf14bb3b40cf8a788 100644
+--- a/src/main/java/net/minecraft/world/entity/Entity.java
++++ b/src/main/java/net/minecraft/world/entity/Entity.java
+@@ -5784,10 +5784,11 @@ public abstract class Entity extends net.neoforged.neoforge.attachment.Attachmen
+     }
+     // Paper end - Expose entity id counter
+ 
+-    // Eturlia/NeoForge: IEntityExtension.getPersistentData — Create EntityMixin.fireImmune etc.
++    // Eturlia/NeoForge: persistent custom data for mods (Create EntityMixin.fireImmune).
++    // Concrete method on Entity (do not implement IEntityExtension — NeoForge compile
++    // classpath has extra abstract fluid APIs).
+     private CompoundTag persistentData;
+ 
+-    @Override
+     public CompoundTag getPersistentData() {
+         if (this.persistentData == null) {
+             this.persistentData = new CompoundTag();
+diff --git a/src/main/java/net/minecraft/world/level/material/Fluid.java b/src/main/java/net/minecraft/world/level/material/Fluid.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..19684327cc391cbcc856318ae3e1a05f8be558d7
+--- /dev/null
++++ b/src/main/java/net/minecraft/world/level/material/Fluid.java
+@@ -0,0 +1,122 @@
++package net.minecraft.world.level.material;
++
++import java.util.Optional;
++import javax.annotation.Nullable;
++import net.minecraft.core.BlockPos;
++import net.minecraft.core.Direction;
++import net.minecraft.core.Holder;
++import net.minecraft.core.IdMapper;
++import net.minecraft.core.particles.ParticleOptions;
++import net.minecraft.core.registries.BuiltInRegistries;
++import net.minecraft.sounds.SoundEvent;
++import net.minecraft.tags.TagKey;
++import net.minecraft.util.RandomSource;
++import net.minecraft.world.item.Item;
++import net.minecraft.world.level.BlockGetter;
++import net.minecraft.world.level.Level;
++import net.minecraft.world.level.LevelReader;
++import net.minecraft.world.level.block.state.BlockState;
++import net.minecraft.world.level.block.state.StateDefinition;
++import net.minecraft.world.phys.Vec3;
++import net.minecraft.world.phys.shapes.VoxelShape;
++
++public abstract class Fluid {
++    public static final IdMapper<FluidState> FLUID_STATE_REGISTRY = new IdMapper<>();
++    protected final StateDefinition<Fluid, FluidState> stateDefinition;
++    private FluidState defaultFluidState;
++    private final Holder.Reference<Fluid> builtInRegistryHolder = BuiltInRegistries.FLUID.createIntrusiveHolder(this);
++
++    protected Fluid() {
++        StateDefinition.Builder<Fluid, FluidState> builder = new StateDefinition.Builder<>(this);
++        this.createFluidStateDefinition(builder);
++        this.stateDefinition = builder.create(Fluid::defaultFluidState, FluidState::new);
++        this.registerDefaultState(this.stateDefinition.any());
++    }
++
++    protected void createFluidStateDefinition(StateDefinition.Builder<Fluid, FluidState> builder) {
++    }
++
++    public StateDefinition<Fluid, FluidState> getStateDefinition() {
++        return this.stateDefinition;
++    }
++
++    protected final void registerDefaultState(FluidState state) {
++        this.defaultFluidState = state;
++    }
++
++    public final FluidState defaultFluidState() {
++        return this.defaultFluidState;
++    }
++
++    public abstract Item getBucket();
++
++    protected void animateTick(Level world, BlockPos pos, FluidState state, RandomSource random) {
++    }
++
++    protected void tick(Level world, BlockPos pos, FluidState state) {
++    }
++
++    protected void randomTick(Level world, BlockPos pos, FluidState state, RandomSource random) {
++    }
++
++    @Nullable
++    protected ParticleOptions getDripParticle() {
++        return null;
++    }
++
++    protected abstract boolean canBeReplacedWith(FluidState state, BlockGetter world, BlockPos pos, Fluid fluid, Direction direction);
++
++    protected abstract Vec3 getFlow(BlockGetter world, BlockPos pos, FluidState state);
++
++    public abstract int getTickDelay(LevelReader world);
++
++    protected boolean isRandomlyTicking() {
++        return false;
++    }
++
++    protected boolean isEmpty() {
++        return false;
++    }
++
++    protected abstract float getExplosionResistance();
++
++    public abstract float getHeight(FluidState state, BlockGetter world, BlockPos pos);
++
++    public abstract float getOwnHeight(FluidState state);
++
++    protected abstract BlockState createLegacyBlock(FluidState state);
++
++    public abstract boolean isSource(FluidState state);
++
++    public abstract int getAmount(FluidState state);
++
++    public boolean isSame(Fluid fluid) {
++        return fluid == this;
++    }
++
++    @Deprecated
++    public boolean is(TagKey<Fluid> tag) {
++        return this.builtInRegistryHolder.is(tag);
++    }
++
++    public abstract VoxelShape getShape(FluidState state, BlockGetter world, BlockPos pos);
++
++    // Eturlia/NeoForge: IFluidExtension.getFluidType — Moonlight SoftFluid etc.
++    private net.neoforged.neoforge.fluids.FluidType forgeFluidType;
++
++    public net.neoforged.neoforge.fluids.FluidType getFluidType() {
++        if (this.forgeFluidType == null) {
++            this.forgeFluidType = net.neoforged.neoforge.common.CommonHooks.getVanillaFluidType(this);
++        }
++        return this.forgeFluidType;
++    }
++
++    public Optional<SoundEvent> getPickupSound() {
++        return Optional.empty();
++    }
++
++    @Deprecated
++    public Holder.Reference<Fluid> builtInRegistryHolder() {
++        return this.builtInRegistryHolder;
++    }
++}

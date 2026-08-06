@@ -18,14 +18,14 @@ index 7b0fc7135bc107103dcaed6dc0707b1829928fae..4dff7aec5e11836a45f9c095e8766ef6
  
      @Override
 -    public final boolean equals(Object object) { // Paper - Perf: Final for inline
-+    // Eturlia/NeoForge: Create TrackNodeLocation overrides equals — cannot be final (Paper inlined it)
++    // Crelia/NeoForge: Create TrackNodeLocation overrides equals — cannot be final (Paper inlined it)
 +    public boolean equals(Object object) {
          return this == object || object instanceof Vec3i vec3i && this.getX() == vec3i.getX() && this.getY() == vec3i.getY() && this.getZ() == vec3i.getZ();
      }
  
      @Override
 -    public final int hashCode() { // Paper - Perf: Final for inline
-+    // Eturlia/NeoForge: keep hashCode overridable with equals
++    // Crelia/NeoForge: keep hashCode overridable with equals
 +    public int hashCode() {
          return (this.getY() + this.getZ() * 31) * 31 + this.getX();
      }
