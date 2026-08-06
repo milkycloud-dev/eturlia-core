@@ -1,0 +1,28 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 21:12:48 +0000
+Subject: [PATCH] Eturlia: redeclare
+ GroundPathNavigation.createPath(BlockPos,int)
+
+Sable @Shadow expects createPath(BlockPos,I) on GroundPathNavigation;
+Paper only inherits it from PathNavigation. Re-declare and route through
+the Folia-aware Entity overload.
+
+diff --git a/src/main/java/net/minecraft/world/entity/ai/navigation/GroundPathNavigation.java b/src/main/java/net/minecraft/world/entity/ai/navigation/GroundPathNavigation.java
+index e03e07752e335d694c52c8dd780e71528021f15c..203d294a3396a7612d629f858755ced913bdcb19 100644
+--- a/src/main/java/net/minecraft/world/entity/ai/navigation/GroundPathNavigation.java
++++ b/src/main/java/net/minecraft/world/entity/ai/navigation/GroundPathNavigation.java
+@@ -40,6 +40,13 @@ public class GroundPathNavigation extends PathNavigation {
+         return new Vec3(this.mob.getX(), (double)this.getSurfaceY(), this.mob.getZ());
+     }
+ 
++    // Eturlia: Sable @Shadow createPath(BlockPos,I) on GroundPathNavigation; method lives on PathNavigation
++    // parent in Paper/Folia — re-declare so the shadow attaches. Route via Entity overload for Folia checks.
++    @Override
++    public Path createPath(BlockPos target, int distance) {
++        return this.createPath(target, (Entity) null, distance);
++    }
++
+     @Override
+     public Path createPath(BlockPos target, @javax.annotation.Nullable Entity entity, int distance) { // Paper - EntityPathfindEvent
+         // Folia start - region threading

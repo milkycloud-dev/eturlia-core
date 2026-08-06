@@ -1,0 +1,109 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 21:21:01 +0000
+Subject: [PATCH] Eturlia: vanilla placeNewPlayer/respawn for Sable
+ player_freezing
+
+CraftBukkit widened placeNewPlayer and respawn signatures. Rename those
+to placeNewPlayerWithSpawn / respawnWithReason and restore vanilla
+overloads so Sable @Inject TAIL matches.
+
+diff --git a/src/main/java/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java b/src/main/java/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java
+index 34c7fbf154c42d07b3b317b13632243a81904e3c..fe4678733af1195f1081ec14c08ea733d15ae869 100644
+--- a/src/main/java/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java
++++ b/src/main/java/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java
+@@ -200,7 +200,7 @@ public class ServerConfigurationPacketListenerImpl extends ServerCommonPacketLis
+                     () -> {
+                         // once switchToMain is set, the current ticking region now owns the connection and is responsible
+                         // for cleaning it up
+-                        playerlist.placeNewPlayer(
++                        playerlist.placeNewPlayerWithSpawn(
+                             ServerConfigurationPacketListenerImpl.this.connection,
+                             entityplayer,
+                             clientData,
+diff --git a/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+index 089f9e18af34a72d036d8989749ea6b3d00de2ae..e40f702973e532de4926f4f3f12110f1332639f2 100644
+--- a/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
++++ b/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+@@ -3008,7 +3008,7 @@ public class ServerGamePacketListenerImpl extends ServerCommonPacketListenerImpl
+                     }
+                     // Folia end - region threading
+                     this.player.wonGame = false;
+-                    this.player = this.server.getPlayerList().respawn(this.player, true, Entity.RemovalReason.CHANGED_DIMENSION, RespawnReason.END_PORTAL); // CraftBukkit
++                    this.player = this.server.getPlayerList().respawnWithReason(this.player, true, Entity.RemovalReason.CHANGED_DIMENSION, RespawnReason.END_PORTAL); // CraftBukkit // Eturlia
+                     CriteriaTriggers.CHANGED_DIMENSION.trigger(this.player, Level.END, Level.OVERWORLD);
+                 } else {
+                     if (this.player.getHealth() > 0.0F) {
+@@ -3026,7 +3026,7 @@ public class ServerGamePacketListenerImpl extends ServerCommonPacketListenerImpl
+                         return;
+                     }
+                     // Folia end - region threading
+-                    this.player = this.server.getPlayerList().respawn(this.player, false, Entity.RemovalReason.KILLED, RespawnReason.DEATH); // CraftBukkit
++                    this.player = this.server.getPlayerList().respawnWithReason(this.player, false, Entity.RemovalReason.KILLED, RespawnReason.DEATH); // CraftBukkit // Eturlia
+                     if (this.server.isHardcore()) {
+                         this.player.setGameMode(GameType.SPECTATOR, org.bukkit.event.player.PlayerGameModeChangeEvent.Cause.HARDCORE_DEATH, null); // Paper - Expand PlayerGameModeChangeEvent
+                         ((GameRules.BooleanValue) this.player.level().getGameRules().getRule(GameRules.RULE_SPECTATORSGENERATECHUNKS)).set(false, this.player.serverLevel()); // CraftBukkit - per-world
+diff --git a/src/main/java/net/minecraft/server/players/PlayerList.java b/src/main/java/net/minecraft/server/players/PlayerList.java
+index 2c2a14dcfb88379e83ba5d875fc0bc268d1fbd0c..542d44dcad5dd9c7e3be549b1cddb1f4f8dbf5af 100644
+--- a/src/main/java/net/minecraft/server/players/PlayerList.java
++++ b/src/main/java/net/minecraft/server/players/PlayerList.java
+@@ -350,7 +350,12 @@ public abstract class PlayerList {
+     }
+     // optional -> player data
+     // s -> last known name
+-    public void placeNewPlayer(Connection connection, ServerPlayer player, CommonListenerCookie clientData, Optional<CompoundTag> optional, String s, Location selectedSpawn) {
++    // Eturlia: Sable player_freezing @Inject TAIL of placeNewPlayer(Connection, ServerPlayer, Cookie).
++    // CraftBukkit added Optional/String/Location — rename that entry so mixin only matches vanilla.
++    public void placeNewPlayer(Connection connection, ServerPlayer player, CommonListenerCookie clientData) {
++    }
++
++    public void placeNewPlayerWithSpawn(Connection connection, ServerPlayer player, CommonListenerCookie clientData, Optional<CompoundTag> optional, String s, Location selectedSpawn) {
+         ServerLevel worldserver1 = ((CraftWorld)selectedSpawn.getWorld()).getHandle();
+         player.setPosRaw(selectedSpawn.getX(), selectedSpawn.getY(), selectedSpawn.getZ());
+         player.lastSave = System.nanoTime(); // changed to nanoTime
+@@ -514,6 +519,7 @@ public abstract class PlayerList {
+             );
+         }
+         // Paper end - Send empty chunk
++        this.placeNewPlayer(connection, player, clientData); // Eturlia: Sable player_freezing @Inject TAIL
+     }
+     private void mountSavedVehicle(ServerPlayer player, ServerLevel worldserver1, Optional<CompoundTag> optional) {
+         // Paper end - Fire PlayerJoinEvent when Player is actually ready
+@@ -895,13 +901,21 @@ public abstract class PlayerList {
+     }
+ 
+     // CraftBukkit start
+-    public ServerPlayer respawn(ServerPlayer entityplayer, boolean flag, Entity.RemovalReason entity_removalreason, RespawnReason reason) {
+-        return this.respawn(entityplayer, flag, entity_removalreason, reason, null);
++    // Eturlia: Sable player_freezing @Inject TAIL of respawn(ServerPlayer,Z,RemovalReason).
++    // CraftBukkit added RespawnReason — keep vanilla name on the 3-arg form.
++    public ServerPlayer respawn(ServerPlayer entityplayer, boolean flag, Entity.RemovalReason entity_removalreason) {
++        return entityplayer;
++    }
++
++    // Eturlia: CraftBukkit RespawnReason overloads renamed so Sable method="respawn" only hits 3-arg
++    public ServerPlayer respawnWithReason(ServerPlayer entityplayer, boolean flag, Entity.RemovalReason entity_removalreason, RespawnReason reason) {
++        return this.respawnWithReason(entityplayer, flag, entity_removalreason, reason, null);
+     }
+ 
+-    public ServerPlayer respawn(ServerPlayer entityplayer, boolean flag, Entity.RemovalReason entity_removalreason, RespawnReason reason, Location location) {
++    public ServerPlayer respawnWithReason(ServerPlayer entityplayer, boolean flag, Entity.RemovalReason entity_removalreason, RespawnReason reason, Location location) {
+         // Folia start - region threading
+         if (true) {
++            this.respawn(entityplayer, flag, entity_removalreason); // Eturlia: Sable TAIL even when Folia rejects sync respawn
+             throw new UnsupportedOperationException("Must use teleportAsync while in region threading");
+         }
+         // Folia end - region threading
+diff --git a/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java b/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
+index 12a2da086f249b3dbd61e5749b9856a2fce9ac7b..7a0285076a7b6ac6e9dc56c97770fafa80a1c5cf 100644
+--- a/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
++++ b/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
+@@ -1510,7 +1510,7 @@ public class CraftPlayer extends CraftHumanEntity implements Player {
+         } else {
+             entity.portalProcess = null; // SPIGOT-7785: there is no need to carry this over as it contains the old world/location and we might run into trouble if there is a portal in the same spot in both worlds
+             // The respawn reason should never be used if the passed location is non null.
+-            this.server.getHandle().respawn(entity, true, Entity.RemovalReason.CHANGED_DIMENSION, null, to);
++            this.server.getHandle().respawnWithReason(entity, true, Entity.RemovalReason.CHANGED_DIMENSION, null, to);
+         }
+         return true;
+     }

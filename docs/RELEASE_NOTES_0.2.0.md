@@ -81,14 +81,25 @@ java -jar eturlia-1.21.1-neoforge-21.1.248.jar --nogui
 Полная таблица: [`docs/PACK_COMPAT_ASIC_2026-08.md`](./PACK_COMPAT_ASIC_2026-08.md).
 
 - **Lithostitched ≥1.7.13 + Terralith + Incendium:** **OK** после патчей `0041`–`0042` (smoke `Done`).
-- **Sable:** убрать Arclight-патч → shim из релиза; ядерные bridges `0042`–`0049`; boot ещё WIP (explode WrapMethod).
+- **Sable:** убрать Arclight-патч → shim из релиза; bridges `0042`–`0066`; smoke **OK\*** (`Done` + worlds + ticks).
 - **Убрать:** spark-neoforge, клиентские jars, `*.jar1`/`*.bak`.
 - Оптимизаторы вне scope. Плагины — только `folia-supported: true`, без `libraries:` пока.
+
+### config/eturlia.yml (ядро)
+
+Новый бренд-конфиг со стартовым шаблоном (потоки Folia/Moonrise, чанки, command blocks, region guard, watchdog, LOD, ссылки на paper-global/server.properties).
+
+- Создаётся в `config/eturlia.yml` при первом старте
+- `sync-to-paper: true` — overrides threads до `TickRegions`/`ChunkSystem` init
+- `gameplay.command-blocks.enabled` — override `enable-command-block`
+- При старте печатает сводку effective settings
+
+Патч: `0067-Eturlia-load-config-eturlia.yml-before-Paper-pools-b.patch`
 
 ### SHA256
 
 ```
-457653dabe853b4c2242cee13ad36cdfdc02ec5eee0b9bd49d45fbc4b77523b4
+ed08c57b9923566a136b3826c1d9ef2db8d964cb354d601ffc5f298e559dd7df
 ```
 
 ---

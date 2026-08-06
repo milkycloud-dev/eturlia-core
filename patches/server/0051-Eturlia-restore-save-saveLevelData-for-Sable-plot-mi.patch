@@ -1,0 +1,85 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 20:58:03 +0000
+Subject: [PATCH] Eturlia: restore save/saveLevelData() for Sable plot mixin
+
+Sable injects save(ProgressListener,ZZ) BEFORE saveLevelData()V.
+Paper moved work into saveLevelData(boolean) and a 4-arg save overload,
+so the INVOKE vanished.
+
+- 3-arg save owns the body and calls no-arg saveLevelData()
+- close/async via ETURLIA$SAVE_CLOSE ThreadLocal
+- Paper close entry renamed to saveWithClose (MinecraftServer updated)
+
+diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
+index 5c9d0a486b2b6c0b75b44caad57c159abc61def5..afb282b4f6b7445a3412915d1d73762699d4ba4c 100644
+--- a/src/main/java/net/minecraft/server/MinecraftServer.java
++++ b/src/main/java/net/minecraft/server/MinecraftServer.java
+@@ -995,7 +995,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+                 MinecraftServer.LOGGER.info("Saving chunks for level '{}'/{}", worldserver, worldserver.dimension().location());
+             }
+ 
+-            worldserver.save((ProgressListener) null, flush, worldserver.noSave && !force, close); // Paper - add close param
++            worldserver.saveWithClose((ProgressListener) null, flush, worldserver.noSave && !force, close); // Paper - add close param // Eturlia: saveWithClose keeps Sable save()/saveLevelData()V inject
+         }
+ 
+         // CraftBukkit start - moved to WorldServer.save
+diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
+index f70f7c5ef779c52fbf73938ea9f0bf0562c408a4..33a85bdd2858e90ca4450c8c8e303d0adae22cf6 100644
+--- a/src/main/java/net/minecraft/server/level/ServerLevel.java
++++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
+@@ -1556,12 +1556,12 @@ public class ServerLevel extends Level implements WorldGenLevel, ca.spottedleaf.
+     }
+     // Paper end - Incremental chunk and player saving
+ 
++    // Eturlia: Sable plot.ServerLevelMixin injects save(ProgressListener,ZZ) BEFORE saveLevelData()V.
++    // Paper's 4-arg save + saveLevelData(boolean) broke that INVOKE; keep close/async via ThreadLocal.
++    public static final ThreadLocal<Boolean> ETURLIA$SAVE_CLOSE = new ThreadLocal<>();
++
+     public void save(@Nullable ProgressListener progressListener, boolean flush, boolean savingDisabled) {
+-        // Paper start - add close param
+-        this.save(progressListener, flush, savingDisabled, false);
+-    }
+-    public void save(@Nullable ProgressListener progressListener, boolean flush, boolean savingDisabled, boolean close) {
+-        // Paper end - add close param
++        boolean close = Boolean.TRUE.equals(ETURLIA$SAVE_CLOSE.get());
+         ServerChunkCache chunkproviderserver = this.getChunkSource();
+ 
+         if (!savingDisabled) {
+@@ -1571,7 +1571,7 @@ public class ServerLevel extends Level implements WorldGenLevel, ca.spottedleaf.
+                 progressListener.progressStartNoAbort(Component.translatable("menu.savingLevel"));
+             }
+ 
+-            this.saveLevelData(!close); // Paper - Write SavedData IO async
++            this.saveLevelData(); // Eturlia: vanilla no-arg for Sable @At INVOKE saveLevelData()V
+             if (progressListener != null) {
+                 progressListener.progressStage(Component.translatable("menu.savingChunks"));
+             }
+@@ -1596,6 +1596,27 @@ public class ServerLevel extends Level implements WorldGenLevel, ca.spottedleaf.
+         // Folia - move into saveLevelData
+     }
+ 
++    // Paper close-param entry — not named "save" so Sable method="save" only matches the 3-arg form
++    public void saveWithClose(@Nullable ProgressListener progressListener, boolean flush, boolean savingDisabled, boolean close) {
++        Boolean previous = ETURLIA$SAVE_CLOSE.get();
++        ETURLIA$SAVE_CLOSE.set(close);
++        try {
++            this.save(progressListener, flush, savingDisabled);
++        } finally {
++            if (previous != null) {
++                ETURLIA$SAVE_CLOSE.set(previous);
++            } else {
++                ETURLIA$SAVE_CLOSE.remove();
++            }
++        }
++    }
++
++    // Eturlia: vanilla descriptor for Sable; async = !close (Paper Write SavedData IO async)
++    public void saveLevelData() {
++        boolean close = Boolean.TRUE.equals(ETURLIA$SAVE_CLOSE.get());
++        this.saveLevelData(!close);
++    }
++
+     public void saveLevelData(boolean async) { // Paper - Write SavedData IO async // Folia - public
+         if (this.dragonFight != null) {
+             this.serverLevelData.setEndDragonFightData(this.dragonFight.saveData()); // CraftBukkit

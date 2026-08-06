@@ -1,0 +1,22 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 21:27:14 +0000
+Subject: [PATCH] Eturlia: restore ChunkMap.unloadQueue for Sable plot
+ serialization
+
+Paper/Moonrise removed the field; Sable @Shadow Final unloadQueue and
+replaces it with ConcurrentLinkedDeque in ChunkMap ctor.
+
+diff --git a/src/main/java/net/minecraft/server/level/ChunkMap.java b/src/main/java/net/minecraft/server/level/ChunkMap.java
+index 19e5bcb37d9746726ba5983c4d1819f745a1b2e6..2755fd5336bcf10a921ed75f061a4595c7df548c 100644
+--- a/src/main/java/net/minecraft/server/level/ChunkMap.java
++++ b/src/main/java/net/minecraft/server/level/ChunkMap.java
+@@ -131,6 +131,8 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+     private final Supplier<DimensionDataStorage> overworldDataStorage;
+     private final PoiManager poiManager;
+     public final LongSet toDrop;
++    // Eturlia: Paper/Moonrise removed vanilla unloadQueue; Sable plot.serialization @Shadow Final needs it
++    public final java.util.Queue<Runnable> unloadQueue = new java.util.concurrent.ConcurrentLinkedDeque<>();
+     private boolean modified;
+     // Paper - rewrite chunk system
+     public final ChunkProgressListener progressListener;

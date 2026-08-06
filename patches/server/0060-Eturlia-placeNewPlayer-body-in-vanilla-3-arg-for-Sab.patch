@@ -1,0 +1,56 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 21:24:39 +0000
+Subject: [PATCH] Eturlia: placeNewPlayer body in vanilla 3-arg for Sable UDP
+
+Sable UDP injects AFTER first ServerGamePacketListenerImpl.send inside
+placeNewPlayer. Keep the login body on the 3-arg form; Paper extras via
+ThreadLocal from placeNewPlayerWithSpawn.
+
+diff --git a/src/main/java/net/minecraft/server/players/PlayerList.java b/src/main/java/net/minecraft/server/players/PlayerList.java
+index 542d44dcad5dd9c7e3be549b1cddb1f4f8dbf5af..3a06a13e88759c35f5cc821528d5faca3e9330de 100644
+--- a/src/main/java/net/minecraft/server/players/PlayerList.java
++++ b/src/main/java/net/minecraft/server/players/PlayerList.java
+@@ -350,12 +350,29 @@ public abstract class PlayerList {
+     }
+     // optional -> player data
+     // s -> last known name
+-    // Eturlia: Sable player_freezing @Inject TAIL of placeNewPlayer(Connection, ServerPlayer, Cookie).
+-    // CraftBukkit added Optional/String/Location — rename that entry so mixin only matches vanilla.
+-    public void placeNewPlayer(Connection connection, ServerPlayer player, CommonListenerCookie clientData) {
+-    }
++    // Eturlia: Sable UDP injects AFTER first ServerGamePacketListenerImpl.send inside placeNewPlayer(3-arg).
++    // Paper extras (Optional/String/Location) arrive via ThreadLocal from placeNewPlayerWithSpawn.
++    public static final ThreadLocal<Object[]> ETURLIA$PLACE_NEW_PLAYER_EXTRAS = new ThreadLocal<>();
+ 
+     public void placeNewPlayerWithSpawn(Connection connection, ServerPlayer player, CommonListenerCookie clientData, Optional<CompoundTag> optional, String s, Location selectedSpawn) {
++        ETURLIA$PLACE_NEW_PLAYER_EXTRAS.set(new Object[]{optional, s, selectedSpawn});
++        try {
++            this.placeNewPlayer(connection, player, clientData);
++        } finally {
++            ETURLIA$PLACE_NEW_PLAYER_EXTRAS.remove();
++        }
++    }
++
++    public void placeNewPlayer(Connection connection, ServerPlayer player, CommonListenerCookie clientData) {
++        Object[] extras = ETURLIA$PLACE_NEW_PLAYER_EXTRAS.get();
++        if (extras == null) {
++            return;
++        }
++        @SuppressWarnings("unchecked")
++        Optional<CompoundTag> optional = (Optional<CompoundTag>) extras[0];
++        String s = (String) extras[1];
++        Location selectedSpawn = (Location) extras[2];
++        // body continues (was placeNewPlayerWithSpawn / placeNewPlayerBody)
+         ServerLevel worldserver1 = ((CraftWorld)selectedSpawn.getWorld()).getHandle();
+         player.setPosRaw(selectedSpawn.getX(), selectedSpawn.getY(), selectedSpawn.getZ());
+         player.lastSave = System.nanoTime(); // changed to nanoTime
+@@ -519,7 +536,7 @@ public abstract class PlayerList {
+             );
+         }
+         // Paper end - Send empty chunk
+-        this.placeNewPlayer(connection, player, clientData); // Eturlia: Sable player_freezing @Inject TAIL
++        // (Sable player_freezing @Inject TAIL of placeNewPlayer runs when placeNewPlayerBody returns via placeNewPlayer)
+     }
+     private void mountSavedVehicle(ServerPlayer player, ServerLevel worldserver1, Optional<CompoundTag> optional) {
+         // Paper end - Fire PlayerJoinEvent when Player is actually ready
