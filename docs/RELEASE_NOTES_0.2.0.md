@@ -81,7 +81,7 @@ java -jar eturlia-1.21.1-neoforge-21.1.248.jar --nogui
 Полная таблица: [`docs/PACK_COMPAT_ASIC_2026-08.md`](./PACK_COMPAT_ASIC_2026-08.md).
 
 - **Lithostitched ≥1.7.13 + Terralith + Incendium:** **OK** после патчей `0041`–`0042` (smoke `Done`).
-- **Sable:** убрать Arclight-патч → shim из релиза; ядерные bridges `0042`–`0049`; boot ещё WIP (explode WrapMethod).
+- **Sable:** убрать Arclight-патч → shim из релиза; bridges `0042`–`0066`; smoke **OK\*** (`Done` + worlds + ticks).
 - **Убрать:** spark-neoforge, клиентские jars, `*.jar1`/`*.bak`.
 - Оптимизаторы вне scope. Плагины — только `folia-supported: true`, без `libraries:` пока.
 
