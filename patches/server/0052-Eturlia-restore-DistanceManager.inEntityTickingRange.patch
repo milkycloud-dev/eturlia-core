@@ -1,0 +1,68 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 21:04:19 +0000
+Subject: [PATCH] Eturlia: restore DistanceManager.inEntityTickingRange for
+ Sable
+
+- ServerLevel: drop Paper `true ||` so the INVOKE is not DCE'd (Sable
+  WrapOperation on DistanceManager.inEntityTickingRange)
+- ChunkMap: rename ChunkDistanceManager back to DistanceManager (vanilla
+  ChunkMap$DistanceManager) and keep a probe call site (Folia removed
+  the tracker loop Sable also wraps)
+
+diff --git a/src/main/java/net/minecraft/server/level/ChunkMap.java b/src/main/java/net/minecraft/server/level/ChunkMap.java
+index 74524dcd4539a31e9d0037cd607ffbfce02f414c..48931193a5cbda08bb8df78d4d02f2ecec3ef0f2 100644
+--- a/src/main/java/net/minecraft/server/level/ChunkMap.java
++++ b/src/main/java/net/minecraft/server/level/ChunkMap.java
+@@ -135,7 +135,7 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+     // Paper - rewrite chunk system
+     public final ChunkProgressListener progressListener;
+     private final ChunkStatusUpdateListener chunkStatusListener;
+-    public final ChunkMap.ChunkDistanceManager distanceManager;
++    public final ChunkMap.DistanceManager distanceManager;
+     public final AtomicInteger tickingGenerated; // Paper - public
+     private final String storageName;
+     //private final PlayerMap playerMap; // Folia - region threading
+@@ -215,7 +215,7 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+ 
+         // Paper - rewrite chunk system
+         this.lightEngine = new ThreadedLevelLightEngine(chunkProvider, this, this.level.dimensionType().hasSkyLight(), threadedmailbox1, null); // Paper - rewrite chunk system
+-        this.distanceManager = new ChunkMap.ChunkDistanceManager(executor, mainThreadExecutor);
++        this.distanceManager = new ChunkMap.DistanceManager(executor, mainThreadExecutor);
+         this.overworldDataStorage = persistentStateManagerFactory;
+         this.poiManager = new PoiManager(new RegionStorageInfo(session.getLevelId(), world.dimension(), "poi"), path.resolve("poi"), dataFixer, dsync, iregistrycustom, world.getServer(), world);
+         this.setServerViewDistance(viewDistance);
+@@ -1022,9 +1022,16 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+         // Paper - rewrite chunk system
+     }
+ 
+-    public class ChunkDistanceManager extends DistanceManager implements ca.spottedleaf.moonrise.patches.chunk_system.level.chunk.ChunkSystemDistanceManager { // Paper - public // Paper - rewrite chunk system
++    // Eturlia: Paper renamed vanilla ChunkMap$DistanceManager → ChunkDistanceManager; Sable WrapOperation
++    // targets ChunkMap$DistanceManager.inEntityTickingRange. Folia also removed the tracker loop that
++    // invoked it — keep a live call site so the mixin applies (ServerLevel has the plot-critical wrap).
++    boolean eturlia$probeEntityTickingRange(long chunkPos) {
++        return this.distanceManager.inEntityTickingRange(chunkPos);
++    }
++
++    public class DistanceManager extends net.minecraft.server.level.DistanceManager implements ca.spottedleaf.moonrise.patches.chunk_system.level.chunk.ChunkSystemDistanceManager { // Paper - public // Paper - rewrite chunk system // Eturlia: vanilla inner name for Sable
+ 
+-        protected ChunkDistanceManager(final Executor workerExecutor, final Executor mainThreadExecutor) {
++        protected DistanceManager(final Executor workerExecutor, final Executor mainThreadExecutor) {
+             super(workerExecutor, mainThreadExecutor);
+         }
+ 
+diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
+index 33a85bdd2858e90ca4450c8c8e303d0adae22cf6..d9f428bcad539eab2245042cc76d7dcb6573a6f6 100644
+--- a/src/main/java/net/minecraft/server/level/ServerLevel.java
++++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
+@@ -858,7 +858,9 @@ public class ServerLevel extends Level implements WorldGenLevel, ca.spottedleaf.
+                         entity.checkDespawn();
+                         if (entity.isRemoved()) return; // Folia - region threading - if we despawned, DON'T TICK IT!
+                         gameprofilerfiller.pop();
+-                        if (true || this.chunkSource.chunkMap.getDistanceManager().inEntityTickingRange(entity.chunkPosition().toLong())) { // Paper - rewrite chunk system
++                        // Eturlia: Paper `true ||` made javac DCE the INVOKE; Sable WrapOperation needs inEntityTickingRange(J)Z.
++                        // Folia already iterates region ticking entities — restore the real call so Sable can widen plot range.
++                        if (this.chunkSource.chunkMap.getDistanceManager().inEntityTickingRange(entity.chunkPosition().toLong())) {
+                             Entity entity1 = entity.getVehicle();
+ 
+                             if (entity1 != null) {
