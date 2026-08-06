@@ -1,0 +1,72 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 21:11:33 +0000
+Subject: [PATCH] Eturlia: LevelChunk.level typed as Level for Sable @Shadow
+
+CraftBukkit narrowed the field to ServerLevel, so Sable's
+@Shadow Level level failed to attach. Restore vanilla Level type;
+cast to ServerLevel where CraftBukkit/Paper need it.
+
+diff --git a/src/main/java/net/minecraft/world/level/NaturalSpawner.java b/src/main/java/net/minecraft/world/level/NaturalSpawner.java
+index 1023b0d4f52a79bc4db27130d47b6c93b464794a..d8a65a3d672b05308cfd527bc9c7358903fb8de8 100644
+--- a/src/main/java/net/minecraft/world/level/NaturalSpawner.java
++++ b/src/main/java/net/minecraft/world/level/NaturalSpawner.java
+@@ -112,7 +112,7 @@ public final class NaturalSpawner {
+                     object2intopenhashmap.addTo(enumcreaturetype, 1);
+                     // Paper start - Optional per player mob spawns
+                     if (countMobs) {
+-                        chunk.level.getChunkSource().chunkMap.updatePlayerMobTypeMap(entity);
++                        ((ServerLevel) chunk.level).getChunkSource().chunkMap.updatePlayerMobTypeMap(entity);
+                     }
+                     // Paper end - Optional per player mob spawns
+                 });
+diff --git a/src/main/java/net/minecraft/world/level/chunk/LevelChunk.java b/src/main/java/net/minecraft/world/level/chunk/LevelChunk.java
+index fadc4fbaba5f04dfa983de2c5d97653a8e87fea7..d706ef9ec0a8752e7cce6f92076b398b695126e6 100644
+--- a/src/main/java/net/minecraft/world/level/chunk/LevelChunk.java
++++ b/src/main/java/net/minecraft/world/level/chunk/LevelChunk.java
+@@ -84,7 +84,9 @@ public class LevelChunk extends ChunkAccess implements ca.spottedleaf.moonrise.p
+     };
+     private final Map<BlockPos, LevelChunk.RebindableTickingBlockEntityWrapper> tickersInLevel;
+     public boolean loaded;
+-    public final ServerLevel level; // CraftBukkit - type
++    // Eturlia: vanilla Level type so Sable @Shadow level matches; was ServerLevel (CraftBukkit).
++    // Runtime value is always ServerLevel on dedicated server — cast at CraftBukkit call sites.
++    public final Level level;
+     @Nullable
+     private Supplier<FullChunkStatus> fullStatus;
+     @Nullable
+@@ -100,7 +102,7 @@ public class LevelChunk extends ChunkAccess implements ca.spottedleaf.moonrise.p
+     public LevelChunk(Level world, ChunkPos pos, UpgradeData upgradeData, LevelChunkTicks<Block> blockTickScheduler, LevelChunkTicks<Fluid> fluidTickScheduler, long inhabitedTime, @Nullable LevelChunkSection[] sectionArrayInitializer, @Nullable LevelChunk.PostLoadProcessor entityLoader, @Nullable BlendingData blendingData) {
+         super(pos, upgradeData, world, net.minecraft.server.MinecraftServer.getServer().registryAccess().registryOrThrow(Registries.BIOME), inhabitedTime, sectionArrayInitializer, blendingData); // Paper - Anti-Xray - The world isn't ready yet, use server singleton for registry
+         this.tickersInLevel = Maps.newHashMap();
+-        this.level = (ServerLevel) world; // CraftBukkit - type
++        this.level = world; // Eturlia: store as Level for Sable @Shadow (always ServerLevel at runtime)
+         this.gameEventListenerRegistrySections = new Int2ObjectOpenHashMap();
+         Heightmap.Types[] aheightmap_type = Heightmap.Types.values();
+         int j = aheightmap_type.length;
+@@ -694,10 +696,10 @@ public class LevelChunk extends ChunkAccess implements ca.spottedleaf.moonrise.p
+                 try (co.aikar.timings.Timing ignored = this.level.timings.chunkLoadPopulate.startTiming()) { // Paper
+                 this.needsDecoration = false;
+                 java.util.Random random = new java.util.Random();
+-                random.setSeed(this.level.getSeed());
++                random.setSeed(((ServerLevel) this.level).getSeed());
+                 long xRand = random.nextLong() / 2L * 2L + 1L;
+                 long zRand = random.nextLong() / 2L * 2L + 1L;
+-                random.setSeed((long) this.chunkPos.x * xRand + (long) this.chunkPos.z * zRand ^ this.level.getSeed());
++                random.setSeed((long) this.chunkPos.x * xRand + (long) this.chunkPos.z * zRand ^ ((ServerLevel) this.level).getSeed());
+ 
+                 org.bukkit.World world = this.level.getWorld();
+                 if (world != null) {
+diff --git a/src/main/java/org/bukkit/craftbukkit/CraftChunk.java b/src/main/java/org/bukkit/craftbukkit/CraftChunk.java
+index 45e262308aebafa377a2353661acdd122933b99e..e11c6a3796dd7a8a1c4d5caf4bdcc7deefbe9806 100644
+--- a/src/main/java/org/bukkit/craftbukkit/CraftChunk.java
++++ b/src/main/java/org/bukkit/craftbukkit/CraftChunk.java
+@@ -61,7 +61,7 @@ public class CraftChunk implements Chunk {
+     private static final byte[] EMPTY_LIGHT = new byte[2048];
+ 
+     public CraftChunk(net.minecraft.world.level.chunk.LevelChunk chunk) {
+-        this.worldServer = chunk.level;
++        this.worldServer = (ServerLevel) chunk.level; // Eturlia: LevelChunk.level is Level for Sable @Shadow
+         this.x = chunk.getPos().x;
+         this.z = chunk.getPos().z;
+     }
