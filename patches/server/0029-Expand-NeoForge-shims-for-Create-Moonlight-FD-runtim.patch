@@ -1,0 +1,501 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 14:18:16 +0000
+Subject: [PATCH] Expand NeoForge shims for Create/Moonlight/FD runtime gaps
+
+Un-final Vec3i equals/hashCode and ServerLevel.isAreaLoaded for Create
+overrides; restore FireBlock.checkBurnOut with NeoForge Direction API for
+Moonlight; add ShapedRecipePattern.setCraftingSize, RecipeType.simple,
+EntityType.Builder tracking aliases, Item.modifyDefaultComponentsFrom,
+RegistryOps copy ctor, and BlockState IBlockStateExtension.
+
+diff --git a/src/main/java/net/minecraft/core/Vec3i.java b/src/main/java/net/minecraft/core/Vec3i.java
+index 7b0fc7135bc107103dcaed6dc0707b1829928fae..4dff7aec5e11836a45f9c095e8766ef6647a67be 100644
+--- a/src/main/java/net/minecraft/core/Vec3i.java
++++ b/src/main/java/net/minecraft/core/Vec3i.java
+@@ -41,12 +41,14 @@ public class Vec3i implements Comparable<Vec3i> {
+     }
+ 
+     @Override
+-    public final boolean equals(Object object) { // Paper - Perf: Final for inline
++    // Crelia/NeoForge: Create TrackNodeLocation overrides equals — cannot be final (Paper inlined it)
++    public boolean equals(Object object) {
+         return this == object || object instanceof Vec3i vec3i && this.getX() == vec3i.getX() && this.getY() == vec3i.getY() && this.getZ() == vec3i.getZ();
+     }
+ 
+     @Override
+-    public final int hashCode() { // Paper - Perf: Final for inline
++    // Crelia/NeoForge: keep hashCode overridable with equals
++    public int hashCode() {
+         return (this.getY() + this.getZ() * 31) * 31 + this.getX();
+     }
+ 
+diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
+index c80208c1da49dcaf0bc51a4b2e06dae0dd2c52ba..102400c478b813258809e28c5629fcd3928b44e6 100644
+--- a/src/main/java/net/minecraft/server/level/ServerLevel.java
++++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
+@@ -300,7 +300,8 @@ public class ServerLevel extends Level implements WorldGenLevel, ca.spottedleaf.
+         return true;
+     }
+ 
+-    public final boolean isAreaLoaded(final BlockPos center, final int radius) {
++    // NeoForge/Create: PlacementSimulationServerLevel overrides — must not be final
++    public boolean isAreaLoaded(final BlockPos center, final int radius) {
+         int minX = (center.getX() - radius) >> 4;
+         int minZ = (center.getZ() - radius) >> 4;
+         int maxX = (center.getX() + radius) >> 4;
+@@ -309,7 +310,7 @@ public class ServerLevel extends Level implements WorldGenLevel, ca.spottedleaf.
+         return this.isAreaLoaded(minX, minZ, maxX, maxZ);
+     }
+ 
+-    public final boolean isAreaLoaded(final int minChunkX, final int minChunkZ, final int maxChunkX, final int maxChunkZ) {
++    public boolean isAreaLoaded(final int minChunkX, final int minChunkZ, final int maxChunkX, final int maxChunkZ) {
+         // Folia end - region threading
+         ServerChunkCache chunkProvider = this.getChunkSource();
+ 
+diff --git a/src/main/java/net/minecraft/world/entity/EntityType.java b/src/main/java/net/minecraft/world/entity/EntityType.java
+index c74a01a8551457507441d266b6923b4248560abf..41cc7fce27338fcc86865e25d5e039e46bb620f0 100644
+--- a/src/main/java/net/minecraft/world/entity/EntityType.java
++++ b/src/main/java/net/minecraft/world/entity/EntityType.java
+@@ -878,6 +878,20 @@ public class EntityType<T extends Entity> implements FeatureElement, EntityTypeT
+             return this;
+         }
+ 
++        // NeoForge aliases used by Create / content mods
++        public EntityType.Builder<T> setTrackingRange(int range) {
++            return this.clientTrackingRange(range);
++        }
++
++        public EntityType.Builder<T> setUpdateInterval(int interval) {
++            return this.updateInterval(interval);
++        }
++
++        public EntityType.Builder<T> setShouldReceiveVelocityUpdates(boolean value) {
++            // Vanilla has no builder flag; Create only needs the method to exist.
++            return this;
++        }
++
+         public EntityType.Builder<T> requiredFeatures(FeatureFlag... features) {
+             this.requiredFeatures = FeatureFlags.REGISTRY.subset(features);
+             return this;
+diff --git a/src/main/java/net/minecraft/world/item/crafting/RecipeType.java b/src/main/java/net/minecraft/world/item/crafting/RecipeType.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..0f1d45c0184ddc27446d52e995101a5ab6393f5c
+--- /dev/null
++++ b/src/main/java/net/minecraft/world/item/crafting/RecipeType.java
+@@ -0,0 +1,35 @@
++package net.minecraft.world.item.crafting;
++
++import net.minecraft.core.Registry;
++import net.minecraft.core.registries.BuiltInRegistries;
++import net.minecraft.resources.ResourceLocation;
++
++public interface RecipeType<T extends Recipe<?>> {
++    RecipeType<CraftingRecipe> CRAFTING = register("crafting");
++    RecipeType<SmeltingRecipe> SMELTING = register("smelting");
++    RecipeType<BlastingRecipe> BLASTING = register("blasting");
++    RecipeType<SmokingRecipe> SMOKING = register("smoking");
++    RecipeType<CampfireCookingRecipe> CAMPFIRE_COOKING = register("campfire_cooking");
++    RecipeType<StonecutterRecipe> STONECUTTING = register("stonecutting");
++    RecipeType<SmithingRecipe> SMITHING = register("smithing");
++
++    static <T extends Recipe<?>> RecipeType<T> register(String id) {
++        return Registry.register(BuiltInRegistries.RECIPE_TYPE, ResourceLocation.withDefaultNamespace(id), new RecipeType<T>() {
++            @Override
++            public String toString() {
++                return id;
++            }
++        });
++    }
++
++    /** NeoForge: unregistered recipe type identity for DeferredRegister / custom types. */
++    static <T extends Recipe<?>> RecipeType<T> simple(final ResourceLocation name) {
++        final String toString = name.toString();
++        return new RecipeType<T>() {
++            @Override
++            public String toString() {
++                return toString;
++            }
++        };
++    }
++}
+diff --git a/src/main/java/net/minecraft/world/item/crafting/ShapedRecipePattern.java b/src/main/java/net/minecraft/world/item/crafting/ShapedRecipePattern.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..032539d1668100214783a1d3b04008c2fbcf546d
+--- /dev/null
++++ b/src/main/java/net/minecraft/world/item/crafting/ShapedRecipePattern.java
+@@ -0,0 +1,273 @@
++package net.minecraft.world.item.crafting;
++
++import com.google.common.annotations.VisibleForTesting;
++import com.mojang.serialization.Codec;
++import com.mojang.serialization.DataResult;
++import com.mojang.serialization.MapCodec;
++import com.mojang.serialization.codecs.RecordCodecBuilder;
++import it.unimi.dsi.fastutil.chars.CharArraySet;
++import it.unimi.dsi.fastutil.chars.CharSet;
++import java.util.List;
++import java.util.Map;
++import java.util.Optional;
++import java.util.function.Function;
++import net.minecraft.Util;
++import net.minecraft.core.NonNullList;
++import net.minecraft.network.RegistryFriendlyByteBuf;
++import net.minecraft.network.codec.StreamCodec;
++import net.minecraft.util.ExtraCodecs;
++import net.minecraft.world.item.ItemStack;
++
++public final class ShapedRecipePattern {
++    /** @deprecated Neo: use {@link #getMaxWidth} and {@link #getMaxHeight} */
++    @Deprecated
++    private static final int MAX_SIZE = 3;
++    static int maxWidth = 3;
++    static int maxHeight = 3;
++
++    public static int getMaxWidth() {
++        return maxWidth;
++    }
++
++    public static int getMaxHeight() {
++        return maxHeight;
++    }
++
++    /**
++     * Expand the max width and height allowed in the deserializer.
++     * Called by mods with crafting tables larger than 3x3 (e.g. Create).
++     */
++    public static void setCraftingSize(int width, int height) {
++        if (maxWidth < width) maxWidth = width;
++        if (maxHeight < height) maxHeight = height;
++    }
++
++    public static final MapCodec<ShapedRecipePattern> MAP_CODEC = ShapedRecipePattern.Data.MAP_CODEC
++        .flatXmap(
++            ShapedRecipePattern::unpack,
++            recipe -> recipe.data.map(DataResult::success).orElseGet(() -> DataResult.error(() -> "Cannot encode unpacked recipe"))
++        );
++    public static final StreamCodec<RegistryFriendlyByteBuf, ShapedRecipePattern> STREAM_CODEC = StreamCodec.ofMember(
++        ShapedRecipePattern::toNetwork, ShapedRecipePattern::fromNetwork
++    );
++    private final int width;
++    private final int height;
++    private final NonNullList<Ingredient> ingredients;
++    private final Optional<ShapedRecipePattern.Data> data;
++    private final int ingredientCount;
++    private final boolean symmetrical;
++
++    public ShapedRecipePattern(int width, int height, NonNullList<Ingredient> ingredients, Optional<ShapedRecipePattern.Data> data) {
++        this.width = width;
++        this.height = height;
++        this.ingredients = ingredients;
++        this.data = data;
++        int i = 0;
++
++        for (Ingredient ingredient : ingredients) {
++            if (!ingredient.isEmpty()) {
++                i++;
++            }
++        }
++
++        this.ingredientCount = i;
++        this.symmetrical = Util.isSymmetrical(width, height, ingredients);
++    }
++
++    public static ShapedRecipePattern of(Map<Character, Ingredient> key, String... pattern) {
++        return of(key, List.of(pattern));
++    }
++
++    public static ShapedRecipePattern of(Map<Character, Ingredient> key, List<String> pattern) {
++        ShapedRecipePattern.Data data = new ShapedRecipePattern.Data(key, pattern);
++        return unpack(data).getOrThrow();
++    }
++
++    private static DataResult<ShapedRecipePattern> unpack(ShapedRecipePattern.Data data) {
++        String[] strings = shrink(data.pattern);
++        int i = strings[0].length();
++        int j = strings.length;
++        NonNullList<Ingredient> nonNullList = NonNullList.withSize(i * j, Ingredient.EMPTY);
++        CharSet charSet = new CharArraySet(data.key.keySet());
++
++        for (int k = 0; k < strings.length; k++) {
++            String string = strings[k];
++
++            for (int l = 0; l < string.length(); l++) {
++                char c = string.charAt(l);
++                Ingredient ingredient = c == ' ' ? Ingredient.EMPTY : data.key.get(c);
++                if (ingredient == null) {
++                    return DataResult.error(() -> "Pattern references symbol '" + c + "' but it's not defined in the key");
++                }
++
++                charSet.remove(c);
++                nonNullList.set(l + i * k, ingredient);
++            }
++        }
++
++        return !charSet.isEmpty()
++            ? DataResult.error(() -> "Key defines symbols that aren't used in pattern: " + charSet)
++            : DataResult.success(new ShapedRecipePattern(i, j, nonNullList, Optional.of(data)));
++    }
++
++    @VisibleForTesting
++    static String[] shrink(List<String> pattern) {
++        int i = Integer.MAX_VALUE;
++        int j = 0;
++        int k = 0;
++        int l = 0;
++
++        for (int m = 0; m < pattern.size(); m++) {
++            String string = pattern.get(m);
++            i = Math.min(i, firstNonSpace(string));
++            int n = lastNonSpace(string);
++            j = Math.max(j, n);
++            if (n < 0) {
++                if (k == m) {
++                    k++;
++                }
++
++                l++;
++            } else {
++                l = 0;
++            }
++        }
++
++        if (pattern.size() == l) {
++            return new String[0];
++        } else {
++            String[] strings = new String[pattern.size() - l - k];
++
++            for (int o = 0; o < strings.length; o++) {
++                strings[o] = pattern.get(o + k).substring(i, j + 1);
++            }
++
++            return strings;
++        }
++    }
++
++    private static int firstNonSpace(String line) {
++        int i = 0;
++
++        while (i < line.length() && line.charAt(i) == ' ') {
++            i++;
++        }
++
++        return i;
++    }
++
++    private static int lastNonSpace(String line) {
++        int i = line.length() - 1;
++
++        while (i >= 0 && line.charAt(i) == ' ') {
++            i--;
++        }
++
++        return i;
++    }
++
++    public boolean matches(CraftingInput input) {
++        if (input.ingredientCount() != this.ingredientCount) {
++            return false;
++        } else {
++            if (input.width() == this.width && input.height() == this.height) {
++                if (!this.symmetrical && this.matches(input, true)) {
++                    return true;
++                }
++
++                if (this.matches(input, false)) {
++                    return true;
++                }
++            }
++
++            return false;
++        }
++    }
++
++    private boolean matches(CraftingInput input, boolean mirrored) {
++        for (int i = 0; i < this.height; i++) {
++            for (int j = 0; j < this.width; j++) {
++                Ingredient ingredient;
++                if (mirrored) {
++                    ingredient = this.ingredients.get(this.width - j - 1 + i * this.width);
++                } else {
++                    ingredient = this.ingredients.get(j + i * this.width);
++                }
++
++                ItemStack itemStack = input.getItem(j, i);
++                if (!ingredient.test(itemStack)) {
++                    return false;
++                }
++            }
++        }
++
++        return true;
++    }
++
++    private void toNetwork(RegistryFriendlyByteBuf buf) {
++        buf.writeVarInt(this.width);
++        buf.writeVarInt(this.height);
++
++        for (Ingredient ingredient : this.ingredients) {
++            Ingredient.CONTENTS_STREAM_CODEC.encode(buf, ingredient);
++        }
++    }
++
++    private static ShapedRecipePattern fromNetwork(RegistryFriendlyByteBuf buf) {
++        int i = buf.readVarInt();
++        int j = buf.readVarInt();
++        NonNullList<Ingredient> nonNullList = NonNullList.withSize(i * j, Ingredient.EMPTY);
++        nonNullList.replaceAll(ingredient -> Ingredient.CONTENTS_STREAM_CODEC.decode(buf));
++        return new ShapedRecipePattern(i, j, nonNullList, Optional.empty());
++    }
++
++    public int width() {
++        return this.width;
++    }
++
++    public int height() {
++        return this.height;
++    }
++
++    public NonNullList<Ingredient> ingredients() {
++        return this.ingredients;
++    }
++
++    public static record Data(Map<Character, Ingredient> key, List<String> pattern) {
++        private static final Codec<List<String>> PATTERN_CODEC = Codec.STRING.listOf().comapFlatMap(pattern -> {
++            if (pattern.size() > maxHeight) {
++                return DataResult.error(() -> "Invalid pattern: too many rows, %s is maximum".formatted(maxHeight));
++            } else if (pattern.isEmpty()) {
++                return DataResult.error(() -> "Invalid pattern: empty pattern not allowed");
++            } else {
++                int i = pattern.getFirst().length();
++
++                for (String string : pattern) {
++                    if (string.length() > maxWidth) {
++                        return DataResult.error(() -> "Invalid pattern: too many columns, %s is maximum".formatted(maxWidth));
++                    }
++
++                    if (i != string.length()) {
++                        return DataResult.error(() -> "Invalid pattern: each row must be the same width");
++                    }
++                }
++
++                return DataResult.success(pattern);
++            }
++        }, Function.identity());
++        private static final Codec<Character> SYMBOL_CODEC = Codec.STRING.comapFlatMap(keyEntry -> {
++            if (keyEntry.length() != 1) {
++                return DataResult.error(() -> "Invalid key entry: '" + keyEntry + "' is an invalid symbol (must be 1 character only).");
++            } else {
++                return " ".equals(keyEntry) ? DataResult.error(() -> "Invalid key entry: ' ' is a reserved symbol.") : DataResult.success(keyEntry.charAt(0));
++            }
++        }, String::valueOf);
++        public static final MapCodec<ShapedRecipePattern.Data> MAP_CODEC = RecordCodecBuilder.mapCodec(
++            instance -> instance.group(
++                        ExtraCodecs.strictUnboundedMap(SYMBOL_CODEC, Ingredient.CODEC_NONEMPTY).fieldOf("key").forGetter(data -> data.key),
++                        PATTERN_CODEC.fieldOf("pattern").forGetter(data -> data.pattern)
++                    )
++                    .apply(instance, ShapedRecipePattern.Data::new)
++        );
++    }
++}
+diff --git a/src/main/java/net/minecraft/world/level/block/FireBlock.java b/src/main/java/net/minecraft/world/level/block/FireBlock.java
+index 0a77a470d78f68e8397f29f298e7f52fbd7ba9a2..1862bb81db8caae29ae0bcf11b71eb035c97db5d 100644
+--- a/src/main/java/net/minecraft/world/level/block/FireBlock.java
++++ b/src/main/java/net/minecraft/world/level/block/FireBlock.java
+@@ -211,14 +211,13 @@ public class FireBlock extends BaseFireBlock {
+                 boolean flag1 = world.getBiome(pos).is(BiomeTags.INCREASED_FIRE_BURNOUT);
+                 int k = flag1 ? -50 : 0;
+ 
+-                // CraftBukkit start - add source blockposition to burn calls
+-                this.trySpread(world, pos.east(), 300 + k, random, i, pos);
+-                this.trySpread(world, pos.west(), 300 + k, random, i, pos);
+-                this.trySpread(world, pos.below(), 250 + k, random, i, pos);
+-                this.trySpread(world, pos.above(), 250 + k, random, i, pos);
+-                this.trySpread(world, pos.north(), 300 + k, random, i, pos);
+-                this.trySpread(world, pos.south(), 300 + k, random, i, pos);
+-                // CraftBukkit end
++                // NeoForge Direction-aware burn (Moonlight FireBlockMixin targets checkBurnOut)
++                this.checkBurnOut(world, pos.east(), 300 + k, random, i, Direction.WEST);
++                this.checkBurnOut(world, pos.west(), 300 + k, random, i, Direction.EAST);
++                this.checkBurnOut(world, pos.below(), 250 + k, random, i, Direction.UP);
++                this.checkBurnOut(world, pos.above(), 250 + k, random, i, Direction.DOWN);
++                this.checkBurnOut(world, pos.north(), 300 + k, random, i, Direction.SOUTH);
++                this.checkBurnOut(world, pos.south(), 300 + k, random, i, Direction.NORTH);
+                 BlockPos.MutableBlockPos blockposition_mutableblockposition = new BlockPos.MutableBlockPos();
+ 
+                 for (int l = -1; l <= 1; ++l) {
+@@ -276,11 +275,13 @@ public class FireBlock extends BaseFireBlock {
+         return state.hasProperty(BlockStateProperties.WATERLOGGED) && (Boolean) state.getValue(BlockStateProperties.WATERLOGGED) ? 0 : this.igniteOdds.getInt(state.getBlock());
+     }
+ 
+-    private void trySpread(Level world, BlockPos blockposition, int i, RandomSource randomsource, int j, BlockPos sourceposition) { // CraftBukkit add sourceposition
+-        int k = this.getBurnOdds(world.getBlockState(blockposition));
++    // NeoForge signature (Moonlight mixin); CraftBukkit source inferred from face
++    private void checkBurnOut(Level world, BlockPos blockposition, int i, RandomSource randomsource, int j, Direction face) {
++        int k = world.getBlockState(blockposition).getFlammability(world, blockposition, face);
+ 
+         if (randomsource.nextInt(i) < k) {
+             BlockState iblockdata = world.getBlockState(blockposition);
++            BlockPos sourceposition = blockposition.relative(face);
+ 
+             // CraftBukkit start
+             org.bukkit.block.Block theBlock = world.getWorld().getBlockAt(blockposition.getX(), blockposition.getY(), blockposition.getZ());
+@@ -298,30 +299,24 @@ public class FireBlock extends BaseFireBlock {
+             }
+             // CraftBukkit end
+ 
++            iblockdata.onCaughtFire(world, blockposition, face, null);
++
+             if (randomsource.nextInt(j + 10) < 5 && !world.isRainingAt(blockposition)) {
+                 int l = Math.min(j + randomsource.nextInt(5) / 4, 15);
+ 
+                 world.setBlock(blockposition, this.getStateWithAge(world, blockposition, l), 3);
+             } else {
+-                if(iblockdata.getBlock() != Blocks.TNT) world.removeBlock(blockposition, false); // Paper - TNTPrimeEvent; We might be cancelling it below, move the setAir down
+-            }
+-
+-            Block block = iblockdata.getBlock();
+-
+-            if (block instanceof TntBlock) {
+-                // Paper start - TNTPrimeEvent
+-                org.bukkit.block.Block tntBlock = org.bukkit.craftbukkit.block.CraftBlock.at(world, blockposition);
+-                if (!new com.destroystokyo.paper.event.block.TNTPrimeEvent(tntBlock, com.destroystokyo.paper.event.block.TNTPrimeEvent.PrimeReason.FIRE, null).callEvent()) {
+-                    return;
+-                }
+                 world.removeBlock(blockposition, false);
+-                // Paper end - TNTPrimeEvent
+-                TntBlock.explode(world, blockposition);
+             }
+         }
+ 
+     }
+ 
++    /** Side-sensitive NeoForge flammability check used by fire placement / spread. */
++    public boolean canCatchFire(BlockGetter world, BlockPos pos, Direction face) {
++        return world.getBlockState(pos).isFlammable(world, pos, face);
++    }
++
+     private BlockState getStateWithAge(LevelAccessor world, BlockPos pos, int age) {
+         BlockState iblockdata = getState(world, pos);
+ 
+@@ -385,6 +380,7 @@ public class FireBlock extends BaseFireBlock {
+     }
+ 
+     public void setFlammable(Block block, int burnChance, int spreadChance) {
++        if (block == Blocks.AIR) throw new IllegalArgumentException("Tried to set air on fire... This is bad.");
+         this.igniteOdds.put(block, burnChance);
+         this.burnOdds.put(block, spreadChance);
+     }
+diff --git a/src/main/java/net/minecraft/world/level/block/state/BlockState.java b/src/main/java/net/minecraft/world/level/block/state/BlockState.java
+index 601135f3368272bf1ca3a43ec9c199e3ee838462..215a0ca4f789e36a9e137e99a9c089d9025c169a 100644
+--- a/src/main/java/net/minecraft/world/level/block/state/BlockState.java
++++ b/src/main/java/net/minecraft/world/level/block/state/BlockState.java
+@@ -7,7 +7,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
+ import net.minecraft.world.level.block.Block;
+ import net.minecraft.world.level.block.state.properties.Property;
+ 
+-public class BlockState extends BlockBehaviour.BlockStateBase {
++public class BlockState extends BlockBehaviour.BlockStateBase implements net.neoforged.neoforge.common.extensions.IBlockStateExtension {
+     public static final Codec<BlockState> CODEC = codec(BuiltInRegistries.BLOCK.byNameCodec(), Block::defaultBlockState).stable();
+ 
+     // Paper start - optimise getType calls
