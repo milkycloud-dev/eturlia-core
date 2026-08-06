@@ -1,0 +1,23 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 21:32:57 +0000
+Subject: [PATCH] Eturlia: Holder implements IHolderExtension for
+ DeferredHolder.getKey
+
+Sable/NeoForge DeferredHolder.equals invokes Holder.getKey() from
+IHolderExtension; Folia does not apply ModLauncher interface injection
+to remapped Holder, so declare the superinterface explicitly.
+
+diff --git a/src/main/java/net/minecraft/core/Holder.java b/src/main/java/net/minecraft/core/Holder.java
+index 4d2231868b786da9071c3dff2c073b478a486e8a..b28b9152ef46f8c41356ed350da3cd7e26dc58aa 100644
+--- a/src/main/java/net/minecraft/core/Holder.java
++++ b/src/main/java/net/minecraft/core/Holder.java
+@@ -11,7 +11,7 @@ import net.minecraft.resources.ResourceKey;
+ import net.minecraft.resources.ResourceLocation;
+ import net.minecraft.tags.TagKey;
+ 
+-public interface Holder<T> {
++public interface Holder<T> extends net.neoforged.neoforge.common.extensions.IHolderExtension<T> { // Eturlia: NeoForge interface injection for DeferredHolder/Sable
+     T value();
+ 
+     boolean isBound();
