@@ -1,0 +1,33 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 22:19:19 +0000
+Subject: [PATCH] Eturlia: keep suggestion flags consistent in commands packet
+ safety net
+
+
+diff --git a/src/main/java/net/minecraft/network/protocol/game/ClientboundCommandsPacket.java b/src/main/java/net/minecraft/network/protocol/game/ClientboundCommandsPacket.java
+index d5978f64a0ac95d0800511ed1d395d1bac16c250..3d7878425e9aed4fd404808a32d2dcc367ec63b8 100644
+--- a/src/main/java/net/minecraft/network/protocol/game/ClientboundCommandsPacket.java
++++ b/src/main/java/net/minecraft/network/protocol/game/ClientboundCommandsPacket.java
+@@ -213,15 +213,15 @@ public class ClientboundCommandsPacket implements Packet<ClientGamePacketListene
+         }
+ 
+         public ArgumentNodeStub(ArgumentCommandNode<SharedSuggestionProvider, ?> node) {
+-            // Eturlia: last-resort — never serialize NeoForge-only argument infos to vanilla clients
++            // Eturlia: last-resort — never serialize NeoForge-only argument infos to vanilla clients.
++            // Keep the node's suggestion provider so ENTRY flags (bit 16) stay consistent with write().
++            ArgumentType<?> type = node.getType();
+             this(
+                 node.getName(),
+-                ArgumentTypeInfos.isVanillaClientSyncable(node.getType())
+-                    ? ArgumentTypeInfos.unpack(node.getType())
++                ArgumentTypeInfos.isVanillaClientSyncable(type)
++                    ? ArgumentTypeInfos.unpack(type)
+                     : ArgumentTypeInfos.unpack(com.mojang.brigadier.arguments.StringArgumentType.word()),
+-                ArgumentTypeInfos.isVanillaClientSyncable(node.getType())
+-                    ? getSuggestionId(node.getCustomSuggestions())
+-                    : getSuggestionId(net.minecraft.commands.synchronization.SuggestionProviders.ASK_SERVER)
++                getSuggestionId(node.getCustomSuggestions())
+             );
+         }
+ 
