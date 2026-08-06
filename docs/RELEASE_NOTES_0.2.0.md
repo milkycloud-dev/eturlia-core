@@ -85,6 +85,11 @@ java -jar eturlia-1.21.1-neoforge-21.1.248.jar --nogui
 - **Убрать:** spark-neoforge, клиентские jars, `*.jar1`/`*.bak`.
 - Оптимизаторы вне scope. Плагины — только `folia-supported: true`, без `libraries:` пока.
 
+### Vanilla client join — commands packet
+
+Фикс `DecoderException: Failed to decode packet 'clientbound/minecraft:commands'`:
+NeoForge `enum`/`modid` argument types больше не уходят ванильному клиенту (патчи `0068`–`0070`).
+
 ### config/eturlia.yml (ядро)
 
 Новый бренд-конфиг со стартовым шаблоном (потоки Folia/Moonrise, чанки, command blocks, region guard, watchdog, LOD, ссылки на paper-global/server.properties).
