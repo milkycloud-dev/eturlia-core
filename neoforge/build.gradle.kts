@@ -58,13 +58,16 @@ val creliaMixinSources = fileTree("src/main/java") { include("crelia/**/*.java")
 
 val compileCreliaMixins by tasks.registering(JavaCompile::class) {
     group = "build"
-    description = "Compile Crelia region-threading mixins (requires Folia-Server jars)"
+    description = "Compile Crelia region-threading mixins (optional; requires Folia-Server jars + -Pcrelia.compileMixins)"
     onlyIf {
-        rootProject.file("Folia-Server/build/libs").isDirectory && creliaMixinSources.files.isNotEmpty()
+        project.hasProperty("crelia.compileMixins") &&
+            rootProject.file("Folia-Server/build/libs").isDirectory &&
+            creliaMixinSources.files.isNotEmpty()
     }
     source = creliaMixinSources
     classpath = configurations.compileClasspath.get() +
-        files(rootProject.fileTree("Folia-Server/build/libs") { include("*.jar") })
+        files(rootProject.fileTree("Folia-Server/build/libs") { include("*.jar") }) +
+        files(rootProject.fileTree("Folia-API/build/libs") { include("*.jar") })
     destinationDirectory.set(layout.buildDirectory.dir("classes/creliaMixins"))
     options.release.set(21)
     options.encoding = "UTF-8"
