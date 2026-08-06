@@ -228,6 +228,16 @@ neoforge:
   # Не класть клиентские jars и spark-neoforge — см. docs/PACK_COMPAT_ASIC_2026-08.md
   remind-pack-compat-doc: true
 
+
+# -----------------------------------------------------------------------------
+# МОДЫ / PACK GUARDS
+# -----------------------------------------------------------------------------
+mods:
+  # lithostitched < 1.7.13 / *beta* → жёсткий отказ при старте (TemplateLists NSEE + Terralith).
+  # Override: -Deturlia.lithostitched.allow-unsafe=true (не рекомендуется).
+  require-lithostitched-min: "1.7.13"
+  block-lithostitched-prerelease: true
+
 # -----------------------------------------------------------------------------
 # КАРТА ФАЙЛОВ КОНФИГОВ (только справочник; не применяется кодом)
 # -----------------------------------------------------------------------------

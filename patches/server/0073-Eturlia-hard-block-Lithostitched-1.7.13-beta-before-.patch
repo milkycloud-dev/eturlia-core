@@ -1,0 +1,49 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 22:40:59 +0000
+Subject: [PATCH] Eturlia: hard-block Lithostitched < 1.7.13 / beta before
+ world load
+
+1.7.10+beta4 boots then crashes chunk gen (TemplateLists.getRandom NSEE)
+with Terralith/Incendium. Abort early with upgrade instructions.
+
+diff --git a/src/main/java/io/papermc/paper/configuration/EturliaConfigBridge.java b/src/main/java/io/papermc/paper/configuration/EturliaConfigBridge.java
+index 429ad556c5ca05786a4cfb476f85be94f524f331..dc90ed78510c1ecc5b258e19046ba3e5ef902d1c 100644
+--- a/src/main/java/io/papermc/paper/configuration/EturliaConfigBridge.java
++++ b/src/main/java/io/papermc/paper/configuration/EturliaConfigBridge.java
+@@ -28,6 +28,22 @@ public final class EturliaConfigBridge {
+         }
+     }
+ 
++    /** Abort boot if Lithostitched is present but older than 1.7.13 / prerelease. */
++    public static void validateLithostitched() {
++        try {
++            Class<?> gate = Class.forName("eturlia.core.loading.LithostitchedCompatGate");
++            gate.getMethod("validateOrAbort").invoke(null);
++        } catch (ClassNotFoundException e) {
++            LOGGER.warning("LithostitchedCompatGate missing — skip version gate");
++        } catch (ReflectiveOperationException e) {
++            Throwable cause = e.getCause() != null ? e.getCause() : e;
++            if (cause instanceof IllegalStateException) {
++                throw (IllegalStateException) cause;
++            }
++            throw new IllegalStateException("Lithostitched compatibility check failed", cause);
++        }
++    }
++
+     public static void applyThreadedRegions(Object threadedRegions) {
+         try {
+             Object cfg = getInstance();
+diff --git a/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java b/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
+index 9d3d29480bf52bd2fb03284ad5562ff198a089c1..cbe51686fdbb18975871f5f5e8d4abfade626dc9 100644
+--- a/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
++++ b/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
+@@ -224,6 +224,8 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+         }
+         // Eturlia: load config/eturlia.yml before Paper global so thread overrides apply in @PostProcess
+         io.papermc.paper.configuration.EturliaConfigBridge.load(java.nio.file.Path.of("."));
++        // Eturlia: refuse lithostitched < 1.7.13 / beta (chunk TemplateLists crash with Terralith)
++        io.papermc.paper.configuration.EturliaConfigBridge.validateLithostitched();
+         // Spigot start
+         this.setPlayerList(new DedicatedPlayerList(this, this.registries(), this.playerDataStorage));
+         org.spigotmc.SpigotConfig.init((java.io.File) this.options.valueOf("spigot-settings"));
