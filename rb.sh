@@ -1,0 +1,2 @@
+./gradlew rebuildPatches
+./gradlew rebuildServerPatches
