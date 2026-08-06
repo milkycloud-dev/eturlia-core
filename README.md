@@ -125,7 +125,7 @@ java -jar build/libs/eturlia-1.21.1-neoforge-21.1.248.jar --nogui
 |-------|--------|
 | Пустой сервер / лёгкий стек (Cloth, Curios, GeckoLib, JEI, …) | Mod List + SML + Folia `Done` |
 | Farmers Delight (+ Cloth) | SML completed + `Done` |
-| Create | частично: ядровые API закрываются; остаются DeferredHolder / регистры |
+| Create 6.0.10 | SML + `Done` (StateHolder null-map, Entity.getPersistentData, Level.clip); дальше runtime tick gaps |
 | Moonlight | частично: ContextAware / FireBlock; дальше Folia entity mixins / refmap |
 
 ## Структура репозитория
@@ -270,7 +270,7 @@ Accept `eula.txt` on first boot. NeoForge mods go in `mods/`. Plugins need `foli
 |-----|--------|
 | Empty / light stack (Cloth, Curios, GeckoLib, JEI, …) | Mod List + SML + Folia `Done` |
 | Farmers Delight (+ Cloth) | SML completed + `Done` |
-| Create | Partial — core APIs landing; DeferredHolder/registry gaps remain |
+| Create 6.0.10 | SML + `Done` (null property maps, getPersistentData, Level.clip); further tick gaps remain |
 | Moonlight | Partial — ContextAware/FireBlock; Folia entity mixins/refmap remain |
 
 ## Repository layout

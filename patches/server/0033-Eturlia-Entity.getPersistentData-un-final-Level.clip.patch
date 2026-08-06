@@ -1,0 +1,68 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 16:19:50 +0000
+Subject: [PATCH] Eturlia: Entity.getPersistentData + un-final Level.clip for
+ Create
+
+Create EntityMixin.fireImmune needs NeoForge persistent data on Entity.
+DeployerHandler ItemUseWorld overrides Level.clip which Paper marked final.
+Do not implement IEntityExtension on Entity (NeoForge compile classpath has
+extra abstract fluid APIs); add getPersistentData() as a concrete method.
+
+diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
+index 9d53444cedacfc0c76344437dfc04e024088657b..fc6321db6a31d247697d8efd98e87367f5d94f4c 100644
+--- a/src/main/java/net/minecraft/world/entity/Entity.java
++++ b/src/main/java/net/minecraft/world/entity/Entity.java
+@@ -2508,6 +2508,11 @@ public abstract class Entity extends net.neoforged.neoforge.attachment.Attachmen
+                 nbttagcompound.putBoolean("HasVisualFire", this.hasVisualFire);
+             }
+ 
++            // Eturlia/NeoForge: persist mod custom data (Create etc.)
++            if (this.persistentData != null) {
++                nbttagcompound.put("NeoForgeData", this.persistentData.copy());
++            }
++
+             ListTag nbttaglist;
+             Iterator iterator;
+ 
+@@ -2632,6 +2637,10 @@ public abstract class Entity extends net.neoforged.neoforge.attachment.Attachmen
+                     this.setGlowingTag(nbt.getBoolean("Glowing"));
+                     this.setTicksFrozen(nbt.getInt("TicksFrozen"));
+                     this.hasVisualFire = nbt.getBoolean("HasVisualFire");
++                    // Eturlia/NeoForge: persistent custom data for mods (Create fireImmune mixin etc.)
++                    if (nbt.contains("NeoForgeData", 10)) {
++                        this.persistentData = nbt.getCompound("NeoForgeData");
++                    }
+                     if (nbt.contains("Tags", 9)) {
+                         this.tags.clear();
+                         ListTag nbttaglist3 = nbt.getList("Tags", 8);
+@@ -5774,4 +5783,15 @@ public abstract class Entity extends net.neoforged.neoforge.attachment.Attachmen
+         return ((net.minecraft.server.level.ServerChunkCache) level.getChunkSource()).isPositionTicking(this);
+     }
+     // Paper end - Expose entity id counter
++
++    // Eturlia/NeoForge: IEntityExtension.getPersistentData — Create EntityMixin.fireImmune etc.
++    private CompoundTag persistentData;
++
++    @Override
++    public CompoundTag getPersistentData() {
++        if (this.persistentData == null) {
++            this.persistentData = new CompoundTag();
++        }
++        return this.persistentData;
++    }
+ }
+diff --git a/src/main/java/net/minecraft/world/level/Level.java b/src/main/java/net/minecraft/world/level/Level.java
+index 6d8f3410f84259ee1f5517af606cb3506a80f29f..e13b95f95a16fd6f2ff9cd7ec0a9c86b094a4c4c 100644
+--- a/src/main/java/net/minecraft/world/level/Level.java
++++ b/src/main/java/net/minecraft/world/level/Level.java
+@@ -458,7 +458,8 @@ public abstract class Level extends net.neoforged.neoforge.attachment.Attachment
+      * @author Spottedleaf
+      */
+     @Override
+-    public final net.minecraft.world.phys.BlockHitResult clip(final ClipContext clipContext) {
++    // Eturlia/NeoForge: Create DeployerHandler$ItemUseWorld overrides clip — cannot stay final
++    public net.minecraft.world.phys.BlockHitResult clip(final ClipContext clipContext) {
+         // can only do this in this class, as not everything that implements BlockGetter can retrieve chunks
+         return fastClip(clipContext.getFrom(), clipContext.getTo(), (Level)(Object)this, clipContext);
+     }
