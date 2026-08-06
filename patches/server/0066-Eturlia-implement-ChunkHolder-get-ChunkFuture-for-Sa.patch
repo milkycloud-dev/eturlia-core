@@ -1,0 +1,49 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 21:40:53 +0000
+Subject: [PATCH] Eturlia: implement ChunkHolder get*ChunkFuture for Sable
+ LevelAccelerator
+
+Paper's rewritten chunk system stubbed these as UOE. Sable grabChunkFast
+calls getFullChunkFuture().getNow(...); return completed snapshots from
+Moonrise chunk readiness instead.
+
+diff --git a/src/main/java/net/minecraft/server/level/ChunkHolder.java b/src/main/java/net/minecraft/server/level/ChunkHolder.java
+index 4db96543e2072e47040bb25a9d97ea6a69c4a43d..682bc6f7519cd8d004994fa1e1ddd344e09fa938 100644
+--- a/src/main/java/net/minecraft/server/level/ChunkHolder.java
++++ b/src/main/java/net/minecraft/server/level/ChunkHolder.java
+@@ -168,15 +168,31 @@ public class ChunkHolder extends GenerationChunkHolder implements ca.spottedleaf
+     // CraftBukkit end
+ 
+     public CompletableFuture<ChunkResult<LevelChunk>> getTickingChunkFuture() {
+-        throw new UnsupportedOperationException(); // Paper - rewrite chunk system
++        // Eturlia: Paper threw UOE after chunk rewrite; Sable LevelAccelerator / debug dumps
++        // call get*ChunkFuture().getNow(...). Return a completed snapshot of current state.
++        final LevelChunk chunk = this.getTickingChunk();
++        return chunk != null
++            ? CompletableFuture.completedFuture(ChunkResult.of(chunk))
++            : ChunkHolder.UNLOADED_LEVEL_CHUNK_FUTURE;
+     }
+ 
+     public CompletableFuture<ChunkResult<LevelChunk>> getEntityTickingChunkFuture() {
+-        throw new UnsupportedOperationException(); // Paper - rewrite chunk system
++        // Eturlia: completed snapshot for Folia/Moonrise (vanilla future graph removed).
++        LevelChunk chunk = null;
++        if (this.newChunkHolder.isEntityTickingReady() && this.newChunkHolder.getCurrentChunk() instanceof LevelChunk levelChunk) {
++            chunk = levelChunk;
++        }
++        return chunk != null
++            ? CompletableFuture.completedFuture(ChunkResult.of(chunk))
++            : ChunkHolder.UNLOADED_LEVEL_CHUNK_FUTURE;
+     }
+ 
+     public CompletableFuture<ChunkResult<LevelChunk>> getFullChunkFuture() {
+-        throw new UnsupportedOperationException(); // Paper - rewrite chunk system
++        // Eturlia: Sable LevelAccelerator.grabChunkFast uses getFullChunkFuture().getNow(...).
++        final LevelChunk chunk = this.moonrise$getFullChunk();
++        return chunk != null
++            ? CompletableFuture.completedFuture(ChunkResult.of(chunk))
++            : ChunkHolder.UNLOADED_LEVEL_CHUNK_FUTURE;
+     }
+ 
+     @Nullable
