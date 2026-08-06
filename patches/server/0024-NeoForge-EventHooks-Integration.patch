@@ -148,9 +148,8 @@ index e642638f70dffab027f8c538889e3b17da1c29df..d2dfbcd5aa578e492b57588e77a95deb
          final BlockPos.MutableBlockPos blockPos = new BlockPos.MutableBlockPos();
          // Paper end - optimise collisions
  
-+        // NeoForge start - fire ExplosionEvent.Detonate
-+        EventHooks.onExplosionDetonate(
-+            this.level, this, list, new java.util.ArrayList<>(this.toBlow));
++        // NeoForge start - fire ExplosionEvent.Detonate (diameter = radius * 2)
++        EventHooks.onExplosionDetonate(this.level, this, list, (double) f2);
 +        // NeoForge end
 +
          while (iterator.hasNext()) {
