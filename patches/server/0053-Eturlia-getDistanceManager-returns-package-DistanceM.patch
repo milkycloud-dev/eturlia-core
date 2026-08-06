@@ -1,0 +1,25 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 21:06:11 +0000
+Subject: [PATCH] Eturlia: getDistanceManager returns package DistanceManager
+
+Inner class rename to ChunkMap$DistanceManager shadowed the return
+type of getDistanceManager(), so ServerLevel invoked
+ChunkMap$DistanceManager.inEntityTickingRange and Sable's WrapOperation
+targeting DistanceManager missed. Qualify the return type.
+
+diff --git a/src/main/java/net/minecraft/server/level/ChunkMap.java b/src/main/java/net/minecraft/server/level/ChunkMap.java
+index 48931193a5cbda08bb8df78d4d02f2ecec3ef0f2..19e5bcb37d9746726ba5983c4d1819f745a1b2e6 100644
+--- a/src/main/java/net/minecraft/server/level/ChunkMap.java
++++ b/src/main/java/net/minecraft/server/level/ChunkMap.java
+@@ -622,7 +622,9 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+         return ca.spottedleaf.moonrise.common.util.ChunkSystem.getVisibleChunkHolderCount(this.level); // Paper
+     }
+ 
+-    public DistanceManager getDistanceManager() {
++    // Eturlia: must return package DistanceManager (not ChunkMap$DistanceManager) so ServerLevel
++    // bytecode keeps INVOKEVIRTUAL DistanceManager.inEntityTickingRange for Sable WrapOperation.
++    public net.minecraft.server.level.DistanceManager getDistanceManager() {
+         return this.distanceManager;
+     }
+ 
