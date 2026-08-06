@@ -232,12 +232,22 @@ gradle.projectsEvaluated {
     }
 
     val compileCreliaCore = server.tasks.register("compileCreliaCore", JavaCompile::class.java) {
-        description = "Compile Crelia core runtime"
+        description = "Compile Crelia core runtime (+ ModLauncher launch handler)"
         source(creliaCoreSources)
-        classpath = files(serverArchive.flatMap { it.archiveFile })
+        // Need FML loader + ModLauncher APIs for crelia.launch.CreliaServerLaunchHandler
+        classpath = files(
+            serverArchive.flatMap { it.archiveFile },
+            fmlLoaderConfig?.files ?: emptySet<File>(),
+            runtimeClasspath.map { cfg ->
+                cfg.files.filter { f ->
+                    val n = f.name
+                    n.startsWith("modlauncher-") || n.startsWith("mergetool-") || n.contains("distmarker")
+                }
+            },
+        )
         destinationDirectory.set(server.layout.buildDirectory.dir("crelia/core-classes"))
         options.release.set(21)
-        dependsOn(compileCreliaLauncher)
+        dependsOn(compileCreliaLauncher, serverArchive)
     }
 
     val compileCreliaServerTemplates = server.tasks.register("compileCreliaServerTemplates", JavaCompile::class.java) {
@@ -365,16 +375,28 @@ gradle.projectsEvaluated {
             val classpathFiles = candidates.filter { file ->
                 file.exists() && seenPaths.add(file.absoluteFile.normalize().path)
             }
-            val indexLines = classpathFiles.mapIndexed { index, file ->
-                val embeddedName = "%03d-%s%s".format(index, file.name, if (file.isDirectory) ".jar" else "")
-                val embeddedFile = librariesDir.resolve(embeddedName)
+            // Use ORIGINAL jar names (no NNN- prefix) so JPMS automatic module names
+            // match what ModLauncher/FML require (e.g. jopt.simple, not 072.jopt.simple).
+            val usedNames = mutableSetOf<String>()
+            val indexLines = classpathFiles.map { file ->
+                var baseName = if (file.isDirectory) "${file.name}.jar" else file.name
+                if (!usedNames.add(baseName)) {
+                    // Content-identical paths already filtered; name clash from different paths.
+                    var i = 2
+                    val stem = baseName.removeSuffix(".jar")
+                    while (!usedNames.add("$stem-$i.jar")) i++
+                    baseName = "$stem-$i.jar"
+                }
+                val embeddedFile = librariesDir.resolve(baseName)
                 if (file.isDirectory) jarDirectory(file, embeddedFile) else file.copyTo(embeddedFile, overwrite = true)
-                "${sha256(embeddedFile)}\t$embeddedName"
+                "${sha256(embeddedFile)}\t$baseName"
             }
             outputDir.resolve("crelia-libraries.index")
                 .writeText(indexLines.joinToString(separator = "\n", postfix = "\n"))
         }
     }
+
+    val creliaBootstrapLibs = rootProject.fileTree("build-data/crelia-bootstrap/libs") { include("*.jar") }
 
     server.tasks.register("creliaStandaloneJar", Jar::class.java) {
         group = "build"
@@ -385,7 +407,14 @@ gradle.projectsEvaluated {
         from(compileCreliaLauncher.flatMap { it.destinationDirectory })
         from(stagingDir.map { it.dir("libraries") }) { into("META-INF/crelia-libraries") }
         from(stagingDir.map { it.file("crelia-libraries.index") }) { into("META-INF") }
+        from(creliaBootstrapLibs) { into("META-INF/crelia-bootstrap") }
         from(rootProject.file("folia-server/crelia-supported.json")) { into("META-INF") }
+        from(rootProject.file("build-data/crelia-launcher/src/main/resources/crelia")) { into("crelia") }
+        doFirst {
+            if (creliaBootstrapLibs.files.isEmpty()) {
+                error("Missing build-data/crelia-bootstrap/libs (bootstraplauncher, securejarhandler, asm, JarJarFileSystems)")
+            }
+        }
         manifest {
             attributes(
                 mapOf(
@@ -394,6 +423,7 @@ gradle.projectsEvaluated {
                     "Crelia-NeoForge" to "true",
                     "Crelia-MC-Version" to "1.21.1",
                     "Crelia-NeoForge-Version" to neoforgeVersion,
+                    "Crelia-Launch-Target" to "creliaserver",
                 )
             )
         }
