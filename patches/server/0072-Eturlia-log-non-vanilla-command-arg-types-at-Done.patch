@@ -1,0 +1,33 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 22:21:09 +0000
+Subject: [PATCH] Eturlia: log non-vanilla command arg types at Done
+
+
+diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
+index d15683cd23fa5e590e721f75c26f146f630d89e2..86c2f8887f3e8c73e570d02a9df9150a9b693d02 100644
+--- a/src/main/java/net/minecraft/server/MinecraftServer.java
++++ b/src/main/java/net/minecraft/server/MinecraftServer.java
+@@ -1344,6 +1344,22 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+                     LOGGER.warn("NeoForge onCommandRegister failed (Folia-first): {}", (Object) t.toString());
+                     LOGGER.debug("NeoForge onCommandRegister", t);
+                 }
++                // Eturlia: report NeoForge-only command argument types (rewritten for vanilla clients on sync)
++                try {
++                    java.util.Set<String> nonVanilla = new java.util.LinkedHashSet<>();
++                    for (com.mojang.brigadier.arguments.ArgumentType<?> arg :
++                            net.minecraft.commands.synchronization.ArgumentUtils.findUsedArgumentTypes(this.getCommands().getDispatcher().getRoot())) {
++                        if (!net.minecraft.commands.synchronization.ArgumentTypeInfos.isVanillaClientSyncable(arg)) {
++                            nonVanilla.add(arg.getClass().getName());
++                        }
++                    }
++                    if (!nonVanilla.isEmpty()) {
++                        LOGGER.info("Eturlia: {} non-vanilla command argument type(s) will be string-rewritten for client sync: {}",
++                            nonVanilla.size(), nonVanilla);
++                    }
++                } catch (Throwable t) {
++                    LOGGER.debug("Eturlia command-arg scan failed", t);
++                }
+                 String doneTime = String.format(java.util.Locale.ROOT, "%.3fs", (double) (Util.getNanos() - serverStartTime) / 1.0E9D);
+                 LOGGER.info("Done ({})! For help, type \"help\"", doneTime);
+                 try {

@@ -1,0 +1,24 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 22:20:05 +0000
+Subject: [PATCH] Eturlia: fix ArgumentNodeStub this() must be first statement
+
+
+diff --git a/src/main/java/net/minecraft/network/protocol/game/ClientboundCommandsPacket.java b/src/main/java/net/minecraft/network/protocol/game/ClientboundCommandsPacket.java
+index 3d7878425e9aed4fd404808a32d2dcc367ec63b8..244251f91e96c0f6a69d2a8d4aa48356fc51cb33 100644
+--- a/src/main/java/net/minecraft/network/protocol/game/ClientboundCommandsPacket.java
++++ b/src/main/java/net/minecraft/network/protocol/game/ClientboundCommandsPacket.java
+@@ -215,11 +215,10 @@ public class ClientboundCommandsPacket implements Packet<ClientGamePacketListene
+         public ArgumentNodeStub(ArgumentCommandNode<SharedSuggestionProvider, ?> node) {
+             // Eturlia: last-resort — never serialize NeoForge-only argument infos to vanilla clients.
+             // Keep the node's suggestion provider so ENTRY flags (bit 16) stay consistent with write().
+-            ArgumentType<?> type = node.getType();
+             this(
+                 node.getName(),
+-                ArgumentTypeInfos.isVanillaClientSyncable(type)
+-                    ? ArgumentTypeInfos.unpack(type)
++                ArgumentTypeInfos.isVanillaClientSyncable(node.getType())
++                    ? ArgumentTypeInfos.unpack(node.getType())
+                     : ArgumentTypeInfos.unpack(com.mojang.brigadier.arguments.StringArgumentType.word()),
+                 getSuggestionId(node.getCustomSuggestions())
+             );

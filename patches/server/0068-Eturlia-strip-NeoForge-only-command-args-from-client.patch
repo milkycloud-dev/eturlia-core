@@ -1,0 +1,75 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 22:18:46 +0000
+Subject: [PATCH] Eturlia: strip NeoForge-only command args from clientbound
+ commands packet
+
+Vanilla clients DecoderException on minecraft:commands when the tree
+contains neoforge:enum / neoforge:modid. Rewrite those nodes to string
++ ASK_SERVER for the synced suggestion tree only.
+
+diff --git a/src/main/java/net/minecraft/commands/Commands.java b/src/main/java/net/minecraft/commands/Commands.java
+index 442a5b557e5867038fcddf597951584faeedda80..119d9b366597fbc1e97e0537ba2600712b7af3c3 100644
+--- a/src/main/java/net/minecraft/commands/Commands.java
++++ b/src/main/java/net/minecraft/commands/Commands.java
+@@ -590,7 +590,26 @@ public class Commands {
+                 if (argumentbuilder instanceof RequiredArgumentBuilder) {
+                     RequiredArgumentBuilder<SharedSuggestionProvider, ?> requiredargumentbuilder = (RequiredArgumentBuilder) argumentbuilder;
+ 
+-                    if (requiredargumentbuilder.getSuggestionsProvider() != null) {
++                    // Eturlia: NeoForge EnumArgument/ModIdArgument (and other non-minecraft/brigadier
++                    // argument infos) break vanilla clients decoding clientbound/minecraft:commands.
++                    // Replace with a string argument + ask-server suggestions for the synced tree only.
++                    if (!ArgumentTypeInfos.isVanillaClientSyncable(requiredargumentbuilder.getType())) {
++                        Commands.LOGGER.debug("Eturlia: rewriting non-vanilla command argument '{}' ({}) as string for client sync",
++                            commandnode2.getName(), requiredargumentbuilder.getType().getClass().getName());
++                        RequiredArgumentBuilder<SharedSuggestionProvider, String> safe =
++                            RequiredArgumentBuilder.argument(commandnode2.getName(), com.mojang.brigadier.arguments.StringArgumentType.word());
++                        safe.requires(requiredargumentbuilder.getRequirement());
++                        if (requiredargumentbuilder.getCommand() != null) {
++                            safe.executes(requiredargumentbuilder.getCommand());
++                        }
++                        if (requiredargumentbuilder.getRedirect() != null) {
++                            safe.redirect(requiredargumentbuilder.getRedirect());
++                        }
++                        safe.suggests(SuggestionProviders.ASK_SERVER);
++                        argumentbuilder = safe;
++                        requiredargumentbuilder = safe;
++                        registeredAskServerSuggestionsForTree = true;
++                    } else if (requiredargumentbuilder.getSuggestionsProvider() != null) {
+                         requiredargumentbuilder.suggests(SuggestionProviders.safelySwap(requiredargumentbuilder.getSuggestionsProvider()));
+                         // Paper start - tell clients to ask server for suggestions for EntityArguments
+                         registeredAskServerSuggestionsForTree = requiredargumentbuilder.getSuggestionsProvider() == net.minecraft.commands.synchronization.SuggestionProviders.ASK_SERVER;
+diff --git a/src/main/java/net/minecraft/commands/synchronization/ArgumentTypeInfos.java b/src/main/java/net/minecraft/commands/synchronization/ArgumentTypeInfos.java
+index f96e0ce808bf532bed6e1644bc6911abbf983865..5db89a2477000ed4161e066b2669d30fd6228829 100644
+--- a/src/main/java/net/minecraft/commands/synchronization/ArgumentTypeInfos.java
++++ b/src/main/java/net/minecraft/commands/synchronization/ArgumentTypeInfos.java
+@@ -164,6 +164,28 @@ public class ArgumentTypeInfos {
+         return BY_CLASS.containsKey(clazz);
+     }
+ 
++    /**
++     * Eturlia: whether this argument type can be decoded by a vanilla (non-NeoForge) client.
++     * NeoForge registers {@code neoforge:enum} / {@code neoforge:modid} into
++     * {@code COMMAND_ARGUMENT_TYPE}; vanilla clients hit DecoderException on
++     * {@code clientbound/minecraft:commands} if those IDs appear in the packet.
++     */
++    public static boolean isVanillaClientSyncable(ArgumentType<?> argumentType) {
++        if (argumentType == null) {
++            return false;
++        }
++        ArgumentTypeInfo<?, ?> info = BY_CLASS.get(argumentType.getClass());
++        if (info == null) {
++            return false;
++        }
++        net.minecraft.resources.ResourceLocation key = net.minecraft.core.registries.BuiltInRegistries.COMMAND_ARGUMENT_TYPE.getKey(info);
++        if (key == null) {
++            return false;
++        }
++        String ns = key.getNamespace();
++        return "minecraft".equals(ns) || "brigadier".equals(ns);
++    }
++
+     public static <A extends ArgumentType<?>> ArgumentTypeInfo<A, ?> byClass(A argumentType) {
+         ArgumentTypeInfo<?, ?> argumentTypeInfo = BY_CLASS.get(argumentType.getClass());
+         if (argumentTypeInfo == null) {
