@@ -17,7 +17,7 @@ index 9a86c86be13c671a99b8582247aee56a2f31a04b..9825ba84d1592459cd401b7d4f9accba
  
      private void enable() {
          if (!this.enabled) {
--            // Eturlia: keep Paper's bundled spark available (Folia 0018 had forced it off).
+-            // Crelia: keep Paper's bundled spark available (Folia 0018 had forced it off).
 +            // Eturlia: keep Paper's bundled spark available (Folia 0018 had forced it off).
              // Spark jars stay on the fat classpath; respect paper-global.yml spark.enabled.
              if (GlobalConfiguration.get().spark.enabled) {
@@ -26,7 +26,7 @@ index 9a86c86be13c671a99b8582247aee56a2f31a04b..9825ba84d1592459cd401b7d4f9accba
      }
  
      public static boolean isPluginPreferred() {
--        // Eturlia: restore Paper preference flag (Folia 0018 forced plugin-only / disabled bundled spark).
+-        // Crelia: restore Paper preference flag (Folia 0018 forced plugin-only / disabled bundled spark).
 +        // Eturlia: restore Paper preference flag (Folia 0018 forced plugin-only / disabled bundled spark).
          return Boolean.getBoolean(PREFER_SPARK_PLUGIN_PROPERTY);
      }
@@ -52,7 +52,7 @@ index a140189f9d90c39fc03fdd91c6dfc4238328af6d..6ad4330c521f429d165043da4a585443
              if (!this.intrusiveHolders) {
                  throw new IllegalStateException("This registry can't create intrusive holders");
              }
--            // Neo/Eturlia: map may have been cleared on full clear(); recreate for RegisterEvent after unfreeze
+-            // Neo/Crelia: map may have been cleared on full clear(); recreate for RegisterEvent after unfreeze
 +            // Neo/Eturlia: map may have been cleared on full clear(); recreate for RegisterEvent after unfreeze
              this.unregisteredIntrusiveHolders = new IdentityHashMap<>();
          }
@@ -65,14 +65,14 @@ index 4dff7aec5e11836a45f9c095e8766ef6647a67be..0be4624e6ac2b508008004d01077828e
      }
  
      @Override
--    // Eturlia/NeoForge: Create TrackNodeLocation overrides equals — cannot be final (Paper inlined it)
+-    // Crelia/NeoForge: Create TrackNodeLocation overrides equals — cannot be final (Paper inlined it)
 +    // Eturlia/NeoForge: Create TrackNodeLocation overrides equals — cannot be final (Paper inlined it)
      public boolean equals(Object object) {
          return this == object || object instanceof Vec3i vec3i && this.getX() == vec3i.getX() && this.getY() == vec3i.getY() && this.getZ() == vec3i.getZ();
      }
  
      @Override
--    // Eturlia/NeoForge: keep hashCode overridable with equals
+-    // Crelia/NeoForge: keep hashCode overridable with equals
 +    // Eturlia/NeoForge: keep hashCode overridable with equals
      public int hashCode() {
          return (this.getY() + this.getZ() * 31) * 31 + this.getX();
