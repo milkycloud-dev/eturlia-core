@@ -50,6 +50,12 @@ java -jar eturlia-1.21.1-neoforge-21.1.248.jar --nogui
 - TPS семплится **только** с Folia global tick (без AIOOBE на регионах)
 - Smoke: `spark tps` → `*20.0`
 
+### Block placement (hotfix в том же v0.2.0)
+
+- Убраны слепые касты `ItemStack` → `IItemStackExtension` в `ServerPlayerGameMode.useItemOn`
+- Folia `ItemStack` не interface-injected → раньше каждый ПКМ падал `ClassCastException` и блоки не ставились
+- Патч: `patches/server/0039-Eturlia-drop-IItemStackExtension-casts-from-useItemO.patch`
+
 ---
 
 ## Что ещё нужно сделать (бэклог)
@@ -66,7 +72,7 @@ java -jar eturlia-1.21.1-neoforge-21.1.248.jar --nogui
 ### SHA256
 
 ```
-819400fe54ad175f430548e364a927c064a38ae5dcbb6d9a910e09ca2b5639dd
+b3d9411d64e7f765a4216c983f1e6987450ec3a0800b9ca2ab5ed32fbd243dd8
 ```
 
 Общая рамка: FML boot path зелёный; основная работа — **runtime gaps** между однопоточными ожиданиями модов и регионами Folia.
@@ -83,4 +89,5 @@ java -jar eturlia-1.21.1-neoforge-21.1.248.jar --nogui
 | Moonlight Lib | `Done` + worlds |
 | folia-supported плагин (без `libraries:`) | load + enable |
 | Bundled spark | `spark tps` OK |
+| Постановка блоков (ПКМ) | OK после hotfix `0039` |
 | FerriteCore / прочие | at your own risk |
