@@ -1,0 +1,238 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 21:53:21 +0000
+Subject: [PATCH] Eturlia: load config/eturlia.yml before Paper pools; bridge
+ hooks
+
+- EturliaConfigBridge + DedicatedServer/GlobalConfiguration hooks
+- Thread overrides applied in ThreadedRegions/ChunkSystem @PostProcess
+- Command-block / view / simulation distance overrides + startup summary
+
+diff --git a/src/main/java/io/papermc/paper/configuration/EturliaConfigBridge.java b/src/main/java/io/papermc/paper/configuration/EturliaConfigBridge.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..429ad556c5ca05786a4cfb476f85be94f524f331
+--- /dev/null
++++ b/src/main/java/io/papermc/paper/configuration/EturliaConfigBridge.java
+@@ -0,0 +1,151 @@
++package io.papermc.paper.configuration;
++
++import java.lang.reflect.Method;
++import java.nio.file.Path;
++import java.util.logging.Level;
++import java.util.logging.Logger;
++
++/**
++ * Reflective bridge to {@code eturlia.core.config.EturliaConfig} so Folia-Server
++ * compiles without eturlia-core on the compile classpath (core is a runtime jar).
++ */
++public final class EturliaConfigBridge {
++
++    private static final Logger LOGGER = Logger.getLogger("EturliaConfigBridge");
++    private static final String CLASS = "eturlia.core.config.EturliaConfig";
++
++    private EturliaConfigBridge() {}
++
++    public static void load(Path serverRoot) {
++        try {
++            Class<?> c = Class.forName(CLASS);
++            Method load = c.getMethod("load", Path.class);
++            load.invoke(null, serverRoot);
++        } catch (ClassNotFoundException e) {
++            LOGGER.warning("EturliaConfig not on classpath — config/eturlia.yml disabled");
++        } catch (ReflectiveOperationException e) {
++            LOGGER.log(Level.SEVERE, "Failed to load config/eturlia.yml", e);
++        }
++    }
++
++    public static void applyThreadedRegions(Object threadedRegions) {
++        try {
++            Object cfg = getInstance();
++            if (cfg == null || !syncToPaper(cfg)) {
++                return;
++            }
++            int threads = ((Number) cfg.getClass().getMethod("regionTickThreads").invoke(cfg)).intValue();
++            if (threads > 0) {
++                threadedRegions.getClass().getField("threads").setInt(threadedRegions, threads);
++            }
++            int grid = ((Number) cfg.getClass().getMethod("regionGridExponent").invoke(cfg)).intValue();
++            if (grid >= 0) {
++                threadedRegions.getClass().getField("gridExponent").setInt(threadedRegions, grid);
++            }
++        } catch (ReflectiveOperationException e) {
++            LOGGER.log(Level.WARNING, "Eturlia threaded-regions override failed", e);
++        }
++    }
++
++    public static void applyChunkSystem(Object chunkSystem) {
++        try {
++            Object cfg = getInstance();
++            if (cfg == null || !syncToPaper(cfg)) {
++                return;
++            }
++            int workers = ((Number) cfg.getClass().getMethod("chunkWorkerThreads").invoke(cfg)).intValue();
++            if (workers > 0) {
++                chunkSystem.getClass().getField("workerThreads").setInt(chunkSystem, workers);
++                System.setProperty("Paper.WorkerThreadCount", Integer.toString(workers));
++            }
++            int io = ((Number) cfg.getClass().getMethod("chunkIoThreads").invoke(cfg)).intValue();
++            if (io > 0) {
++                chunkSystem.getClass().getField("ioThreads").setInt(chunkSystem, io);
++            }
++            String gen = String.valueOf(cfg.getClass().getMethod("chunkGenParallelism").invoke(cfg));
++            if (gen != null && !gen.isBlank() && !"default".equalsIgnoreCase(gen) && !"null".equals(gen)) {
++                chunkSystem.getClass().getField("genParallelism").set(chunkSystem, gen);
++            }
++        } catch (ReflectiveOperationException e) {
++            LOGGER.log(Level.WARNING, "Eturlia chunk-system override failed", e);
++        }
++    }
++
++    public static void applyAfterPaperGlobal(Object globalConfiguration) {
++        try {
++            Object cfg = getInstance();
++            if (cfg == null) {
++                return;
++            }
++            cfg.getClass().getMethod("applyToPaperGlobal", Object.class).invoke(cfg, globalConfiguration);
++        } catch (ReflectiveOperationException e) {
++            LOGGER.log(Level.WARNING, "Eturlia applyToPaperGlobal failed", e);
++        }
++    }
++
++    public static Boolean commandBlocksEnabledOverride() {
++        try {
++            Object cfg = getInstance();
++            if (cfg == null) {
++                return null;
++            }
++            return (Boolean) cfg.getClass().getMethod("commandBlocksEnabledOverride").invoke(cfg);
++        } catch (ReflectiveOperationException e) {
++            return null;
++        }
++    }
++
++    public static int viewDistanceOverride() {
++        return intMethod("viewDistanceOverride", -1);
++    }
++
++    public static int simulationDistanceOverride() {
++        return intMethod("simulationDistanceOverride", -1);
++    }
++
++    public static boolean syncToServerProperties() {
++        try {
++            Object cfg = getInstance();
++            if (cfg == null) {
++                return false;
++            }
++            return Boolean.TRUE.equals(cfg.getClass().getMethod("syncToServerProperties").invoke(cfg));
++        } catch (ReflectiveOperationException e) {
++            return false;
++        }
++    }
++
++    public static void logStartupSummary(boolean commandBlocks, int viewDistance, int simulationDistance) {
++        try {
++            Object cfg = getInstance();
++            if (cfg == null) {
++                return;
++            }
++            cfg.getClass().getMethod("logStartupSummary", boolean.class, int.class, int.class)
++                    .invoke(cfg, commandBlocks, viewDistance, simulationDistance);
++        } catch (ReflectiveOperationException e) {
++            LOGGER.log(Level.WARNING, "Eturlia logStartupSummary failed", e);
++        }
++    }
++
++    private static Object getInstance() throws ReflectiveOperationException {
++        Class<?> c = Class.forName(CLASS);
++        return c.getMethod("get").invoke(null);
++    }
++
++    private static boolean syncToPaper(Object cfg) throws ReflectiveOperationException {
++        return Boolean.TRUE.equals(cfg.getClass().getMethod("syncToPaper").invoke(cfg));
++    }
++
++    private static int intMethod(String name, int def) {
++        try {
++            Object cfg = getInstance();
++            if (cfg == null) {
++                return def;
++            }
++            return ((Number) cfg.getClass().getMethod(name).invoke(cfg)).intValue();
++        } catch (ReflectiveOperationException e) {
++            return def;
++        }
++    }
++}
+diff --git a/src/main/java/io/papermc/paper/configuration/GlobalConfiguration.java b/src/main/java/io/papermc/paper/configuration/GlobalConfiguration.java
+index a7757603bef0686b3f0debe4a94602f27373534f..cad063682f1a2fa2dbe17b7263ca5a928a643c65 100644
+--- a/src/main/java/io/papermc/paper/configuration/GlobalConfiguration.java
++++ b/src/main/java/io/papermc/paper/configuration/GlobalConfiguration.java
+@@ -243,6 +243,8 @@ public class GlobalConfiguration extends ConfigurationPart {
+ 
+         @PostProcess
+         private void postProcess() {
++            // Eturlia: apply config/eturlia.yml thread overrides before Moonrise pools start
++            io.papermc.paper.configuration.EturliaConfigBridge.applyChunkSystem(this);
+             ca.spottedleaf.moonrise.patches.chunk_system.scheduling.ChunkTaskScheduler.init(this);
+         }
+     }
+@@ -374,6 +376,8 @@ public class GlobalConfiguration extends ConfigurationPart {
+ 
+         @PostProcess
+         public void postProcess() {
++            // Eturlia: apply config/eturlia.yml region thread overrides before TickRegions.init
++            io.papermc.paper.configuration.EturliaConfigBridge.applyThreadedRegions(this);
+             io.papermc.paper.threadedregions.TickRegions.init(this);
+         }
+     }
+diff --git a/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java b/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
+index 56d9cc67b428a12364110d23aee1ae3e0b767fbc..9d3d29480bf52bd2fb03284ad5562ff198a089c1 100644
+--- a/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
++++ b/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
+@@ -222,6 +222,8 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+             this.setPreventProxyConnections(dedicatedserverproperties.preventProxyConnections);
+             this.setLocalIp(dedicatedserverproperties.serverIp);
+         }
++        // Eturlia: load config/eturlia.yml before Paper global so thread overrides apply in @PostProcess
++        io.papermc.paper.configuration.EturliaConfigBridge.load(java.nio.file.Path.of("."));
+         // Spigot start
+         this.setPlayerList(new DedicatedPlayerList(this, this.registries(), this.playerDataStorage));
+         org.spigotmc.SpigotConfig.init((java.io.File) this.options.valueOf("spigot-settings"));
+@@ -232,6 +234,23 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+         this.paperConfigurations.initializeGlobalConfiguration(this.registryAccess());
+         this.paperConfigurations.initializeWorldDefaultsConfiguration(this.registryAccess());
+         // Paper end - initialize global and world-defaults configuration
++        // Eturlia: non-thread Paper overrides + view/simulation distance + startup summary
++        {
++            io.papermc.paper.configuration.EturliaConfigBridge.applyAfterPaperGlobal(io.papermc.paper.configuration.GlobalConfiguration.get());
++            if (io.papermc.paper.configuration.EturliaConfigBridge.syncToServerProperties()) {
++                int vd = io.papermc.paper.configuration.EturliaConfigBridge.viewDistanceOverride();
++                if (vd > 0) {
++                    this.getPlayerList().setViewDistance(vd);
++                }
++                int sd = io.papermc.paper.configuration.EturliaConfigBridge.simulationDistanceOverride();
++                if (sd > 0) {
++                    this.getPlayerList().setSimulationDistance(sd);
++                }
++            }
++            boolean cmd = this.isCommandBlockEnabled();
++            io.papermc.paper.configuration.EturliaConfigBridge.logStartupSummary(
++                    cmd, this.getPlayerList().getViewDistance(), this.getPlayerList().getSimulationDistance());
++        }
+         this.server.spark.enableEarlyIfRequested(); // Paper - spark
+         // Paper start - fix converting txt to json file; convert old users earlier after PlayerList creation but before file load/save
+         if (this.convertOldUsers()) {
+@@ -590,6 +609,11 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+ 
+     @Override
+     public boolean isCommandBlockEnabled() {
++        // Eturlia: config/eturlia.yml gameplay.command-blocks.enabled override
++        java.lang.Boolean override = io.papermc.paper.configuration.EturliaConfigBridge.commandBlocksEnabledOverride();
++        if (override != null) {
++            return override.booleanValue();
++        }
+         return this.getProperties().enableCommandBlock;
+     }
+ 
