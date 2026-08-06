@@ -133,7 +133,8 @@ java -jar build/libs/eturlia-1.21.1-neoforge-21.1.248.jar --nogui
 | Bundled spark | `spark tps` OK; TPS с Folia global tick | whitelist |
 | FerriteCore / прочие | не в матрице | **at your own risk** |
 
-Политика моддеров и unsupported-модов: [`docs/MODDER_POLICY.md`](./docs/MODDER_POLICY.md).
+Политика моддеров и unsupported-модов: [`docs/MODDER_POLICY.md`](./docs/MODDER_POLICY.md).  
+Аудит типичного пака (mods + Folia-плагины): [`docs/PACK_COMPAT_ASIC_2026-08.md`](./docs/PACK_COMPAT_ASIC_2026-08.md).
 
 ### Crash-reports
 
@@ -155,6 +156,7 @@ java -jar build/libs/eturlia-1.21.1-neoforge-21.1.248.jar --nogui
 | `neoforge/` | extras, resources, coremods |
 | `compat/` | опциональные compat-модули |
 | `docs/MODDER_POLICY.md` | whitelist / unsupported / region API |
+| `docs/PACK_COMPAT_ASIC_2026-08.md` | аудит списка модов + Folia-плагины |
 | `.github/workflows/eturlia-ci.yml` | applyPatches + jar + headless smoke |
 
 ## Апстрим и лицензии
@@ -296,7 +298,8 @@ Plugins that declare `libraries:` in `plugin.yml` may fail Maven resolve under M
 | Bundled spark | `spark tps` OK; TPS from Folia global tick | whitelist |
 | FerriteCore / others | not in matrix | **at your own risk** |
 
-Modder / unsupported-mod policy: [`docs/MODDER_POLICY.md`](./docs/MODDER_POLICY.md).
+Modder / unsupported-mod policy: [`docs/MODDER_POLICY.md`](./docs/MODDER_POLICY.md).  
+Pack audit (mods + Folia plugins): [`docs/PACK_COMPAT_ASIC_2026-08.md`](./docs/PACK_COMPAT_ASIC_2026-08.md).
 
 ### Crash reports
 
@@ -318,6 +321,7 @@ Tags `vMAJOR.MINOR.PATCH` (currently **v0.2.0**). The `0.x` line is experimental
 | `neoforge/` | extras, resources, coremods |
 | `compat/` | optional compat modules |
 | `docs/MODDER_POLICY.md` | whitelist / unsupported / region API |
+| `docs/PACK_COMPAT_ASIC_2026-08.md` | аудит списка модов + Folia-плагины |
 | `.github/workflows/eturlia-ci.yml` | applyPatches + jar + headless smoke |
 
 ## Upstream & license
