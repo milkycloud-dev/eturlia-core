@@ -1,0 +1,48 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 16:05:02 +0000
+Subject: [PATCH] Eturlia: implement IBlockExtension on Block for fire
+ flammability
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+NeoForge FireBlock ticks call BlockState.getFlammability → Block.getFlammability.
+Interface injection does not apply to the nested Folia server jar, so implement
+IBlockExtension on Block and expose FireBlock burn/ignite odds.
+
+diff --git a/src/main/java/net/minecraft/world/level/block/Block.java b/src/main/java/net/minecraft/world/level/block/Block.java
+index 64759367cb0dd7401d7a12517a7448d3cbca1a82..dab36c16927f6e62769067a1739a5c527fb777b8 100644
+--- a/src/main/java/net/minecraft/world/level/block/Block.java
++++ b/src/main/java/net/minecraft/world/level/block/Block.java
+@@ -62,7 +62,10 @@ import net.minecraft.world.phys.shapes.Shapes;
+ import net.minecraft.world.phys.shapes.VoxelShape;
+ import org.slf4j.Logger;
+ 
+-public class Block extends BlockBehaviour implements ItemLike {
++// Eturlia/NeoForge: IBlockExtension must be on the class — ModLauncher interface
++    // injection does not reliably apply to the nested Folia server jar, and FireBlock
++    // ticks call BlockState.getFlammability → Block.getFlammability (NoSuchMethodError otherwise).
++    public class Block extends BlockBehaviour implements ItemLike, net.neoforged.neoforge.common.extensions.IBlockExtension {
+ 
+     public static final MapCodec<Block> CODEC = simpleCodec(Block::new);
+     private static final Logger LOGGER = LogUtils.getLogger();
+diff --git a/src/main/java/net/minecraft/world/level/block/FireBlock.java b/src/main/java/net/minecraft/world/level/block/FireBlock.java
+index 1862bb81db8caae29ae0bcf11b71eb035c97db5d..781ed7a0989c8e48f68917c153ba2bb436e26e70 100644
+--- a/src/main/java/net/minecraft/world/level/block/FireBlock.java
++++ b/src/main/java/net/minecraft/world/level/block/FireBlock.java
+@@ -267,11 +267,12 @@ public class FireBlock extends BaseFireBlock {
+         return world.isRainingAt(pos) || world.isRainingAt(pos.west()) || world.isRainingAt(pos.east()) || world.isRainingAt(pos.north()) || world.isRainingAt(pos.south());
+     }
+ 
+-    private int getBurnOdds(BlockState state) {
++    // NeoForge AT + IBlockExtension defaults call these; keep public for Folia hybrid runtime.
++    public int getBurnOdds(BlockState state) {
+         return state.hasProperty(BlockStateProperties.WATERLOGGED) && (Boolean) state.getValue(BlockStateProperties.WATERLOGGED) ? 0 : this.burnOdds.getInt(state.getBlock());
+     }
+ 
+-    private int getIgniteOdds(BlockState state) {
++    public int getIgniteOdds(BlockState state) {
+         return state.hasProperty(BlockStateProperties.WATERLOGGED) && (Boolean) state.getValue(BlockStateProperties.WATERLOGGED) ? 0 : this.igniteOdds.getInt(state.getBlock());
+     }
+ 
