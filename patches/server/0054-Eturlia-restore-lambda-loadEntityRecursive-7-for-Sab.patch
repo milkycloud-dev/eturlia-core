@@ -1,0 +1,37 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 21:08:11 +0000
+Subject: [PATCH] Eturlia: restore lambda$loadEntityRecursive$7 for Sable
+ Inject
+
+Sable targets method_17843 / lambda$loadEntityRecursive$7 at
+Entity.startRiding; Paper/Folia renumbered the synthetic to $8.
+Extract an explicitly named method so the mixin applies.
+
+diff --git a/src/main/java/net/minecraft/world/entity/EntityType.java b/src/main/java/net/minecraft/world/entity/EntityType.java
+index 41cc7fce27338fcc86865e25d5e039e46bb620f0..d1f5fa0b9eb3020571f3d7caebdca5e0ce05976c 100644
+--- a/src/main/java/net/minecraft/world/entity/EntityType.java
++++ b/src/main/java/net/minecraft/world/entity/EntityType.java
+@@ -641,7 +641,14 @@ public class EntityType<T extends Entity> implements FeatureElement, EntityTypeT
+ 
+     @Nullable
+     public static Entity loadEntityRecursive(CompoundTag nbt, Level world, Function<Entity, Entity> entityProcessor) {
++        // Eturlia: Sable Inject targets lambda$loadEntityRecursive$7 at startRiding; Paper/Folia renumbered to $8.
+         return (Entity) EntityType.loadStaticEntity(nbt, world).map(entityProcessor).map((entity) -> {
++            return EntityType.lambda$loadEntityRecursive$7(nbt, world, entityProcessor, entity);
++        }).orElse(null); // CraftBukkit - decompile error
++    }
++
++    // Eturlia: explicit name matching vanilla/Mojmap lambda for Sable entity_rotations_and_riding.EntityTypeMixin
++    private static Entity lambda$loadEntityRecursive$7(CompoundTag nbt, Level world, Function<Entity, Entity> entityProcessor, Entity entity) {
+             if (nbt.contains("Passengers", 9)) {
+                 ListTag nbttaglist = nbt.getList("Passengers", 10);
+ 
+@@ -655,7 +662,6 @@ public class EntityType<T extends Entity> implements FeatureElement, EntityTypeT
+             }
+ 
+             return entity;
+-        }).orElse(null); // CraftBukkit - decompile error
+     }
+ 
+     public static Stream<Entity> loadEntitiesRecursive(final List<? extends Tag> entityNbtList, final Level world) {

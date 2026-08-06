@@ -1,0 +1,49 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 21:25:47 +0000
+Subject: [PATCH] Eturlia: rename isPositionTicking(Entity) for Sable plot
+ mixin
+
+Sable injects isPositionTicking(long); Paper's Entity overload made
+method="isPositionTicking" match both and fail descriptor checks.
+
+diff --git a/src/main/java/io/papermc/paper/command/subcommands/EntityCommand.java b/src/main/java/io/papermc/paper/command/subcommands/EntityCommand.java
+index b5ded5d0ee80e4fc374d873facba5f20e7155e77..49fe5554f69905cdddcdfac4e7f5a867a4022f5d 100644
+--- a/src/main/java/io/papermc/paper/command/subcommands/EntityCommand.java
++++ b/src/main/java/io/papermc/paper/command/subcommands/EntityCommand.java
+@@ -109,7 +109,7 @@ public final class EntityCommand implements PaperSubcommand {
+                 ChunkPos chunk = e.chunkPosition();
+                 info.left++;
+                 info.right.put(chunk, info.right.getOrDefault(chunk, 0) + 1);
+-                if (!chunkProviderServer.isPositionTicking(e) || (e instanceof net.minecraft.world.entity.Marker && !world.paperConfig().entities.markers.tick)) { // Paper - Configurable marker ticking
++                if (!chunkProviderServer.isPositionTickingEntity(e) || (e instanceof net.minecraft.world.entity.Marker && !world.paperConfig().entities.markers.tick)) { // Paper - Configurable marker ticking
+                     nonEntityTicking.merge(key, 1, Integer::sum);
+                 }
+             });
+diff --git a/src/main/java/net/minecraft/server/level/ServerChunkCache.java b/src/main/java/net/minecraft/server/level/ServerChunkCache.java
+index f7311d6efc2119b9dbe062a439850a890c9bf6b8..c4d72826532f0a9799d4bf3fa47a5be6a404105a 100644
+--- a/src/main/java/net/minecraft/server/level/ServerChunkCache.java
++++ b/src/main/java/net/minecraft/server/level/ServerChunkCache.java
+@@ -346,7 +346,8 @@ public class ServerChunkCache extends ChunkSource implements ca.spottedleaf.moon
+     }
+ 
+     // Paper start
+-    public boolean isPositionTicking(Entity entity) {
++    // Eturlia: rename so Sable method="isPositionTicking" only matches the long overload
++    public boolean isPositionTickingEntity(Entity entity) {
+         return this.isPositionTicking(ChunkPos.asLong(net.minecraft.util.Mth.floor(entity.getX()) >> 4, net.minecraft.util.Mth.floor(entity.getZ()) >> 4));
+     }
+     // Paper end
+diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
+index d44e2af6b551ca3104ff04bd68dd2890c17a4875..1029e3df718b5bd15056c59615097d2d0d60eb1c 100644
+--- a/src/main/java/net/minecraft/world/entity/Entity.java
++++ b/src/main/java/net/minecraft/world/entity/Entity.java
+@@ -5816,7 +5816,7 @@ public abstract class Entity extends net.neoforged.neoforge.attachment.Attachmen
+     }
+ 
+     public boolean isTicking() {
+-        return ((net.minecraft.server.level.ServerChunkCache) level.getChunkSource()).isPositionTicking(this);
++        return ((net.minecraft.server.level.ServerChunkCache) level.getChunkSource()).isPositionTickingEntity(this);
+     }
+     // Paper end - Expose entity id counter
+ 
