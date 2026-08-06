@@ -1,1 +1,1 @@
-./gradlew applyAllPatches
+./gradlew applyPatches

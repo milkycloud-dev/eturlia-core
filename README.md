@@ -32,7 +32,7 @@ Requires **Git clone** (not a ZIP), **JDK 21**, and network access to PaperMC + 
 
 ```bash
 # 1) Apply Folia + Crelia/NeoForge patches onto Paper
-./gradlew applyAllPatches
+./gradlew applyPatches
 
 # 2) Build Folia-Server (reobf / paperclip as usual)
 ./gradlew :folia-server:build
@@ -50,7 +50,7 @@ build/libs/crelia-1.21.1-neoforge-21.1.248.jar
 Shortcuts:
 
 ```bash
-./patch.sh          # applyAllPatches
+./patch.sh          # applyPatches
 ./rb.sh             # rebuild Paper/server/minecraft patches
 ```
 
@@ -82,3 +82,9 @@ Accept `eula.txt` on first run. Put NeoForge mods in `mods/`. Plugins still need
 ## License
 
 Different trees use different licenses. Folia/Paper patches: [`PATCHES-LICENSE`](./PATCHES-LICENSE). NeoForge code: upstream LGPL / file headers.
+
+## Patch status
+
+Active server patches: Folia `0001`–`0019` + NeoForge hooks `0020`–`0025` (API-aligned to NeoForge **21.1.248**).
+
+Additional NeoForge hook batches `0033`–`0040` are kept under `patches/server-wip/` — they were authored against incomplete shims and do not apply cleanly yet. They will be rebased onto 21.1.248 in a follow-up.

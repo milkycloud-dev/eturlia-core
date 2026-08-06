@@ -49,6 +49,11 @@ sourceSets {
     }
 }
 
+tasks.named<ProcessResources>("processResources") {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+
 val creliaMixinSources = fileTree("src/main/java") { include("crelia/**/*.java") }
 
 val compileCreliaMixins by tasks.registering(JavaCompile::class) {

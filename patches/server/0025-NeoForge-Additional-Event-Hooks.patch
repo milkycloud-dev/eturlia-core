@@ -45,10 +45,16 @@ index c746e9dbc52ce75d1fc89c750900828462c49686..72b96e8733a0302ecaf38d25eda2660a
 @@ -2134,6 +2142,9 @@ public abstract class LivingEntity extends Entity implements Attackable {
      @Override
      public boolean causeFallDamage(float fallDistance, float damageMultiplier, DamageSource damageSource) {
-         boolean flag = super.causeFallDamage(fallDistance, damageMultiplier, damageSource);
+-        boolean flag = super.causeFallDamage(fallDistance, damageMultiplier, damageSource);
 +        // NeoForge start - fire LivingFallEvent
-+        CommonHooks.onLivingFall(this, fallDistance, damageMultiplier, damageSource);
++        float[] fallEvent = CommonHooks.onLivingFall(this, fallDistance, damageMultiplier);
++        if (fallEvent == null) {
++            return false;
++        }
++        fallDistance = fallEvent[0];
++        damageMultiplier = fallEvent[1];
 +        // NeoForge end
++        boolean flag = super.causeFallDamage(fallDistance, damageMultiplier, damageSource);
          int i = this.calculateFallDamage(fallDistance, damageMultiplier);
  
          if (i > 0) {
@@ -86,8 +92,11 @@ index 9955d553dc016751edc50d9c8134cc1bb16c025e..820674e93c6fb32a84a9213af9f7e8ec
  
      @Override
      public void playerTouch(net.minecraft.world.entity.player.Player player) {
-+        // NeoForge start - fire ItemEntityPickupEvent.Pre (cancelable)
-+        if (EventHooks.fireItemPickupPre(this, player)) return;
++        // NeoForge start - fire ItemEntityPickupEvent.Pre
++        var pickupResult = EventHooks.fireItemPickupPre(this, player).canPickup();
++        if (pickupResult.isFalse()) {
++            return;
++        }
 +        // NeoForge end
          if (!this.level().isClientSide) {
              ItemStack itemstack = this.getItem();
