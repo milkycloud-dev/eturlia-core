@@ -1,0 +1,72 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 20:50:06 +0000
+Subject: [PATCH] Eturlia: restore vanilla explode signature for Sable
+ WrapMethod
+
+Sable @WrapMethod targets explode(... Holder) without Consumer.
+Paper/Folia made Consumer required and ServerLevel only overrode the
+Consumer form, so the mixin never applied.
+
+- Level: no-Consumer explode is the public entry; Consumer overload
+  stashes configurator on ThreadLocal then calls it
+- ServerLevel: override no-Consumer form (mixin target); still forwards
+  to Level Consumer impl with Folia particles=false
+
+diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
+index 289297a762c731eb2a50d89e7b362a7c2ca42302..f70f7c5ef779c52fbf73938ea9f0bf0562c408a4 100644
+--- a/src/main/java/net/minecraft/server/level/ServerLevel.java
++++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
+@@ -2002,10 +2002,10 @@ public class ServerLevel extends Level implements WorldGenLevel, ca.spottedleaf.
+     }
+ 
+     @Override
+-    // Paper start - Allow explosions to damage source
+-    public Explosion explode(@Nullable Entity entity, @Nullable DamageSource damageSource, @Nullable ExplosionDamageCalculator behavior, double x, double y, double z, float power, boolean createFire, Level.ExplosionInteraction explosionSourceType, ParticleOptions particle, ParticleOptions emitterParticle, Holder<SoundEvent> soundEvent, java.util.function.Consumer<Explosion> configurator) {
++    // Eturlia: override vanilla (no Consumer) signature for Sable @WrapMethod; configurator via ThreadLocal
++    public Explosion explode(@Nullable Entity entity, @Nullable DamageSource damageSource, @Nullable ExplosionDamageCalculator behavior, double x, double y, double z, float power, boolean createFire, Level.ExplosionInteraction explosionSourceType, ParticleOptions particle, ParticleOptions emitterParticle, Holder<SoundEvent> soundEvent) {
++        java.util.function.Consumer<Explosion> configurator = Level.ETURLIA$EXPLODE_CONFIGURATOR.get();
+         Explosion explosion = this.explode(entity, damageSource, behavior, x, y, z, power, createFire, explosionSourceType, false, particle, emitterParticle, soundEvent, configurator);
+-    // Paper end - Allow explosions to damage source
+         // CraftBukkit start
+         if (explosion.wasCanceled) {
+             return explosion;
+diff --git a/src/main/java/net/minecraft/world/level/Level.java b/src/main/java/net/minecraft/world/level/Level.java
+index 47b6b18f9fc394b51c205630952250317dc3968e..1317bbeb5bb602bfd269fa8ef40d754f9ba6c978 100644
+--- a/src/main/java/net/minecraft/world/level/Level.java
++++ b/src/main/java/net/minecraft/world/level/Level.java
+@@ -1563,19 +1563,29 @@ public abstract class Level extends net.neoforged.neoforge.attachment.Attachment
+         return this.explode(entity, damageSource, behavior, x, y, z, power, createFire, explosionSourceType, ParticleTypes.EXPLOSION, ParticleTypes.EXPLOSION_EMITTER, SoundEvents.GENERIC_EXPLODE);
+     }
+ 
++    // Eturlia: Paper Consumer overload vs Sable @WrapMethod on vanilla explode(... Holder) —
++    // pass configurator via ThreadLocal so ServerLevel only overrides the vanilla signature.
++    public static final ThreadLocal<java.util.function.Consumer<Explosion>> ETURLIA$EXPLODE_CONFIGURATOR = new ThreadLocal<>();
++
+     public Explosion explode(@Nullable Entity entity, @Nullable DamageSource damageSource, @Nullable ExplosionDamageCalculator behavior, double x, double y, double z, float power, boolean createFire, Level.ExplosionInteraction explosionSourceType, ParticleOptions particle, ParticleOptions emitterParticle, Holder<SoundEvent> soundEvent) {
+-    // Paper start - Allow explosions to damage source
+-        return this.explode(entity, damageSource, behavior, x, y, z, power, createFire, explosionSourceType, particle, emitterParticle, soundEvent, null);
++        java.util.function.Consumer<Explosion> configurator = ETURLIA$EXPLODE_CONFIGURATOR.get();
++        return this.explode(entity, damageSource, behavior, x, y, z, power, createFire, explosionSourceType, true, particle, emitterParticle, soundEvent, configurator);
+     }
+ 
+     public Explosion explode(@Nullable Entity entity, @Nullable DamageSource damageSource, @Nullable ExplosionDamageCalculator behavior, double x, double y, double z, float power, boolean createFire, Level.ExplosionInteraction explosionSourceType, ParticleOptions particle, ParticleOptions emitterParticle, Holder<SoundEvent> soundEvent, @Nullable Consumer<Explosion> configurator) {
+-        return this.explode(entity, damageSource, behavior, x, y, z, power, createFire, explosionSourceType, true, particle, emitterParticle, soundEvent, configurator);
+-    // Paper end - Allow explosions to damage source
++        java.util.function.Consumer<Explosion> previous = ETURLIA$EXPLODE_CONFIGURATOR.get();
++        ETURLIA$EXPLODE_CONFIGURATOR.set(configurator);
++        try {
++            return this.explode(entity, damageSource, behavior, x, y, z, power, createFire, explosionSourceType, particle, emitterParticle, soundEvent);
++        } finally {
++            ETURLIA$EXPLODE_CONFIGURATOR.set(previous);
++        }
+     }
+ 
+     public Explosion explode(@Nullable Entity entity, @Nullable DamageSource damageSource, @Nullable ExplosionDamageCalculator behavior, double x, double y, double z, float power, boolean createFire, Level.ExplosionInteraction explosionSourceType, boolean particles, ParticleOptions particle, ParticleOptions emitterParticle, Holder<SoundEvent> soundEvent) {
+     // Paper start - Allow explosions to damage source
+-        return this.explode(entity, damageSource, behavior, x, y, z, power, createFire, explosionSourceType, particle, emitterParticle, soundEvent, null);
++        // Eturlia: call impl directly so the particles flag is not lost via the no-Consumer ThreadLocal bridge
++        return this.explode(entity, damageSource, behavior, x, y, z, power, createFire, explosionSourceType, particles, particle, emitterParticle, soundEvent, null);
+     }
+     public Explosion explode(@Nullable Entity entity, @Nullable DamageSource damageSource, @Nullable ExplosionDamageCalculator behavior, double x, double y, double z, float power, boolean createFire, Level.ExplosionInteraction explosionSourceType, boolean particles, ParticleOptions particle, ParticleOptions emitterParticle, Holder<SoundEvent> soundEvent, @Nullable Consumer<Explosion> configurator) {
+     // Paper end - Allow explosions to damage source
