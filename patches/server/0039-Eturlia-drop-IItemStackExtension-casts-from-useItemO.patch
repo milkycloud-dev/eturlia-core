@@ -1,0 +1,41 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 18:34:25 +0000
+Subject: [PATCH] Eturlia: drop IItemStackExtension casts from useItemOn
+
+Folia ItemStack is final and not NeoForge interface-injected. Blind
+casts to IItemStackExtension threw ClassCastException on every
+ServerboundUseItemOnPacket and blocked all block placement. Keep
+RightClickBlock hooks; use vanilla sneak/use path for placement.
+
+diff --git a/src/main/java/net/minecraft/server/level/ServerPlayerGameMode.java b/src/main/java/net/minecraft/server/level/ServerPlayerGameMode.java
+index a35c10ee44481a6a74256af30ec99a69e7da65e8..697b1faf363d92978f5ef1d50102d2f5a4b03710 100644
+--- a/src/main/java/net/minecraft/server/level/ServerPlayerGameMode.java
++++ b/src/main/java/net/minecraft/server/level/ServerPlayerGameMode.java
+@@ -603,21 +603,13 @@ public class ServerPlayerGameMode {
+                 return InteractionResult.PASS;
+             }
+         } else {
+-            // NeoForge/Eturlia — onItemUseFirst before block/item use
++            // NeoForge/Eturlia — RightClickBlock already fired above.
++            // Do NOT cast ItemStack to IItemStackExtension: Folia ItemStack is final and not
++            // NeoForge interface-injected; the previous (Object) cast threw ClassCastException
++            // on every UseItemOn and blocked all block placement.
+             UseOnContext useoncontext = new UseOnContext(player, hand, hitResult);
+-            if (neoRightClick.getUseItem() != net.neoforged.neoforge.common.util.TriState.FALSE) {
+-                InteractionResult first = ((net.neoforged.neoforge.common.extensions.IItemStackExtension) (Object) stack)
+-                        .onItemUseFirst(useoncontext);
+-                if (first != InteractionResult.PASS) {
+-                    return first;
+-                }
+-            }
+             boolean flag = !player.getMainHandItem().isEmpty() || !player.getOffhandItem().isEmpty();
+-            boolean flag1 = (player.isSecondaryUseActive() && flag)
+-                    && !(((net.neoforged.neoforge.common.extensions.IItemStackExtension) (Object) player.getMainHandItem())
+-                    .doesSneakBypassUse(world, blockposition, player)
+-                    && ((net.neoforged.neoforge.common.extensions.IItemStackExtension) (Object) player.getOffhandItem())
+-                    .doesSneakBypassUse(world, blockposition, player));
++            boolean flag1 = player.isSecondaryUseActive() && flag;
+             ItemStack itemstack1 = stack.copy();
+             InteractionResult enuminteractionresult;
+ 
