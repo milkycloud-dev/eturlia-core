@@ -50,6 +50,13 @@ java -jar eturlia-1.21.1-neoforge-21.1.248.jar --nogui
 - TPS семплится **только** с Folia global tick (без AIOOBE на регионах)
 - Smoke: `spark tps` → `*20.0`
 
+### WorldEdit NeoForge (hotfix в том же v0.2.0)
+
+- `LevelChunk.setBlockState`: тело снова в 3-arg (WE mixin находит `onPlace`)
+- CraftBukkit NO_PLACE → `setBlockStateDoPlace`
+- Folia boot fires `RegisterCommandsEvent` (WE PlatformsRegistered / init)
+- Патч: `patches/server/0040-Eturlia-WorldEdit-NeoForge-boot-init-on-Folia.patch`
+
 ### Block placement (hotfix в том же v0.2.0)
 
 - Убраны слепые касты `ItemStack` → `IItemStackExtension` в `ServerPlayerGameMode.useItemOn`
@@ -72,7 +79,7 @@ java -jar eturlia-1.21.1-neoforge-21.1.248.jar --nogui
 ### SHA256
 
 ```
-b3d9411d64e7f765a4216c983f1e6987450ec3a0800b9ca2ab5ed32fbd243dd8
+91d4f2e5e84c568f654da4ff06b5fbe4551128ccd7c64de298f68d1c4a8a39b9
 ```
 
 Общая рамка: FML boot path зелёный; основная работа — **runtime gaps** между однопоточными ожиданиями модов и регионами Folia.
@@ -90,4 +97,5 @@ b3d9411d64e7f765a4216c983f1e6987450ec3a0800b9ca2ab5ed32fbd243dd8
 | folia-supported плагин (без `libraries:`) | load + enable |
 | Bundled spark | `spark tps` OK |
 | Постановка блоков (ПКМ) | OK после hotfix `0039` |
+| WorldEdit NeoForge 7.3.8 | boot `Done` после hotfix `0040` |
 | FerriteCore / прочие | at your own risk |
