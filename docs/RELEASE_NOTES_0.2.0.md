@@ -84,6 +84,15 @@ java -jar eturlia-1.21.1-neoforge-21.1.248.jar --nogui
 
 Общая рамка: FML boot path зелёный; основная работа — **runtime gaps** между однопоточными ожиданиями модов и регионами Folia.
 
+### Аудит пака (mods + Folia-плагины)
+
+Полная таблица по заявленному списку jars: [`docs/PACK_COMPAT_ASIC_2026-08.md`](./PACK_COMPAT_ASIC_2026-08.md).
+
+Кратко: **убрать** spark-neoforge, Lithostitched/Terralith/Incendium, Arclight/Sable, клиентские jars, `*.jar1`/`*.bak`.  
+**OK\*:** Moonlight/FD/Let's Do/VoiceChat/WorldEdit/libs.  
+**RISK (не обещаем):** Create+Aeronautics, Alex's Mobs, EasyNPC, Twilight Forest, BetterEnd/BCLib, Malum.  
+Оптимизаторы вне scope. Плагины — только `folia-supported: true`, без `libraries:` пока.
+
 ---
 
 ## Smoke matrix (v0.2.0)

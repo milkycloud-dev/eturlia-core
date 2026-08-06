@@ -17,6 +17,8 @@ Anything on this list is regression-tested in smoke when jars are available. “
 - Crashes, world corruption, or lost chunks from such mods are **not** considered Eturlia release blockers.
 - Prefer Folia-aware schedulers (`RegionScheduler` / `EntityScheduler`) and avoid global entity list walks from region threads.
 - Put NeoForge-only jars in `mods/`; Bukkit plugins must declare `folia-supported: true`.
+- Avoid `libraries:` in `plugin.yml` under ModLauncher until Maven resolve is fixed.
+- Pack audit example: [`PACK_COMPAT_ASIC_2026-08.md`](./PACK_COMPAT_ASIC_2026-08.md).
 
 ## Region crash reports
 
