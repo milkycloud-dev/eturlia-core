@@ -1,0 +1,111 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 19:19:51 +0000
+Subject: [PATCH] Eturlia: WorldEdit NeoForge boot + init on Folia
+
+1) LevelChunk: move setBlockState body back to 3-arg so WE's
+   MixinLevelChunkSetBlockHook finds onPlace; CraftBukkit NO_PLACE via
+   setBlockStateDoPlace (avoids ExtendedChunk 4-arg conflict).
+2) MinecraftServer: fire EventHooks.onCommandRegister on Folia boot path
+   (no createCommandDispatcher) so WorldEdit PlatformsRegisteredEvent runs
+   before ServerStarted setupRegistries.
+
+diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
+index e213967dc1dd97ff43552e0a6cb630d91ce3ddb6..746fab1c7ca3374450a86620fef8a0f523e0e88e 100644
+--- a/src/main/java/net/minecraft/server/MinecraftServer.java
++++ b/src/main/java/net/minecraft/server/MinecraftServer.java
+@@ -1325,6 +1325,19 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+                     LOGGER.warn("NeoForge handleServerStarting failed (Folia-first / FML incomplete): {}", (Object) t.toString());
+                     LOGGER.debug("NeoForge handleServerStarting", t);
+                 }
++                // Folia has no createCommandDispatcher; fire RegisterCommandsEvent so mods
++                // (WorldEdit PlatformsRegisteredEvent → PlatformManager.init) can finish setup
++                // before ServerStartedEvent / setupRegistries.
++                try {
++                    EventHooks.onCommandRegister(
++                        this.getCommands().getDispatcher(),
++                        this.isDedicatedServer() ? Commands.CommandSelection.DEDICATED : Commands.CommandSelection.INTEGRATED,
++                        net.minecraft.commands.CommandBuildContext.simple(this.registryAccess(), this.worldData.enabledFeatures())
++                    );
++                } catch (Throwable t) {
++                    LOGGER.warn("NeoForge onCommandRegister failed (Folia-first): {}", (Object) t.toString());
++                    LOGGER.debug("NeoForge onCommandRegister", t);
++                }
+                 String doneTime = String.format(java.util.Locale.ROOT, "%.3fs", (double) (Util.getNanos() - serverStartTime) / 1.0E9D);
+                 LOGGER.info("Done ({})! For help, type \"help\"", doneTime);
+                 try {
+diff --git a/src/main/java/net/minecraft/world/level/Level.java b/src/main/java/net/minecraft/world/level/Level.java
+index e13b95f95a16fd6f2ff9cd7ec0a9c86b094a4c4c..8b0378398636887279df92294ffaba6f125397c2 100644
+--- a/src/main/java/net/minecraft/world/level/Level.java
++++ b/src/main/java/net/minecraft/world/level/Level.java
+@@ -1072,7 +1072,10 @@ public abstract class Level extends net.neoforged.neoforge.attachment.Attachment
+             }
+             // CraftBukkit end
+ 
+-            BlockState iblockdata1 = chunk.setBlockState(pos, state, (flags & 64) != 0, (flags & 1024) == 0); // CraftBukkit custom NO_PLACE flag
++            // Eturlia: use setBlockStateDoPlace so WorldEdit NeoForge can own the 4-arg ExtendedChunk setBlockState
++            BlockState iblockdata1 = chunk instanceof net.minecraft.world.level.chunk.LevelChunk levelChunk
++                    ? levelChunk.setBlockStateDoPlace(pos, state, (flags & 64) != 0, (flags & 1024) == 0)
++                    : chunk.setBlockState(pos, state, (flags & 64) != 0); // CraftBukkit custom NO_PLACE flag
+             this.chunkPacketBlockController.onBlockChange(this, pos, state, iblockdata1, flags, maxUpdateDepth); // Paper - Anti-Xray
+ 
+             if (iblockdata1 == null) {
+diff --git a/src/main/java/net/minecraft/world/level/chunk/LevelChunk.java b/src/main/java/net/minecraft/world/level/chunk/LevelChunk.java
+index ea95a382561dcf2bb958a08351d493087a49336a..fadc4fbaba5f04dfa983de2c5d97653a8e87fea7 100644
+--- a/src/main/java/net/minecraft/world/level/chunk/LevelChunk.java
++++ b/src/main/java/net/minecraft/world/level/chunk/LevelChunk.java
+@@ -350,15 +350,18 @@ public class LevelChunk extends ChunkAccess implements ca.spottedleaf.moonrise.p
+          */  // Paper - Perf: Optimise Chunk#getFluid
+     }
+ 
++    // CraftBukkit / Eturlia: Paper historically put the body in a 4-arg overload
++    // (moved, doPlace). WorldEdit NeoForge MixinLevelChunkSetBlockHook redirects
++    // BlockState.onPlace inside the 3-arg setBlockState and adds its own 4-arg
++    // ExtendedChunk method — so the implementation MUST live in the 3-arg method
++    // and CraftBukkit's NO_PLACE API must use a differently named overload.
++    // Per-chunk field is region-safe (one owning region thread per chunk).
++    private boolean eturliaDoPlace = true;
++
+     // CraftBukkit start
+     @Nullable
+     @Override
+-    public BlockState setBlockState(BlockPos pos, BlockState state, boolean moved) {
+-        return this.setBlockState(pos, state, moved, true);
+-    }
+-
+-    @Nullable
+-    public BlockState setBlockState(BlockPos blockposition, BlockState iblockdata, boolean flag, boolean doPlace) {
++    public BlockState setBlockState(BlockPos blockposition, BlockState iblockdata, boolean flag) {
+         ca.spottedleaf.moonrise.common.util.TickThread.ensureTickThread(this.level, blockposition, "Updating block asynchronously"); // Folia - region threading
+         // CraftBukkit end
+         int i = blockposition.getY();
+@@ -410,7 +413,8 @@ public class LevelChunk extends ChunkAccess implements ca.spottedleaf.moonrise.p
+                     return null;
+                 } else {
+                     // CraftBukkit - Don't place while processing the BlockPlaceEvent, unless it's a BlockContainer. Prevents blocks such as TNT from activating when cancelled.
+-                    if (!this.level.isClientSide && doPlace && (!this.level.getCurrentWorldData().captureBlockStates || block instanceof net.minecraft.world.level.block.BaseEntityBlock)) { // Folia - region threading
++                    // Eturlia: eturliaDoPlace gates onPlace for CraftBukkit NO_PLACE; WorldEdit redirects this invoke.
++                    if (!this.level.isClientSide && this.eturliaDoPlace && (!this.level.getCurrentWorldData().captureBlockStates || block instanceof net.minecraft.world.level.block.BaseEntityBlock)) { // Folia - region threading
+                         iblockdata.onPlace(this.level, blockposition, iblockdata1, flag);
+                     }
+ 
+@@ -440,6 +444,19 @@ public class LevelChunk extends ChunkAccess implements ca.spottedleaf.moonrise.p
+         }
+     }
+ 
++    // CraftBukkit / Eturlia — NO_PLACE (flag 1024). Named distinctly so WorldEdit can
++    // inject ExtendedChunk.setBlockState(pos, state, moved, update) without conflict.
++    @Nullable
++    public BlockState setBlockStateDoPlace(BlockPos blockposition, BlockState iblockdata, boolean flag, boolean doPlace) {
++        boolean prev = this.eturliaDoPlace;
++        this.eturliaDoPlace = doPlace;
++        try {
++            return this.setBlockState(blockposition, iblockdata, flag);
++        } finally {
++            this.eturliaDoPlace = prev;
++        }
++    }
++
+     /** @deprecated */
+     @Deprecated
+     @Override
