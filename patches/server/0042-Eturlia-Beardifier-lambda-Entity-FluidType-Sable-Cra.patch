@@ -1,0 +1,146 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 20:07:00 +0000
+Subject: [PATCH] Eturlia: Beardifier lambda + Entity FluidType + Sable
+ CraftWorld guards
+
+- Restore lambda$forStructuresInChunk$2 for Lithostitched BeardifierMixin
+  (Paper inlined it away).
+- Add NeoForge forgeFluidTypeHeight / setFluidTypeHeight on Entity for
+  Sable swimming mixin shadows.
+- Skip absurd Bukkit entity query AABBs (Sable sub-level coords) so
+  arclight_sable_patch is unnecessary on Eturlia.
+
+diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
+index 252887757c99987575a317dcf14bb3b40cf8a788..7829219ed5449862854e687907e1370690db1971 100644
+--- a/src/main/java/net/minecraft/world/entity/Entity.java
++++ b/src/main/java/net/minecraft/world/entity/Entity.java
+@@ -1927,6 +1927,9 @@ public abstract class Entity extends net.neoforged.neoforge.attachment.Attachmen
+ 
+     protected boolean updateInWaterStateAndDoFluidPushing() {
+         this.fluidHeight.clear();
++        if (this.forgeFluidTypeHeight != null) {
++            this.forgeFluidTypeHeight.clear(); // Eturlia/NeoForge
++        }
+         this.updateInWaterStateAndDoWaterCurrentPushing();
+         double d0 = this.level().dimensionType().ultraWarm() ? 0.007D : 0.0023333333333333335D;
+         boolean flag = this.updateFluidHeightAndDoFluidPushing(FluidTags.LAVA, d0);
+@@ -5795,4 +5798,44 @@ public abstract class Entity extends net.neoforged.neoforge.attachment.Attachmen
+         }
+         return this.persistentData;
+     }
++
++    // Eturlia/NeoForge: FluidType height map (Sable EntityMixin shadows setFluidTypeHeight /
++    // forgeFluidTypeOnEyes). Mirrors NeoForge Entity patch without interface injection.
++    protected Object2DoubleMap<net.neoforged.neoforge.fluids.FluidType> forgeFluidTypeHeight = new Object2DoubleArrayMap<>(Math.max(2, net.neoforged.neoforge.fluids.FluidType.SIZE.get()));
++    private net.neoforged.neoforge.fluids.FluidType forgeFluidTypeOnEyes = net.neoforged.neoforge.common.NeoForgeMod.EMPTY_TYPE.value();
++
++    protected final void setFluidTypeHeight(net.neoforged.neoforge.fluids.FluidType type, double height) {
++        this.forgeFluidTypeHeight.put(type, height);
++    }
++
++    public final double getFluidTypeHeight(net.neoforged.neoforge.fluids.FluidType type) {
++        return this.forgeFluidTypeHeight.getDouble(type);
++    }
++
++    public final boolean isInFluidType(java.util.function.BiPredicate<net.neoforged.neoforge.fluids.FluidType, Double> predicate, boolean forAllTypes) {
++        if (this.forgeFluidTypeHeight.isEmpty()) {
++            return false;
++        }
++        return forAllTypes
++            ? this.forgeFluidTypeHeight.object2DoubleEntrySet().stream().allMatch(e -> predicate.test(e.getKey(), e.getDoubleValue()))
++            : this.forgeFluidTypeHeight.object2DoubleEntrySet().stream().anyMatch(e -> predicate.test(e.getKey(), e.getDoubleValue()));
++    }
++
++    public final boolean isInFluidType() {
++        return !this.forgeFluidTypeHeight.isEmpty();
++    }
++
++    public final net.neoforged.neoforge.fluids.FluidType getEyeInFluidType() {
++        return this.forgeFluidTypeOnEyes;
++    }
++
++    public net.neoforged.neoforge.fluids.FluidType getMaxHeightFluidType() {
++        if (this.forgeFluidTypeHeight.isEmpty()) {
++            return net.neoforged.neoforge.common.NeoForgeMod.EMPTY_TYPE.value();
++        }
++        return this.forgeFluidTypeHeight.object2DoubleEntrySet().stream()
++            .max(java.util.Comparator.comparingDouble(Object2DoubleMap.Entry::getDoubleValue))
++            .map(Object2DoubleMap.Entry::getKey)
++            .orElseGet(net.neoforged.neoforge.common.NeoForgeMod.EMPTY_TYPE::value);
++    }
+ }
+diff --git a/src/main/java/net/minecraft/world/level/levelgen/Beardifier.java b/src/main/java/net/minecraft/world/level/levelgen/Beardifier.java
+index ca93a97256350789ca56f910862c9d717ca7670b..69331312de1ddefd6a9bb7af36674538f35ca75b 100644
+--- a/src/main/java/net/minecraft/world/level/levelgen/Beardifier.java
++++ b/src/main/java/net/minecraft/world/level/levelgen/Beardifier.java
+@@ -39,6 +39,22 @@ public class Beardifier implements DensityFunctions.BeardifierOrMarker {
+         for (net.minecraft.world.level.levelgen.structure.StructureStart start : world.startsForStructure(pos, (structure) -> {
+             return structure.terrainAdaptation() != TerrainAdjustment.NONE;
+         })) { // Paper end - Perf: Remove streams from hot code
++            // Eturlia: keep vanilla lambda$forStructuresInChunk$2 shape for Lithostitched BeardifierMixin
++            // (Paper inlined the body; mixin targets the synthetic method + ObjectList.add ordinal=1).
++            lambda$forStructuresInChunk$2(pos, objectList, i, j, objectList2, start);
++        } // Paper - Perf: Remove streams from hot code
++        return new Beardifier(objectList.iterator(), objectList2.iterator());
++    }
++
++    // Eturlia: restored synthetic-shaped helper for Lithostitched WrapOperation
++    private static void lambda$forStructuresInChunk$2(
++        ChunkPos pos,
++        ObjectList<Beardifier.Rigid> objectList,
++        int i,
++        int j,
++        ObjectList<JigsawJunction> objectList2,
++        net.minecraft.world.level.levelgen.structure.StructureStart start
++    ) {
+                     TerrainAdjustment terrainAdjustment = start.getStructure().terrainAdaptation();
+ 
+                     for (StructurePiece structurePiece : start.getPieces()) {
+@@ -66,8 +82,6 @@ public class Beardifier implements DensityFunctions.BeardifierOrMarker {
+                             }
+                         }
+                     }
+-        } // Paper - Perf: Remove streams from hot code
+-        return new Beardifier(objectList.iterator(), objectList2.iterator());
+     }
+ 
+     @VisibleForTesting
+diff --git a/src/main/java/org/bukkit/craftbukkit/CraftWorld.java b/src/main/java/org/bukkit/craftbukkit/CraftWorld.java
+index 0a7b7ae7649855d8cbd66eccc5b95d656c74ec16..44943f3e3f2919257802ffdceb62160ad7de564d 100644
+--- a/src/main/java/org/bukkit/craftbukkit/CraftWorld.java
++++ b/src/main/java/org/bukkit/craftbukkit/CraftWorld.java
+@@ -1148,6 +1148,12 @@ public class CraftWorld extends CraftRegionAccessor implements World {
+         org.spigotmc.AsyncCatcher.catchOp("getNearbyEntities"); // Spigot
+         Preconditions.checkArgument(boundingBox != null, "BoundingBox cannot be null");
+ 
++        // Eturlia: Sable/Aeronautics encode sub-level data into world coords; Bukkit rayTrace
++        // can produce absurd AABBs (Arclight sable patch / issue #2137). Skip safely.
++        if (eturlia$isAbsurdEntityQueryBox(boundingBox)) {
++            return java.util.Collections.emptyList();
++        }
++
+         AABB bb = new AABB(boundingBox.getMinX(), boundingBox.getMinY(), boundingBox.getMinZ(), boundingBox.getMaxX(), boundingBox.getMaxY(), boundingBox.getMaxZ());
+         List<net.minecraft.world.entity.Entity> entityList = this.getHandle().getEntities((net.minecraft.world.entity.Entity) null, bb, Predicates.alwaysTrue());
+         List<Entity> bukkitEntityList = new ArrayList<org.bukkit.entity.Entity>(entityList.size());
+@@ -1162,6 +1168,20 @@ public class CraftWorld extends CraftRegionAccessor implements World {
+         return bukkitEntityList;
+     }
+ 
++    private static boolean eturlia$isAbsurdEntityQueryBox(BoundingBox box) {
++        final double maxExtent = 1.0E7D;
++        final double maxCoord = 3.0E7D;
++        return Math.abs(box.getMaxX() - box.getMinX()) > maxExtent
++            || Math.abs(box.getMaxY() - box.getMinY()) > maxExtent
++            || Math.abs(box.getMaxZ() - box.getMinZ()) > maxExtent
++            || Math.abs(box.getMinX()) > maxCoord
++            || Math.abs(box.getMaxX()) > maxCoord
++            || Math.abs(box.getMinY()) > maxCoord
++            || Math.abs(box.getMaxY()) > maxCoord
++            || Math.abs(box.getMinZ()) > maxCoord
++            || Math.abs(box.getMaxZ()) > maxCoord;
++    }
++
+     @Override
+     public RayTraceResult rayTraceEntities(Location start, Vector direction, double maxDistance) {
+         return this.rayTraceEntities(start, direction, maxDistance, null);

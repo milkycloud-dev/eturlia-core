@@ -1,0 +1,37 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 20:15:39 +0000
+Subject: [PATCH] Eturlia: restore lambda$stopSleeping$12 name for Sable mixin
+
+Paper/Folia renumbered the stopSleeping ifPresent lambda; Sable Redirects
+setPos inside lambda$stopSleeping$12.
+
+diff --git a/src/main/java/net/minecraft/world/entity/LivingEntity.java b/src/main/java/net/minecraft/world/entity/LivingEntity.java
+index 6f1ab20d08e06d9cb4d71513d13ec4006827d9fb..348ad90adc788457604f0f6f097cac9685119de4 100644
+--- a/src/main/java/net/minecraft/world/entity/LivingEntity.java
++++ b/src/main/java/net/minecraft/world/entity/LivingEntity.java
+@@ -4454,7 +4454,13 @@ public abstract class LivingEntity extends Entity implements Attackable {
+         Level world = this.level();
+ 
+         java.util.Objects.requireNonNull(world);
+-        optional.filter(world::hasChunkAt).ifPresent((blockposition) -> {
++        // Eturlia: keep synthetic name lambda$stopSleeping$12 for Sable Redirect (Paper/Folia renumbered lambdas).
++        optional.filter(world::hasChunkAt).ifPresent(this::lambda$stopSleeping$12);
++        // Folia start - separate out
++        this.stopSleepingRaw();
++    }
++
++    private void lambda$stopSleeping$12(BlockPos blockposition) {
+             BlockState iblockdata = this.level().getBlockState(blockposition);
+ 
+             if (iblockdata.getBlock() instanceof BedBlock) {
+@@ -4474,9 +4480,6 @@ public abstract class LivingEntity extends Entity implements Attackable {
+                 this.setXRot(0.0F);
+             }
+ 
+-        });
+-        // Folia start - separate out
+-        this.stopSleepingRaw();
+     }
+     public void stopSleepingRaw() {
+         // Folia end - separate out

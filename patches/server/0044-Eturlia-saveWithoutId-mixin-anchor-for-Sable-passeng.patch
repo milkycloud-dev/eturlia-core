@@ -1,0 +1,27 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 20:12:04 +0000
+Subject: [PATCH] Eturlia: saveWithoutId mixin anchor for Sable passenger
+ redirect
+
+CraftBukkit 1-arg saveWithoutId had no CompoundTag.put, so Sable's
+descriptor-less Redirect failed (0 targets). Add a dead put anchor.
+
+diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
+index b7b1519e26867407ce378374cfc37d01b592aad9..b909620e11fa51652dd591e7822b5ac2cda5a718 100644
+--- a/src/main/java/net/minecraft/world/entity/Entity.java
++++ b/src/main/java/net/minecraft/world/entity/Entity.java
+@@ -2417,7 +2417,12 @@ public abstract class Entity extends net.neoforged.neoforge.attachment.Attachmen
+     }
+ 
+     public CompoundTag saveWithoutId(CompoundTag nbt) {
+-        // CraftBukkit start - allow excluding certain data when saving
++        // Eturlia: CraftBukkit delegates to (CompoundTag, boolean). Sable Redirects
++        // saveWithoutId without a descriptor — both overloads must contain a
++        // CompoundTag.put so mixin apply succeeds; real Pos write is in the 2-arg body.
++        if (false) {
++            nbt.put("EturliaMixinAnchor", StringTag.valueOf(""));
++        }
+         return this.saveWithoutId(nbt, true);
+     }
+ 

@@ -76,22 +76,20 @@ java -jar eturlia-1.21.1-neoforge-21.1.248.jar --nogui
 | Низкий | Полный Folia-aware TPS из TickData (как spark-folia plugin) вместо global-tick proxy |
 | Политика | Регион-unsafe моды останутся unsupported — не блокеры релиза |
 
+### Аудит пака (mods + Folia-плагины)
+
+Полная таблица: [`docs/PACK_COMPAT_ASIC_2026-08.md`](./PACK_COMPAT_ASIC_2026-08.md).
+
+- **Lithostitched ≥1.7.13 + Terralith + Incendium:** **OK** после патчей `0041`–`0042` (smoke `Done`).
+- **Sable:** убрать Arclight-патч → shim из релиза; ядерные bridges `0042`–`0049`; boot ещё WIP (explode WrapMethod).
+- **Убрать:** spark-neoforge, клиентские jars, `*.jar1`/`*.bak`.
+- Оптимизаторы вне scope. Плагины — только `folia-supported: true`, без `libraries:` пока.
+
 ### SHA256
 
 ```
-91d4f2e5e84c568f654da4ff06b5fbe4551128ccd7c64de298f68d1c4a8a39b9
+457653dabe853b4c2242cee13ad36cdfdc02ec5eee0b9bd49d45fbc4b77523b4
 ```
-
-Общая рамка: FML boot path зелёный; основная работа — **runtime gaps** между однопоточными ожиданиями модов и регионами Folia.
-
-### Аудит пака (mods + Folia-плагины)
-
-Полная таблица по заявленному списку jars: [`docs/PACK_COMPAT_ASIC_2026-08.md`](./PACK_COMPAT_ASIC_2026-08.md).
-
-Кратко: **убрать** spark-neoforge, Lithostitched/Terralith/Incendium, Arclight/Sable, клиентские jars, `*.jar1`/`*.bak`.  
-**OK\*:** Moonlight/FD/Let's Do/VoiceChat/WorldEdit/libs.  
-**RISK (не обещаем):** Create+Aeronautics, Alex's Mobs, EasyNPC, Twilight Forest, BetterEnd/BCLib, Malum.  
-Оптимизаторы вне scope. Плагины — только `folia-supported: true`, без `libraries:` пока.
 
 ---
 
@@ -107,4 +105,6 @@ java -jar eturlia-1.21.1-neoforge-21.1.248.jar --nogui
 | Bundled spark | `spark tps` OK |
 | Постановка блоков (ПКМ) | OK после hotfix `0039` |
 | WorldEdit NeoForge 7.3.8 | boot `Done` после hotfix `0040` |
+| Lithostitched 1.7.13 + Terralith + Incendium | boot `Done` после `0041`–`0042` |
+| Sable 2.0.3 (+ Eturlia arclight shim) | WIP — explode WrapMethod vs Folia Consumer |
 | FerriteCore / прочие | at your own risk |

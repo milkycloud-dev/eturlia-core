@@ -1,0 +1,63 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 20:14:23 +0000
+Subject: [PATCH] Eturlia: fold CraftBukkit saveWithoutId into 1-arg for Sable
+
+Rename selective overload to saveWithoutIdIncluding and keep all
+CompoundTag.put calls in vanilla saveWithoutId(CompoundTag) so Sable's
+descriptor-less Redirect applies.
+
+diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
+index b909620e11fa51652dd591e7822b5ac2cda5a718..d44e2af6b551ca3104ff04bd68dd2890c17a4875 100644
+--- a/src/main/java/net/minecraft/world/entity/Entity.java
++++ b/src/main/java/net/minecraft/world/entity/Entity.java
+@@ -2397,7 +2397,7 @@ public abstract class Entity extends net.neoforged.neoforge.attachment.Attachmen
+                 return false;
+             } else {
+                 nbttagcompound.putString("id", s);
+-                this.saveWithoutId(nbttagcompound, includeAll); // CraftBukkit - pass on includeAll
++                this.saveWithoutIdIncluding(nbttagcompound, includeAll); // CraftBukkit - pass on includeAll
+                 return true;
+             }
+         }
+@@ -2416,18 +2416,11 @@ public abstract class Entity extends net.neoforged.neoforge.attachment.Attachmen
+         return this.isPassenger() ? false : this.saveAsPassenger(nbt);
+     }
+ 
+-    public CompoundTag saveWithoutId(CompoundTag nbt) {
+-        // Eturlia: CraftBukkit delegates to (CompoundTag, boolean). Sable Redirects
+-        // saveWithoutId without a descriptor — both overloads must contain a
+-        // CompoundTag.put so mixin apply succeeds; real Pos write is in the 2-arg body.
+-        if (false) {
+-            nbt.put("EturliaMixinAnchor", StringTag.valueOf(""));
+-        }
+-        return this.saveWithoutId(nbt, true);
+-    }
++    // Eturlia: selective-save flag for CraftBukkit; Sable mixins target 1-arg saveWithoutId only.
++    private static final ThreadLocal<Boolean> ETURLIA$SAVE_INCLUDE_ALL = ThreadLocal.withInitial(() -> Boolean.TRUE);
+ 
+-    public CompoundTag saveWithoutId(CompoundTag nbttagcompound, boolean includeAll) {
+-        // CraftBukkit end
++    public CompoundTag saveWithoutId(CompoundTag nbttagcompound) {
++        final boolean includeAll = ETURLIA$SAVE_INCLUDE_ALL.get();
+         try {
+             // CraftBukkit start - selectively save position
+             if (includeAll) {
+@@ -2593,6 +2586,17 @@ public abstract class Entity extends net.neoforged.neoforge.attachment.Attachmen
+         }
+     }
+ 
++    /** CraftBukkit selective save; not named saveWithoutId so Sable binds only to 1-arg. */
++    public CompoundTag saveWithoutIdIncluding(CompoundTag nbttagcompound, boolean includeAll) {
++        Boolean previous = ETURLIA$SAVE_INCLUDE_ALL.get();
++        ETURLIA$SAVE_INCLUDE_ALL.set(includeAll);
++        try {
++            return this.saveWithoutId(nbttagcompound);
++        } finally {
++            ETURLIA$SAVE_INCLUDE_ALL.set(previous);
++        }
++    }
++
+     public void load(CompoundTag nbt) {
+         try {
+             ListTag nbttaglist = nbt.getList("Pos", 6);

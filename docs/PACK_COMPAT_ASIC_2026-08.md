@@ -23,11 +23,7 @@
 | Файл | Почему |
 |------|--------|
 | `spark-1.10.124-neoforge.jar` | **BLOCK** — конфликт с bundled spark Eturlia |
-| `lithostitched-1.7.10+beta4-neoforge-21.1.jar` | **BLOCK** — mixin `RegistryDataLoaderMixin`, crash FML |
-| `Terralith_1.21.1_v2.6.2_Neoforge.jar` | **BLOCK** без рабочего Lithostitched (mandatory dep) |
-| `Incendium_1.21.x_v5.4.4.jar` | **BLOCK** в той же связке / datapack-мод без Lithostitched-стека |
-| `arclight_sable_patch-1.1.1.jar` | **BLOCK** — патч под **Arclight**, не Eturlia/Folia |
-| `sable-neoforge-1.21.1-2.0.3.jar` | **BLOCK** — экосистема Arclight/Sable, не наш гибрид |
+| `arclight_sable_patch-1.1.1.jar` (оригинал Arclight) | **BLOCK** — заменить на `arclight_sable_patch-1.1.1-eturlia-shim.jar` |
 | `*.jar1` | **JUNK** — не `.jar`, loader не подхватит нормально |
 | `*.jar.bak*`, `*.prefix-*`, `*.bak-bottles*` | **JUNK** — бэкапы |
 | дубль `letsdo-farm_and_charm-neoforge-1.1.22.jar` | **JUNK** — один экземпляр |
@@ -38,7 +34,9 @@
 | `manas_queue-*.jar*` | **OPT/JUNK** — очереди/бэкапы |
 | `chunkholdersafe-…` | **OPT\*** — может помочь Folia, не обязателен |
 
-После чистки **не ставить** Lithostitched/Terralith/Incendium, пока нет Folia-совместимого Lithostitched.
+**Lithostitched / Terralith / Incendium** — больше не BLOCK: в v0.2.0+ патчи `0041`–`0042` (RegistryDataLoader 6-arg, Beardifier `$2`, `loadLevel()`). Берите **Lithostitched ≥ 1.7.13**.
+
+**Sable:** убрать оригинальный `arclight_sable_patch`; поставить shim из релиза + `sable-neoforge`. Boot ещё **WIP** (Folia `explode` WrapMethod) — см. секцию Sable ниже.
 
 ---
 
@@ -68,9 +66,35 @@
 
 | Файл | Статус | Комментарий |
 |------|--------|-------------|
-| Lithostitched + Terralith + Incendium | **BLOCK** | Уже ломали ваш debug-лог |
-| Arclight/Sable jars | **BLOCK** | Чужой гибрид |
 | spark-neoforge | **BLOCK** | Дубль bundled spark |
+| `arclight_sable_patch` (Arclight original) | **BLOCK** | Заменить shim’ом Eturlia |
+
+---
+
+## Lithostitched + Terralith + Incendium — **OK** (после ядерных патчей)
+
+Smoke на Eturlia: `Done` с `lithostitched-1.7.13` + Terralith 2.6.2 + Incendium 5.4.4.
+
+| Что чинили в ядре | Патч |
+|-------------------|------|
+| Paper `Conversions` сломал `RegistryDataLoaderMixin` | `0041` — 6-arg `loadElementFromResource` + ThreadLocal |
+| CraftBukkit `loadLevel(String)` vs Lithostitched `loadLevel()V` | `0041` |
+| Paper убрал `lambda$forStructuresInChunk$2` (Beardifier) | `0042` |
+
+Рекомендация: **не** `1.7.10+beta4` — ставьте **≥ 1.7.13**.
+
+---
+
+## Sable + Arclight patch — как завести на Eturlia
+
+1. **Удалить** оригинальный `arclight_sable_patch-*.jar` (миксины под Arclight).
+2. Положить **`arclight_sable_patch-1.1.1-eturlia-shim.jar`** из релиза (modId тот же, no-op).
+3. Оставить `sable-neoforge-1.21.1-2.0.3.jar` (+ Create/Aeronautics по желанию).
+4. Опционально: `eturlia-compat-sable` (region bridges).
+
+Ядро уже даёт: FluidType height / `updateFluidHeightAndDoFluidPushing()`, `saveWithoutId` 1-arg, `lambda$stopSleeping$12`, `playBlockFallSound` local, vanilla `Level.<init>`, `ServerLevel.tick(BooleanSupplier)`, CraftWorld absurd-AABB guard (вместо Arclight rayTrace eject).
+
+**Осталось для полного boot:** Folia/Paper `explode(..., Consumer)` vs Sable `@WrapMethod` на vanilla `explode` — в работе. До фикса Sable = **RISK/WIP**, не BLOCK по смыслу «чужой гибрид».
 
 ---
 
@@ -134,11 +158,11 @@
 
 ## Сводка по «должны работать»
 
-**Да (после чистки списка):** libs (Architectury, Cloth, Kotlin, Bookshelf, Resourceful\*, Moonlight), Farmers Delight, Supplementaries/Amendments/Beautify стек, Let's Do\*, Voice Chat, Emotecraft, WorldEdit 7.3.8, базовые утилиты (AttributeFix, Almanac, …).
+**Да (после чистки списка):** libs (Architectury, Cloth, Kotlin, Bookshelf, Resourceful\*, Moonlight), Farmers Delight, Supplementaries/Amendments/Beautify стек, Let's Do\*, Voice Chat, Emotecraft, WorldEdit 7.3.8, базовые утилиты (AttributeFix, Almanac, …), **Lithostitched ≥1.7.13 + Terralith + Incendium**.
 
-**Нет / пока нет:** Lithostitched-стек (Terralith/Incendium), Arclight/Sable, spark-neoforge, клиентские jars, битые `.jar1`/`.bak`.
+**Нет / пока нет:** spark-neoforge, оригинальный Arclight sable patch, клиентские jars, битые `.jar1`/`.bak`.
 
-**At own risk (не обещаем):** Create + Aeronautics, Alex's Mobs/Citadel, EasyNPC, Twilight Forest, BetterEnd/BCLib, Malum, тяжёлый dungeon-pack, curios-heavy, combat-моды.
+**At own risk / WIP:** Create + Aeronautics, **Sable** (ядерные bridges есть, explode mixin ещё ломает boot), Alex's Mobs/Citadel, EasyNPC, Twilight Forest, BetterEnd/BCLib, Malum, тяжёлый dungeon-pack, curios-heavy, combat-моды.
 
 Оптимизаторы (`ferritecore`, `packetfixer`, `manas_queue`, …) — **вне** требования «должны работать».
 
