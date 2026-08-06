@@ -146,7 +146,7 @@ index 545ee62ebb9ce9bfc28428f98ae116c415f373c1..a140189f9d90c39fc03fdd91c6dfc423
 +            if (!this.intrusiveHolders) {
 +                throw new IllegalStateException("This registry can't create intrusive holders");
 +            }
-+            // Neo/Eturlia: map may have been cleared on full clear(); recreate for RegisterEvent after unfreeze
++            // Neo/Crelia: map may have been cleared on full clear(); recreate for RegisterEvent after unfreeze
 +            this.unregisteredIntrusiveHolders = new IdentityHashMap<>();
          }
 +        this.validateWrite();

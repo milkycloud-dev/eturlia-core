@@ -199,6 +199,52 @@ public final class RegionContextCrashReport {
     // Accessors
     // =====================================================================
 
+    // =====================================================================
+    // Persistence — dedicated eturlia-crash-reports/ folder
+    // =====================================================================
+
+    /**
+     * Default directory name for Eturlia region-enriched crash reports.
+     * Separate from vanilla/Paper {@code crash-reports/}.
+     */
+    public static final String DEFAULT_DIR_NAME = "eturlia-crash-reports";
+
+    /**
+     * Writes human-readable and JSON reports under {@code dir}.
+     * Creates the directory if needed. Filenames include region id.
+     *
+     * @param dir target directory (typically {@code eturlia-crash-reports})
+     * @return the written {@code .txt} file, or {@code null} on failure
+     */
+    public java.io.File writeToDirectory(java.io.File dir) {
+        if (dir == null) {
+            dir = new java.io.File(DEFAULT_DIR_NAME);
+        }
+        if (!dir.exists() && !dir.mkdirs()) {
+            LOGGER.warning("Could not create Eturlia crash-reports directory: " + dir.getAbsolutePath());
+            return null;
+        }
+        String region = str(data.get("regionId")).replaceAll("[^a-zA-Z0-9._-]", "_");
+        String timestamp = new SimpleDateFormat("yyyy-MM-dd_HH.mm.ss").format(new Date());
+        String base = "crash-" + timestamp + "-region-" + region;
+        java.io.File txt = new java.io.File(dir, base + ".txt");
+        java.io.File json = new java.io.File(dir, base + ".json");
+        try (java.io.PrintWriter pw = new java.io.PrintWriter(new java.io.FileWriter(txt))) {
+            pw.print(toHumanReadable());
+        } catch (java.io.IOException e) {
+            LOGGER.warning("Failed to write " + txt.getAbsolutePath() + ": " + e.getMessage());
+            return null;
+        }
+        try (java.io.PrintWriter pw = new java.io.PrintWriter(new java.io.FileWriter(json))) {
+            pw.print(toJsonString());
+        } catch (java.io.IOException e) {
+            LOGGER.warning("Failed to write " + json.getAbsolutePath() + ": " + e.getMessage());
+        }
+        LOGGER.info("Eturlia crash report written to " + txt.getAbsolutePath()
+                + " (regionId=" + data.get("regionId") + ")");
+        return txt;
+    }
+
     public Map<String, Object> getData() {
         return Collections.unmodifiableMap(data);
     }

@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Cursor Agent <cursoragent@cursor.com>
 Date: Thu, 6 Aug 2026 11:26:07 +0000
-Subject: [PATCH] NeoForge ModLauncher runtime hooks for Eturlia
+Subject: [PATCH] NeoForge ModLauncher runtime hooks for Crelia
 
 AttachmentHolder hierarchy, registry BaseMappedRegistry/IRegistryExtension,
 tag create(RL), DyeColor tags, Language Component JSON, FriendlyByteBuf.writeByte(byte),
@@ -30,7 +30,7 @@ index 4b30b05dcd99176715d49133fb99b96383a0ecbc..9a86c86be13c671a99b8582247aee56a
      private void enable() {
          if (!this.enabled) {
 -            if (false) { // Folia - disable in-built spark profiler
-+            // Eturlia: keep Paper's bundled spark available (Folia 0018 had forced it off).
++            // Crelia: keep Paper's bundled spark available (Folia 0018 had forced it off).
 +            // Spark jars stay on the fat classpath; respect paper-global.yml spark.enabled.
 +            if (GlobalConfiguration.get().spark.enabled) {
                  this.enabled = true;
@@ -41,7 +41,7 @@ index 4b30b05dcd99176715d49133fb99b96383a0ecbc..9a86c86be13c671a99b8582247aee56a
  
      public static boolean isPluginPreferred() {
 -        return true; // Folia - disable in-built spark profiler
-+        // Eturlia: restore Paper preference flag (Folia 0018 forced plugin-only / disabled bundled spark).
++        // Crelia: restore Paper preference flag (Folia 0018 forced plugin-only / disabled bundled spark).
 +        return Boolean.getBoolean(PREFER_SPARK_PLUGIN_PROPERTY);
      }
  
