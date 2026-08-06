@@ -1,0 +1,80 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 16:28:45 +0000
+Subject: [PATCH] Eturlia: disable bundled spark tick hooks under Folia regions
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+SparkTickStatistics$TpsRollingAverage is not region-thread-safe — concurrent
+onTick from multiple regions throws ArrayIndexOutOfBoundsException and kills
+the region. Restore Folia's disable of the bundled profiler, skip tick hooks
+when disabled, and catch failures if spark is ever re-enabled.
+
+diff --git a/src/main/java/io/papermc/paper/SparksFly.java b/src/main/java/io/papermc/paper/SparksFly.java
+index 9825ba84d1592459cd401b7d4f9accba49366248..cf80817381a47985101d9f34179f874a986bd441 100644
+--- a/src/main/java/io/papermc/paper/SparksFly.java
++++ b/src/main/java/io/papermc/paper/SparksFly.java
+@@ -109,14 +109,15 @@ public final class SparksFly {
+ 
+     private void enable() {
+         if (!this.enabled) {
+-            // Eturlia: keep Paper's bundled spark available (Folia 0018 had forced it off).
+-            // Spark jars stay on the fat classpath; respect paper-global.yml spark.enabled.
+-            if (GlobalConfiguration.get().spark.enabled) {
++            // Folia/Eturlia: bundled spark TPS hooks are not region-thread-safe
++            // (ArrayIndexOutOfBoundsException in SparkTickStatistics$TpsRollingAverage.add
++            // when multiple regions call onTick concurrently). Prefer the spark plugin.
++            if (false) { // Folia - disable in-built spark profiler
+                 this.enabled = true;
+                 this.spark.enable();
+             } else {
+                 if (!this.disabledInConfigurationWarningLogged) {
+-                    this.logger.log(Level.INFO, "The spark profiler will not be enabled because it is currently disabled in the configuration.");
++                    this.logger.log(Level.INFO, "The bundled spark profiler is disabled on Folia/Eturlia (not region-thread-safe). Use the Folia-compatible spark plugin if needed.");
+                     this.disabledInConfigurationWarningLogged = true;
+                 }
+             }
+@@ -147,11 +148,30 @@ public final class SparksFly {
+     }
+ 
+     public void tickStart() {
+-        this.spark.onServerTickStart();
++        // Eturlia: never feed Folia multi-region ticks into spark's shared rolling average.
++        if (!this.enabled) {
++            return;
++        }
++        synchronized (this) {
++            try {
++                this.spark.onServerTickStart();
++            } catch (final Throwable t) {
++                this.logger.log(Level.WARNING, "Spark tickStart failed (ignored to protect region threads)", t);
++            }
++        }
+     }
+ 
+     public void tickEnd(final double duration) {
+-        this.spark.onServerTickEnd(duration);
++        if (!this.enabled) {
++            return;
++        }
++        synchronized (this) {
++            try {
++                this.spark.onServerTickEnd(duration);
++            } catch (final Throwable t) {
++                this.logger.log(Level.WARNING, "Spark tickEnd failed (ignored to protect region threads)", t);
++            }
++        }
+     }
+ 
+     void executeCommand(final CommandSender sender, final String[] args) {
+@@ -163,8 +183,7 @@ public final class SparksFly {
+     }
+ 
+     public static boolean isPluginPreferred() {
+-        // Eturlia: restore Paper preference flag (Folia 0018 forced plugin-only / disabled bundled spark).
+-        return Boolean.getBoolean(PREFER_SPARK_PLUGIN_PROPERTY);
++        return true; // Folia/Eturlia - disable in-built spark profiler (not region-thread-safe)
+     }
+ 
+     private static boolean isPluginEnabled(final Server server) {
