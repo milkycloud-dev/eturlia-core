@@ -771,6 +771,14 @@ public final class RegionAwareEventBus {
         this.detectionMixinsInstalled = true;
         LOGGER.info("Off-region detection mixin pattern enabled ("
                 + validationMode + " enforcement)");
+        // Align CrossRegionInvocationGuard with event-bus mode
+        eturlia.core.region.CrossRegionInvocationGuard.Mode guardMode;
+        switch (validationMode) {
+            case STRICT: guardMode = eturlia.core.region.CrossRegionInvocationGuard.Mode.STRICT; break;
+            case PERMISSIVE: guardMode = eturlia.core.region.CrossRegionInvocationGuard.Mode.OFF; break;
+            default: guardMode = eturlia.core.region.CrossRegionInvocationGuard.Mode.WARN; break;
+        }
+        eturlia.core.region.CrossRegionInvocationGuard.setMode(guardMode);
     }
 
     /**
@@ -1104,6 +1112,7 @@ public final class RegionAwareEventBus {
      *                  or null
      */
     private void handleViolation(String violation, StackTraceElement caller) {
+        eturlia.core.region.CrossRegionInvocationGuard.check("EventBus:" + violation);
         if (reportedViolations.add(violation)) {
             // First time seeing this violation
             totalViolations.incrementAndGet();

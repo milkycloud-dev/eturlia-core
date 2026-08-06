@@ -114,8 +114,13 @@ public final class EturliaServer {
     /** Number of mods loaded (populated after FML bootstrap). */
     private final AtomicInteger modCount = new AtomicInteger(0);
 
-    /** Crash-reports output directory — TODO: resolve from server config at runtime. */
-    private volatile File crashReportsDir = new File("crash-reports");
+    /**
+     * Eturlia region-enriched crash reports go to a dedicated folder so they
+     * are not mixed with vanilla/Paper {@code crash-reports/}.
+     * Override with {@code -Deturlia.crash.dir=...}.
+     */
+    private volatile File crashReportsDir = new File(
+            System.getProperty("eturlia.crash.dir", "eturlia-crash-reports"));
 
     // =========================================================================
     // Bootstrap
@@ -497,25 +502,10 @@ public final class EturliaServer {
      * @param report the enriched crash report
      */
     private void writeCrashReportToFile(RegionContextCrashReport report) {
-        File dir = this.crashReportsDir;
-        if (!dir.exists() && !dir.mkdirs()) {
-            LOGGER.warning("Could not create crash-reports directory: " + dir.getAbsolutePath());
-            return;
-        }
-
-        String timestamp = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss")
-                .withZone(ZoneId.systemDefault()).format(Instant.now());
-        String filename = "crash-report-eturlia-" + timestamp + ".txt";
-
-        File file = new File(dir, filename);
-        try (PrintWriter pw = new PrintWriter(new FileWriter(file))) {
-            pw.println(report.toHumanReadable());
-            pw.println();
-            pw.println("==== Structured JSON ====");
-            pw.println(report.toJsonString());
-            LOGGER.info("Crash report written to: " + file.getAbsolutePath());
-        } catch (IOException e) {
-            LOGGER.log(Level.WARNING, "Failed to write crash report to " + file.getAbsolutePath(), e);
+        File written = report.writeToDirectory(this.crashReportsDir);
+        if (written == null) {
+            LOGGER.warning("Could not persist Eturlia crash report under "
+                    + this.crashReportsDir.getAbsolutePath());
         }
     }
 
