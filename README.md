@@ -1,7 +1,8 @@
 <div align="center">
   <img src="./eturlia.png" alt="Eturlia" width="900">
   <h1>Eturlia</h1>
-  <p>Ядро сервера Minecraft <strong>1.21.1</strong>: регионы Folia + загрузка модов NeoForge</p>
+  <p>Гибридное серверное ядро Minecraft <strong>1.21.1</strong><br>
+  региональная многопоточность Folia · загрузка модов NeoForge</p>
   <p><a href="#русский">Русский</a> · <a href="#english">English</a></p>
 </div>
 
@@ -12,16 +13,19 @@
 # Русский
 
 > [!WARNING]
-> Экспериментальный проект. **Не для продакшена.** Делайте бэкапы миров. Многие моды несовместимы с региональной многопоточностью Folia.
+> Экспериментальный проект. **Не для продакшена.** Делайте бэкапы миров.
+> Многие моды рассчитаны на один серверный поток Vanilla/Forge и ломаются на региональной модели Folia.
 
 ## Что такое Eturlia
 
-**Eturlia** — гибридное серверное ядро: один fat-jar, в котором одновременно работают
+**Eturlia** — одно jar-ядро, в котором одновременно живут два стека:
 
-- **[Folia](https://github.com/PaperMC/Folia)** — форк Paper с независимыми тик-регионами на нескольких ядрах CPU;
-- **[NeoForge](https://github.com/neoforged/NeoForge) 21.1.248** — загрузка NeoForge-модов через FancyModLoader (FML 4.0.43).
+| Слой | Роль |
+|------|------|
+| **[Folia](https://github.com/PaperMC/Folia)** | Форк Paper: мир режется на независимые тик-регионы, которые крутятся на разных ядрах CPU |
+| **[NeoForge](https://github.com/neoforged/NeoForge) 21.1.248** | Модлоадер (FancyModLoader 4.0.43): `mods/`, RegisterEvent, lifecycle, datapacks, mixins |
 
-Идея простая: взять масштабируемость Folia и дать серверу нормальный модлоадер NeoForge, чтобы техпаки (Create и рядом) могли жить на многопоточном ядре — по мере закрытия runtime-дыр Folia↔NeoForge.
+Цель — масштабирование Folia без отказа от экосистемы NeoForge (Create, Farmers Delight и соседние техпаки), по мере закрытия runtime-разрывов между региональной моделью и ожиданиями модов.
 
 | | |
 |---|---|
@@ -32,29 +36,50 @@
 
 ## Как это работает
 
+### Загрузка (runtime)
+
 ```text
-java -jar eturlia-….jar
+java -jar eturlia-1.21.1-neoforge-21.1.248.jar
         │
         ▼
- Eturlia launcher  ──►  распаковка nested libs (Folia, FML, NeoForge, runtime)
+ Eturlia launcher
+   · распаковка nested libs (Folia, FML, NeoForge, runtime)
+   · подготовка classpath и launch services
         │
         ▼
- ModLauncher / FML   ──►  scan mods/, bootstrap NeoForge
+ ModLauncher / FancyModLoader
+   · scan каталога mods/
+   · bootstrap NeoForge, coremods, mixins
         │
         ▼
- Folia / Paper server ──►  регионы, чанки, плагины (folia-supported)
+ Folia / Paper server
+   · регионы, чанки, сущности, плагины (folia-supported)
         │
         ▼
- NeoForge hooks       ──►  RegisterEvent, lifecycle, datapacks, mixins
+ NeoForge hooks в NMS
+   · RegisterEvent, game lifecycle, datapack reload, API-расширения
 ```
 
-1. **Сборка патчами** — paperweight накатывает `patches/api` и `patches/server` (Folia + хуки NeoForge) на апстрим Paper.
-2. **Шимы** (`build-data/eturlia-neoforge-shims`) — stub-API, чтобы NMS/Folia-исходники компилировались против сигнатур NeoForge.
-3. **Runtime** — в jar вложен опубликованный NeoForge universal **21.1.248** (не чужой major).
-4. **Coremods** — SPI `ICoreMod` (NeoForge 21.1): редирект main → `EturliaServer`, служебные трансформы.
-5. **Совместимость** — модули `eturlia-compat-create` / `eturlia-compat-sable` (отдельно; закрывают region-bridges, не все API-дыры ядра).
+1. **Launcher** поднимает вложенные библиотеки из fat-jar и передаёт управление ModLauncher.
+2. **FML** находит моды, прогоняет discovery / loading / common setup и подключает coremods Eturlia (редирект `main` → `EturliaServer` и служебные трансформы).
+3. **Folia** тикает мир по регионам: соседние чанки могут жить на разных потоках; кросс-регионные обращения требуют правильных планировщиков.
+4. **Патчи ядра** вшивают в Folia/Paper API и поведение, которые ожидает NeoForge (регистры, food/crafting/fire, reload, entity-list фасады и т.д.).
 
-Слой ядра сейчас закрывает не «FML не стартует», а **runtime gaps**: intrusive holders, Folia `entityTickList`, reload/ContextAware, Crafting/Rarity/FireBlock-API и т.д. Create / Moonlight / Sable ещё не полностью зелёные — это следующий слой (DeferredHolder timing, entity-section/refmap).
+### Сборка (dev)
+
+1. **paperweight** накатывает `patches/api` и `patches/server` (апстрим Folia + слой Eturlia/NeoForge) на Paper.
+2. **Шимы** (`build-data/eturlia-neoforge-shims`) дают stub-сигнатуры NeoForge, чтобы NMS/Folia компилировались без полного дерева NeoForge в compile classpath.
+3. В runtime в jar вложен опубликованный **NeoForge universal 21.1.248** — тот же major, что у целевых модов.
+4. Опциональные модули `eturlia-compat-create` / `eturlia-compat-sable` закрывают узкие region-bridges; они не заменяют пробелы в самом ядре.
+
+### Почему моды всё ещё могут падать
+
+Стартовый путь FML уже проходит. Текущий слой работы — **runtime gaps**: мод вызывает API или полагается на однопоточный NMS, которого нет или оно ведёт себя иначе под Folia. Типичные классы проблем:
+
+- holders / DeferredHolder / порядок RegisterEvent;
+- Folia entity tick list / section managers вместо vanilla-структур;
+- remapping / refmap у mixin-модов;
+- однопоточные допущения в Create, Moonlight и соседних библиотеках.
 
 ## Версии
 
@@ -63,7 +88,7 @@ java -jar eturlia-….jar
 | Minecraft | 1.21.1 |
 | NeoForge | **21.1.248** |
 | FancyModLoader | 4.0.43 |
-| Paper upstream | `84281cee…` (ветка Folia `dev/1.21.1`) |
+| Paper upstream | `84281cee…` (Folia `dev/1.21.1`) |
 | Java | **21** |
 
 ## Сборка
@@ -90,20 +115,20 @@ java -jar build/libs/eturlia-1.21.1-neoforge-21.1.248.jar --nogui
 ```
 
 - Первый запуск: примите `eula.txt`.
-- Моды NeoForge → каталог `mods/`.
+- Моды NeoForge → `mods/`.
 - Плагины Bukkit/Paper → только с `folia-supported: true`.
 - **Не кладите** отдельный `spark-neoforge` в `mods/` — spark уже вшит в Folia (конфликт JPMS).
 
-## Что уже проходит (smoke)
+## Smoke-статус
 
 | Набор | Статус |
 |-------|--------|
 | Пустой сервер / лёгкий стек (Cloth, Curios, GeckoLib, JEI, …) | Mod List + SML + Folia `Done` |
 | Farmers Delight (+ Cloth) | SML completed + `Done` |
-| Create | частично: ядровые API закрываются, остаются DeferredHolder / регистры |
+| Create | частично: ядровые API закрываются; остаются DeferredHolder / регистры |
 | Moonlight | частично: ContextAware / FireBlock; дальше Folia entity mixins / refmap |
 
-## Архитектура репозитория
+## Структура репозитория
 
 | Путь | Назначение |
 |------|------------|
@@ -127,24 +152,27 @@ java -jar build/libs/eturlia-1.21.1-neoforge-21.1.248.jar --nogui
 
 ---
 
-<details>
-<summary><strong>English</strong> — click to expand</summary>
+<details open>
+<summary><strong>English</strong></summary>
 
 <div id="english"></div>
 
 # English
 
 > [!WARNING]
-> Experimental. **Not for production.** Back up worlds. Many mods are incompatible with Folia region threading.
+> Experimental. **Not for production.** Back up worlds.
+> Many mods assume a single Vanilla/Forge server thread and break under Folia’s region threading.
 
 ## What Eturlia is
 
-**Eturlia** is a hybrid Minecraft server kernel: one fat jar that runs
+**Eturlia** is a single fat-jar server kernel that runs two stacks together:
 
-- **[Folia](https://github.com/PaperMC/Folia)** — Paper fork with independent per-region ticking across CPU cores;
-- **[NeoForge](https://github.com/neoforged/NeoForge) 21.1.248** — NeoForge mod loading via FancyModLoader (FML 4.0.43).
+| Layer | Role |
+|-------|------|
+| **[Folia](https://github.com/PaperMC/Folia)** | Paper fork: the world is split into independent tick regions across CPU cores |
+| **[NeoForge](https://github.com/neoforged/NeoForge) 21.1.248** | Mod loader (FancyModLoader 4.0.43): `mods/`, RegisterEvent, lifecycle, datapacks, mixins |
 
-The goal is Folia’s multi-core scaling with a real NeoForge mod pipeline, so Create-style packs can run as Folia↔NeoForge runtime gaps are closed.
+The goal is Folia’s multi-core scaling without giving up the NeoForge ecosystem (Create, Farmers Delight, and similar packs), as Folia↔NeoForge runtime gaps are closed.
 
 | | |
 |---|---|
@@ -155,29 +183,50 @@ The goal is Folia’s multi-core scaling with a real NeoForge mod pipeline, so C
 
 ## How it works
 
+### Boot (runtime)
+
 ```text
-java -jar eturlia-….jar
+java -jar eturlia-1.21.1-neoforge-21.1.248.jar
         │
         ▼
- Eturlia launcher  ──►  extract nested libs (Folia, FML, NeoForge, runtime)
+ Eturlia launcher
+   · extract nested libs (Folia, FML, NeoForge, runtime)
+   · prepare classpath and launch services
         │
         ▼
- ModLauncher / FML   ──►  scan mods/, bootstrap NeoForge
+ ModLauncher / FancyModLoader
+   · scan mods/
+   · bootstrap NeoForge, coremods, mixins
         │
         ▼
- Folia / Paper server ──►  regions, chunks, plugins (folia-supported)
+ Folia / Paper server
+   · regions, chunks, entities, plugins (folia-supported)
         │
         ▼
- NeoForge hooks       ──►  RegisterEvent, lifecycle, datapacks, mixins
+ NeoForge hooks in NMS
+   · RegisterEvent, game lifecycle, datapack reload, API extensions
 ```
 
-1. **Patched build** — paperweight applies `patches/api` + `patches/server` (Folia + NeoForge hooks) onto Paper.
-2. **Shims** (`build-data/eturlia-neoforge-shims`) — stub APIs so Folia/NMS sources compile against NeoForge signatures.
-3. **Runtime** — embeds published NeoForge universal **21.1.248**.
-4. **Coremods** — `ICoreMod` SPI: main → `EturliaServer`, support transforms.
-5. **Compat modules** — `eturlia-compat-create` / `eturlia-compat-sable` (optional; region bridges, not every core API gap).
+1. **Launcher** unpacks nested libraries from the fat jar and hands off to ModLauncher.
+2. **FML** discovers mods, runs discovery / loading / common setup, and applies Eturlia coremods (`main` → `EturliaServer` plus support transforms).
+3. **Folia** ticks the world by region: neighboring chunks may run on different threads; cross-region work needs the correct schedulers.
+4. **Core patches** teach Folia/Paper the APIs and behaviors NeoForge mods expect (registries, food/crafting/fire, reload, entity-list facades, and so on).
 
-The current core layer is about **runtime gaps** (intrusive holders, Folia `entityTickList`, ContextAware reload, crafting/rarity/fire APIs), not “FML never starts.” Create / Moonlight / Sable are not fully green yet.
+### Build (dev)
+
+1. **paperweight** applies `patches/api` and `patches/server` (upstream Folia + the Eturlia/NeoForge layer) onto Paper.
+2. **Shims** (`build-data/eturlia-neoforge-shims`) provide stub NeoForge signatures so Folia/NMS can compile without the full NeoForge tree on the compile classpath.
+3. Runtime embeds published **NeoForge universal 21.1.248** — the same major line as target mods.
+4. Optional `eturlia-compat-create` / `eturlia-compat-sable` modules cover narrow region bridges; they do not replace gaps in the core itself.
+
+### Why mods can still fail
+
+The FML boot path already works. The current work layer is **runtime gaps**: a mod calls an API or assumes single-threaded NMS that is missing or behaves differently under Folia. Typical failure classes:
+
+- holders / DeferredHolder / RegisterEvent ordering;
+- Folia entity tick list / section managers vs vanilla structures;
+- remapping / refmap issues in mixin mods;
+- single-thread assumptions in Create, Moonlight, and related libraries.
 
 ## Versions
 
@@ -201,14 +250,19 @@ Requires a **Git clone** (not a ZIP), **JDK 21**, and PaperMC + NeoForged Maven 
 
 Output: `build/libs/eturlia-1.21.1-neoforge-21.1.248.jar`
 
+```bash
+./patch.sh   # applyPatches
+./rb.sh      # rebuildServerPatches
+```
+
 ## Run
 
 ```bash
 java -jar build/libs/eturlia-1.21.1-neoforge-21.1.248.jar --nogui
 ```
 
-Accept `eula.txt` on first boot. NeoForge mods → `mods/`. Plugins need `folia-supported: true`.  
-**Do not** add `spark-neoforge` to `mods/` — spark is already bundled (JPMS conflict).
+Accept `eula.txt` on first boot. NeoForge mods go in `mods/`. Plugins need `folia-supported: true`.  
+**Do not** add `spark-neoforge` to `mods/` — spark is already bundled with Folia (JPMS conflict).
 
 ## Smoke status
 
