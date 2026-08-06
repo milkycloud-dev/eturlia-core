@@ -1,0 +1,150 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 6 Aug 2026 17:30:16 +0000
+Subject: [PATCH] Eturlia: harden LibraryLoader for ModLauncher (fix plugin
+ init NPE)
+
+Aether DefaultServiceLocator often returns a null RepositorySystem under
+FML/ModLauncher, which NPE'd SpigotPluginProvider.<clinit> and left
+Initialized 0 plugins. Tolerate failed Maven init, log service errors,
+prefer NullLoggerFactory, and keep plugins without libraries loadable.
+
+diff --git a/src/main/java/org/bukkit/plugin/java/LibraryLoader.java b/src/main/java/org/bukkit/plugin/java/LibraryLoader.java
+index c66252802c51174bc26f266cb5cdecdd856ff220..a95fa78e8002285748c74c206f1ec09cc4ff3896 100644
+--- a/src/main/java/org/bukkit/plugin/java/LibraryLoader.java
++++ b/src/main/java/org/bukkit/plugin/java/LibraryLoader.java
+@@ -7,6 +7,7 @@ import java.net.URL;
+ import java.net.URLClassLoader;
+ import java.util.ArrayList;
+ import java.util.Arrays;
++import java.util.Collections;
+ import java.util.List;
+ import java.util.logging.Level;
+ import java.util.logging.Logger;
+@@ -43,8 +44,9 @@ public class LibraryLoader
+ {
+ 
+     private final Logger logger;
+-    private final RepositorySystem repository;
+-    private final DefaultRepositorySystemSession session;
++    // Eturlia: nullable — Maven Aether ServiceLocator often returns null under ModLauncher/FML
++    private final @Nullable RepositorySystem repository;
++    private final @Nullable DefaultRepositorySystemSession session;
+     private final List<RemoteRepository> repositories;
+     public static java.util.function.BiFunction<URL[], ClassLoader, URLClassLoader> LIBRARY_LOADER_FACTORY; // Paper - rewrite reflection in libraries
+     public static java.util.function.Function<List<java.nio.file.Path>, List<java.nio.file.Path>> REMAPPER; // Paper - remap libraries
+@@ -53,32 +55,72 @@ public class LibraryLoader
+     {
+         this.logger = logger;
+ 
+-        DefaultServiceLocator locator = MavenRepositorySystemUtils.newServiceLocator();
+-        locator.addService( RepositoryConnectorFactory.class, BasicRepositoryConnectorFactory.class );
+-        locator.addService( TransporterFactory.class, HttpTransporterFactory.class );
+-
+-        this.repository = locator.getService( RepositorySystem.class );
+-        this.session = MavenRepositorySystemUtils.newSession();
++        RepositorySystem repo = null;
++        DefaultRepositorySystemSession sess = null;
++        List<RemoteRepository> repos = Collections.emptyList();
++
++        // Eturlia start - tolerate ModLauncher/FML classpath for Maven Aether
++        ClassLoader previous = Thread.currentThread().getContextClassLoader();
++        try {
++            // Prefer the loader that can see maven-resolver-* jars nested under FML modules
++            Thread.currentThread().setContextClassLoader(LibraryLoader.class.getClassLoader());
++
++            DefaultServiceLocator locator = MavenRepositorySystemUtils.newServiceLocator();
++            locator.setErrorHandler(new DefaultServiceLocator.ErrorHandler() {
++                @Override
++                public void serviceCreationFailed(Class<?> type, Class<?> impl, Throwable exception) {
++                    logger.log(Level.SEVERE, "[Eturlia] Maven service creation failed: "
++                            + type.getName() + " impl=" + impl.getName(), exception);
++                }
++            });
++            locator.addService(RepositoryConnectorFactory.class, BasicRepositoryConnectorFactory.class);
++            locator.addService(TransporterFactory.class, HttpTransporterFactory.class);
++
++            // Prefer NullLoggerFactory when SLF4J is isolated under ModLauncher JPMS layers
++            try {
++                locator.setServices(org.eclipse.aether.spi.log.LoggerFactory.class,
++                        org.eclipse.aether.spi.log.NullLoggerFactory.INSTANCE);
++            } catch (Throwable ignored) {
++                // keep default Slf4jLoggerFactory
++            }
+ 
+-        session.setSystemProperties(System.getProperties()); // Paper - paper plugins, backport system properties fix for transitive dependency parsing, see #10116
+-        session.setChecksumPolicy( RepositoryPolicy.CHECKSUM_POLICY_FAIL );
+-        session.setLocalRepositoryManager( repository.newLocalRepositoryManager( session, new LocalRepository( "libraries" ) ) );
+-        session.setTransferListener( new AbstractTransferListener()
+-        {
+-            @Override
+-            public void transferStarted(@NotNull TransferEvent event) throws TransferCancelledException
+-            {
+-                logger.log( Level.INFO, "Downloading {0}", event.getResource().getRepositoryUrl() + event.getResource().getResourceName() );
++            repo = locator.getService(RepositorySystem.class);
++            if (repo == null) {
++                logger.log(Level.SEVERE, "[Eturlia] Maven RepositorySystem is null under ModLauncher. "
++                        + "Plugins without libraries= still load; plugins that declare libraries may fail dependency resolve.");
+             }
+-        } );
+ 
+-        // SPIGOT-7638: Add system properties,
+-        // since JdkVersionProfileActivator needs 'java.version' when a profile has the 'jdk' element
+-        // otherwise it will silently fail and not resolves the dependencies in the affected pom.
+-        session.setSystemProperties( System.getProperties() );
+-        session.setReadOnly();
++            if (repo != null) {
++                sess = MavenRepositorySystemUtils.newSession();
++                sess.setSystemProperties(System.getProperties()); // Paper - paper plugins, backport system properties fix for transitive dependency parsing, see #10116
++                sess.setChecksumPolicy(RepositoryPolicy.CHECKSUM_POLICY_FAIL);
++                sess.setLocalRepositoryManager(repo.newLocalRepositoryManager(sess, new LocalRepository("libraries")));
++                sess.setTransferListener(new AbstractTransferListener() {
++                    @Override
++                    public void transferStarted(@NotNull TransferEvent event) throws TransferCancelledException {
++                        logger.log(Level.INFO, "Downloading {0}", event.getResource().getRepositoryUrl() + event.getResource().getResourceName());
++                    }
++                });
++                // SPIGOT-7638
++                sess.setSystemProperties(System.getProperties());
++                sess.setReadOnly();
++                repos = repo.newResolutionRepositories(sess, Arrays.asList(
++                        new RemoteRepository.Builder("central", "default", "https://repo.maven.apache.org/maven2").build()));
++            }
++        } catch (Throwable t) {
++            // Must not throw — SpigotPluginProvider.<clinit> would abort ALL plugin loading (Initialized 0 plugins)
++            logger.log(Level.SEVERE, "[Eturlia] LibraryLoader Aether init failed; continuing without Maven resolver", t);
++            repo = null;
++            sess = null;
++            repos = Collections.emptyList();
++        } finally {
++            Thread.currentThread().setContextClassLoader(previous);
++        }
++        // Eturlia end
+ 
+-        this.repositories = repository.newResolutionRepositories( session, Arrays.asList( new RemoteRepository.Builder( "central", "default", "https://repo.maven.apache.org/maven2" ).build() ) );
++        this.repository = repo;
++        this.session = sess;
++        this.repositories = repos;
+     }
+ 
+     @Nullable
+@@ -94,6 +136,19 @@ public class LibraryLoader
+         {
+             return null;
+         }
++
++        // Eturlia: Maven resolver missing — allow paperLibraryPaths-only; fail clearly for libraries=
++        if (this.repository == null || this.session == null) {
++            if (paperLibraryPaths != null && desc.getLibraries().isEmpty()) {
++                // fall through to Paper path using only paperLibraryPaths
++            } else if (!desc.getLibraries().isEmpty()) {
++                throw new RuntimeException("[Eturlia] Cannot resolve libraries for plugin '"
++                        + desc.getName() + "': Maven RepositorySystem unavailable under ModLauncher/FML");
++            } else {
++                return null;
++            }
++        }
++
+         logger.log( Level.INFO, "[{0}] Loading {1} libraries... please wait", new Object[]
+         {
+             java.util.Objects.requireNonNullElseGet(desc.getPrefix(), desc::getName), desc.getLibraries().size() // Paper - use configured log prefix
