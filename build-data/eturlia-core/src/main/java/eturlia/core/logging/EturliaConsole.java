@@ -31,15 +31,17 @@ import java.util.logging.Logger;
  * <p>After {@link #install(Path)}:</p>
  * <ul>
  *   <li>Eturlia {@code INFO} and below print as a single tidy line: {@code [Eturlia] message}</li>
- *   <li>Eturlia {@code WARNING}/{@code SEVERE} do <b>not</b> go to the console; they are written
- *       in full — stack traces included — to {@code logs/eturlia.log}</li>
- *   <li>One pointer line is printed the first time something is written there, and a one-line
- *       summary at shutdown</li>
+ *   <li>Eturlia {@code WARNING}/{@code SEVERE} also stay a single console line —
+ *       {@code [Eturlia] WARN message — Exception: detail} — with no stack trace</li>
+ *   <li>the full record, stack trace included, is written to {@code logs/eturlia.log}; one
+ *       pointer line is printed the first time that happens, and a one-line summary at
+ *       shutdown</li>
  * </ul>
  *
  * <p>Configuration:</p>
  * <ul>
- *   <li>{@code -Deturlia.console.errors=show} — also print warnings/errors to the console</li>
+ *   <li>{@code -Deturlia.console.errors=off} — keep warnings/errors out of the console
+ *       entirely (they still reach the log file)</li>
  *   <li>{@code -Deturlia.console.color=off} — never emit ANSI colour</li>
  *   <li>{@code -Deturlia.log.file=<path>} — override the log file location</li>
  * </ul>
@@ -60,6 +62,7 @@ public final class EturliaConsole {
     private static final String ANSI_RESET = ESC + "[0m";
     private static final String ANSI_DIM = ESC + "[38;5;245m";
     private static final String ANSI_CYAN = ESC + "[38;5;44m";
+    private static final String ANSI_YELLOW = ESC + "[38;5;214m";
 
     private static final AtomicBoolean INSTALLED = new AtomicBoolean();
     private static final AtomicBoolean POINTER_PRINTED = new AtomicBoolean();
@@ -99,7 +102,7 @@ public final class EturliaConsole {
                 logFile = target;
             }
 
-            boolean showErrors = showErrorsOnConsole();
+            boolean quiet = quietConsole();
             for (Handler handler : root.getHandlers()) {
                 if (!(handler instanceof ConsoleHandler)) {
                     continue;
@@ -109,9 +112,9 @@ public final class EturliaConsole {
                     if (!isEturliaRecord(record)) {
                         return true; // not ours — leave the server's own logging alone
                     }
-                    if (!showErrors && record.getLevel().intValue() >= Level.WARNING.intValue()) {
-                        noteSuppressed();
-                        return false;
+                    if (record.getLevel().intValue() >= Level.WARNING.intValue()) {
+                        noteDiagnostic();
+                        return !quiet;
                     }
                     return true;
                 });
@@ -141,12 +144,11 @@ public final class EturliaConsole {
         return name != null && name.startsWith(ETURLIA_LOGGER_PREFIX);
     }
 
-    private static void noteSuppressed() {
+    private static void noteDiagnostic() {
         SUPPRESSED.incrementAndGet();
         if (logFile != null && POINTER_PRINTED.compareAndSet(false, true)) {
-            System.out.println(dim() + "[Eturlia] diagnostics are being written to "
-                    + logFile + " (console stays quiet; -D" + PROP_SHOW_ERRORS
-                    + "=show to see them here)" + reset());
+            System.out.println(dim() + "[Eturlia] full diagnostics (with stack traces) go to "
+                    + logFile + reset());
         }
     }
 
@@ -168,9 +170,11 @@ public final class EturliaConsole {
         return base.toAbsolutePath().normalize().resolve("logs").resolve("eturlia.log");
     }
 
-    private static boolean showErrorsOnConsole() {
+    /** {@code -Deturlia.console.errors=off} hides warnings from the console entirely. */
+    private static boolean quietConsole() {
         String value = System.getProperty(PROP_SHOW_ERRORS);
-        return value != null && "show".equalsIgnoreCase(value.trim());
+        return value != null
+                && ("off".equalsIgnoreCase(value.trim()) || "quiet".equalsIgnoreCase(value.trim()));
     }
 
     static boolean useColour() {
@@ -192,19 +196,43 @@ public final class EturliaConsole {
         return useColour() ? ANSI_RESET : "";
     }
 
-    /** One line per record: {@code [Eturlia] message}. No timestamps — the server adds its own. */
+    /**
+     * Exactly one line per record: {@code [Eturlia] message}, or
+     * {@code [Eturlia] WARN message — <exception>} when something was thrown.
+     *
+     * <p>No timestamp (the server prefixes its own) and never a stack trace: multi-line dumps
+     * are what made routine warnings unreadable. The full record, stack trace included, is in
+     * the diagnostics log.</p>
+     */
     private static final class ConsoleFormatter extends Formatter {
         @Override
         public String format(LogRecord record) {
             String message = formatMessage(record);
             // Components already prefix some messages with "[Eturlia]"; do not double it.
-            String prefix = message.startsWith("[Eturlia]") ? "" : "[Eturlia] ";
-            boolean colour = useColour();
-            StringBuilder sb = new StringBuilder(message.length() + 32);
-            if (colour) {
-                sb.append(ANSI_CYAN);
+            String body = message.startsWith("[Eturlia]")
+                    ? message.substring("[Eturlia]".length()).trim()
+                    : message;
+            // Collapse embedded newlines: one record must stay one console line.
+            body = body.replace('\n', ' ').replace('\r', ' ');
+
+            int level = record.getLevel().intValue();
+            String tag = level >= Level.SEVERE.intValue() ? "ERROR "
+                    : level >= Level.WARNING.intValue() ? "WARN " : "";
+
+            Throwable thrown = record.getThrown();
+            String cause = "";
+            if (thrown != null) {
+                String detail = thrown.getMessage();
+                cause = " — " + thrown.getClass().getSimpleName()
+                        + (detail != null && !detail.isBlank() ? ": " + detail.split("\\R", 2)[0] : "");
             }
-            sb.append(prefix).append(message);
+
+            boolean colour = useColour();
+            StringBuilder sb = new StringBuilder(body.length() + 48);
+            if (colour) {
+                sb.append(level >= Level.WARNING.intValue() ? ANSI_YELLOW : ANSI_CYAN);
+            }
+            sb.append("[Eturlia] ").append(tag).append(body).append(cause);
             if (colour) {
                 sb.append(ANSI_RESET);
             }

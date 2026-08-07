@@ -62,9 +62,10 @@ public final class EturliaRuntimeSelfTest {
 
             Logger logger = Logger.getLogger("EturliaSelfTestComponent");
             logger.info("visible status line");
-            logger.warning("noisy warning that must not reach the console");
+            logger.warning("warning that stays one line");
             logger.log(Level.SEVERE, "failure with a stack trace",
                     new IllegalStateException("boom"));
+            logger.warning("multi\nline\nwarning");
 
             flushLogHandlers();
 
@@ -91,12 +92,17 @@ public final class EturliaRuntimeSelfTest {
         // ---- console routing ----------------------------------------------
         checkTrue("INFO reaches the console", console.contains("visible status line"));
         checkTrue("INFO is a single tidy line", console.contains("[Eturlia] visible status line"));
-        checkTrue("WARNING stays off the console",
-                !console.contains("noisy warning that must not reach the console"));
-        checkTrue("SEVERE stays off the console",
-                !console.contains("failure with a stack trace"));
+        checkTrue("WARNING reaches the console", console.contains("warning that stays one line"));
+        checkTrue("WARNING is tagged", console.contains("[Eturlia] WARN warning that stays one line"));
+        checkTrue("SEVERE reaches the console", console.contains("failure with a stack trace"));
+        checkTrue("SEVERE is tagged", console.contains("[Eturlia] ERROR failure with a stack trace"));
+        checkTrue("console shows the exception on the same line",
+                console.contains("IllegalStateException: boom"));
+        checkTrue("no stack trace on the console",
+                !console.contains("\tat ") && !console.contains("    at eturlia."));
+        checkEquals("every Eturlia console record is one line", 0, multiLineRecords(console));
         checkTrue("console points at the diagnostics log",
-                console.contains("diagnostics are being written to"));
+                console.contains("full diagnostics (with stack traces) go to"));
 
         // ---- diagnostics log ----------------------------------------------
         Path log = gameDir.resolve("logs").resolve("eturlia.log");
@@ -105,7 +111,7 @@ public final class EturliaRuntimeSelfTest {
                 ? Files.readString(log, StandardCharsets.UTF_8)
                 : "";
         checkTrue("WARNING written to the log",
-                logText.contains("noisy warning that must not reach the console"));
+                logText.contains("warning that stays one line"));
         checkTrue("SEVERE written to the log", logText.contains("failure with a stack trace"));
         checkTrue("stack trace written to the log",
                 logText.contains("java.lang.IllegalStateException: boom"));
@@ -136,6 +142,30 @@ public final class EturliaRuntimeSelfTest {
         for (java.util.logging.Handler handler : Logger.getLogger("").getHandlers()) {
             handler.flush();
         }
+    }
+
+    /**
+     * Counts Eturlia console records that span more than one line. A record starts at
+     * {@code [Eturlia] } and must end at the next newline — that is the whole point of the
+     * single-line console format.
+     */
+    private static int multiLineRecords(String console) {
+        int bad = 0;
+        for (String line : console.split("\\R")) {
+            if (!line.contains("[Eturlia]")) {
+                continue;
+            }
+            if (line.contains("\n") || line.contains("\r")) {
+                bad++;
+            }
+        }
+        // A stack-trace continuation line would appear as its own line starting with a tab.
+        for (String line : console.split("\\R")) {
+            if (line.startsWith("\tat ")) {
+                bad++;
+            }
+        }
+        return bad;
     }
 
     private static int countOccurrences(String haystack, String needle) {
