@@ -7,8 +7,21 @@ build
 /run
 
 # Eturlia-NeoForge: generated output directories (created by paperweight applyAllPatches)
-/Folia-API/
-/Folia-Server/
+#
+# Listed as individual generated paths rather than as whole directories: on a
+# case-insensitive filesystem (Windows, default macOS) "/Folia-Server/" also matches the
+# tracked "folia-server/" sources, and git cannot re-include a file whose parent directory
+# is excluded — so every new file added under folia-server/ or folia-api/ was silently
+# ignored there. Verify with: git check-ignore -v folia-server/<newfile>
+/Folia-API/.git/
+/Folia-API/build.gradle.kts
+/Folia-API/paper-patches/
+/Folia-API/src/
+/Folia-Server/.git/
+/Folia-Server/build.gradle.kts
+/Folia-Server/minecraft-patches/
+/Folia-Server/paper-patches/
+/Folia-Server/src/
 /paper-api/
 /paper-server/
 /paper-api-generator/

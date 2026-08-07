@@ -62,8 +62,22 @@ public class EturliaFMLBootstrapCoremod implements ICoreMod {
         public ClassNode transform(ClassNode input, ITransformerVotingContext context) {
             for (MethodNode method : input.methods) {
                 if ("main".equals(method.name) && MAIN_DESC.equals(method.desc)) {
+                    // Drop everything that referenced the old instruction labels; leaving
+                    // localVariables/tryCatchBlocks behind makes MethodNode.accept fail with
+                    // "Label offset position has not been resolved yet" when the class is written.
                     method.instructions.clear();
-                    method.tryCatchBlocks.clear();
+                    if (method.tryCatchBlocks != null) {
+                        method.tryCatchBlocks.clear();
+                    }
+                    if (method.localVariables != null) {
+                        method.localVariables.clear();
+                    }
+                    if (method.visibleLocalVariableAnnotations != null) {
+                        method.visibleLocalVariableAnnotations.clear();
+                    }
+                    if (method.invisibleLocalVariableAnnotations != null) {
+                        method.invisibleLocalVariableAnnotations.clear();
+                    }
                     InsnList insn = new InsnList();
                     insn.add(new VarInsnNode(Opcodes.ALOAD, 0));
                     insn.add(new MethodInsnNode(
@@ -74,6 +88,8 @@ public class EturliaFMLBootstrapCoremod implements ICoreMod {
                             false));
                     insn.add(new InsnNode(Opcodes.RETURN));
                     method.instructions = insn;
+                    method.maxStack = Math.max(method.maxStack, 1);
+                    method.maxLocals = Math.max(method.maxLocals, 1);
                 }
             }
             return input;
@@ -89,7 +105,10 @@ public class EturliaFMLBootstrapCoremod implements ICoreMod {
         private static final String SERVER_LEVEL = "net/minecraft/server/level/ServerLevel";
         private static final String VALIDATOR_HOOKS = "eturlia/core/mixin/server/RegionThreadValidatorHooks";
         private static final String TICK_DESC = "(Ljava/util/function/BooleanSupplier;)V";
-        private static final String CHECK_DESC = "(Lnet/minecraft/server/level/ServerLevel;)V";
+        // RegionThreadValidatorHooks.checkRegionThread takes Object (the hook class is compiled
+        // without Minecraft types on the classpath). The descriptor MUST match exactly, otherwise
+        // every transformed call site throws NoSuchMethodError at link time.
+        private static final String CHECK_DESC = "(Ljava/lang/Object;)V";
 
         @Override
         public TargetType<ClassNode> getTargetType() {

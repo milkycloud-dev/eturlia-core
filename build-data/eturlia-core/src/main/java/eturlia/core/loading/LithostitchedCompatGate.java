@@ -21,10 +21,30 @@ import java.util.logging.Logger;
 public final class LithostitchedCompatGate {
 
     private static final Logger LOGGER = Logger.getLogger("EturliaLithostitched");
-    /** Minimum accepted release (no prerelease suffixes). */
+    /** Default minimum accepted release (no prerelease suffixes). */
     public static final String MIN_VERSION = "1.7.13";
 
+    /** Set from {@code mods.require-lithostitched-min} in config/eturlia.yml. */
+    private static final String PROP_MIN_VERSION = "eturlia.lithostitched.min-version";
+
+    /** Set from {@code mods.block-lithostitched-prerelease} in config/eturlia.yml. */
+    private static final String PROP_BLOCK_PRERELEASE = "eturlia.lithostitched.block-prerelease";
+
     private LithostitchedCompatGate() {}
+
+    /** Effective minimum version — config/eturlia.yml wins over the built-in default. */
+    static String minVersion() {
+        String configured = System.getProperty(PROP_MIN_VERSION);
+        if (configured != null && !configured.isBlank() && parseSemver(configured.trim()) != null) {
+            return configured.trim();
+        }
+        return MIN_VERSION;
+    }
+
+    private static boolean blockPrerelease() {
+        String configured = System.getProperty(PROP_BLOCK_PRERELEASE);
+        return configured == null || Boolean.parseBoolean(configured);
+    }
 
     /**
      * If Lithostitched is present and too old / prerelease, abort with a clear message.
@@ -37,8 +57,9 @@ public final class LithostitchedCompatGate {
             return true;
         }
         String raw = version.get();
+        String min = minVersion();
         if (isSupported(raw)) {
-            LOGGER.info("Lithostitched " + raw + " OK (require ≥ " + MIN_VERSION + ", no beta/alpha)");
+            LOGGER.info("Lithostitched " + raw + " OK (require ≥ " + min + ", no beta/alpha)");
             return true;
         }
         String msg = """
@@ -59,7 +80,7 @@ public final class LithostitchedCompatGate {
 
             Override (NOT recommended): -Deturlia.lithostitched.allow-unsafe=true
             ================================================================================
-            """.formatted(raw, MIN_VERSION);
+            """.formatted(raw, min);
         LOGGER.severe(msg);
         System.err.println(msg);
         if (Boolean.getBoolean("eturlia.lithostitched.allow-unsafe")) {
@@ -67,7 +88,7 @@ public final class LithostitchedCompatGate {
             return true;
         }
         // Hard abort before world gen
-        throw new IllegalStateException("Unsupported Lithostitched " + raw + "; need ≥ " + MIN_VERSION);
+        throw new IllegalStateException("Unsupported Lithostitched " + raw + "; need ≥ " + min);
     }
 
     static boolean isSupported(String rawVersion) {
@@ -75,14 +96,15 @@ public final class LithostitchedCompatGate {
             return false;
         }
         String v = rawVersion.trim().toLowerCase(Locale.ROOT);
-        if (v.contains("beta") || v.contains("alpha") || v.contains("rc") || v.contains("snapshot")) {
+        if (blockPrerelease()
+                && (v.contains("beta") || v.contains("alpha") || v.contains("-rc") || v.contains("snapshot"))) {
             return false;
         }
         // strip build metadata after + or -
         int cut = indexOfMeta(v);
         String numeric = cut >= 0 ? v.substring(0, cut) : v;
         int[] got = parseSemver(numeric);
-        int[] min = parseSemver(MIN_VERSION);
+        int[] min = parseSemver(minVersion());
         if (got == null || min == null) {
             return false;
         }

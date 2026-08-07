@@ -147,7 +147,7 @@ index 13f8c2cb42334ba3b573ca44ace1d3df76e41ff7..49a1c2756b4d115f226cdba013bfd6fb
                      return false;
                  }
 -                this.player = (event.getTarget() == null) ? null : ((CraftLivingEntity) event.getTarget()).getHandle();
-+                this.player = (event.getTarget() == null) ? null : (Player) ((CraftLivingEntity) event.getTarget()).getHandle();
++                this.player = (event.getTarget() == null) ? null : (((CraftLivingEntity) event.getTarget()).getHandle() instanceof Player eturliaTempter ? eturliaTempter : null); // Eturlia: EntityTargetLivingEntityEvent allows any LivingEntity; a hard (Player) cast threw ClassCastException on the region thread
              }
              // CraftBukkit end
              return this.player != null;
@@ -181,7 +181,7 @@ diff --git a/src/main/java/net/minecraft/world/item/Item.java b/src/main/java/ne
 index 4b16843cc6e17d26a22873cd87901d779faf3694..b0eaa0525d81d52a236d76200514e3e3b420f4aa 100644
 --- a/src/main/java/net/minecraft/world/item/Item.java
 +++ b/src/main/java/net/minecraft/world/item/Item.java
-@@ -426,6 +426,19 @@ public class Item implements FeatureElement, ItemLike {
+@@ -426,6 +426,25 @@ public class Item implements FeatureElement, ItemLike {
              return this;
          }
  
@@ -190,12 +190,18 @@ index 4b16843cc6e17d26a22873cd87901d779faf3694..b0eaa0525d81d52a236d76200514e3e3
 +            return this.component(type.get(), value);
 +        }
 +
-+        // Eturlia/NeoForge
++        // Eturlia/NeoForge: accepted so mod builders chain, but NOTHING in the server reads
++        // this yet — anvil repair still follows vanilla rules. Wire it into
++        // IItemExtension#isRepairable before documenting setNoRepair as supported.
 +        private boolean canRepair = true;
 +
 +        public Item.Properties setNoRepair() {
 +            this.canRepair = false;
 +            return this;
++        }
++
++        public boolean eturliaCanRepair() {
++            return this.canRepair;
 +        }
 +
          public Item.Properties attributes(ItemAttributeModifiers attributeModifiersComponent) {

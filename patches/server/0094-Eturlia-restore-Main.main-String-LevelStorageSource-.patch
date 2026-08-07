@@ -12,7 +12,7 @@ diff --git a/src/main/java/net/minecraft/server/Main.java b/src/main/java/net/mi
 index bb183cc65ca18937dd56a6dd00bd48385d901219..6879d3717ba10cd965e83cfa81123922ed757c47 100644
 --- a/src/main/java/net/minecraft/server/Main.java
 +++ b/src/main/java/net/minecraft/server/Main.java
-@@ -73,10 +73,31 @@ public class Main {
+@@ -73,10 +73,41 @@ public class Main {
  
      private static final Logger LOGGER = LogUtils.getLogger();
  
@@ -22,6 +22,13 @@ index bb183cc65ca18937dd56a6dd00bd48385d901219..6879d3717ba10cd965e83cfa81123922
 +     * can run the real body (must still contain {@code MinecraftServer.spin} for libjf INVOKE_ASSIGN).
 +     */
 +    private static final ThreadLocal<OptionSet> ETURLIA$OPTION_SET = new ThreadLocal<>();
++
++    /**
++     * Eturlia: {@link #main(String[])} is public and Mojang-shaped, so a mod can call it.
++     * Running the boot body twice would start a second server against the same world.
++     */
++    private static final java.util.concurrent.atomic.AtomicBoolean ETURLIA$BOOTED =
++            new java.util.concurrent.atomic.AtomicBoolean();
 +
      public Main() {}
  
@@ -41,6 +48,9 @@ index bb183cc65ca18937dd56a6dd00bd48385d901219..6879d3717ba10cd965e83cfa81123922
 +        OptionSet optionset = ETURLIA$OPTION_SET.get();
 +        if (optionset == null) {
 +            throw new IllegalStateException("Eturlia: Main.main(String[]) requires OptionSet from PaperBootstrap");
++        }
++        if (!ETURLIA$BOOTED.compareAndSet(false, true)) {
++            throw new IllegalStateException("Eturlia: Main.main(String[]) re-entered — the server boot body must run exactly once");
 +        }
          io.papermc.paper.util.LogManagerShutdownThread.hook(); // Paper
          SharedConstants.tryDetectVersion();

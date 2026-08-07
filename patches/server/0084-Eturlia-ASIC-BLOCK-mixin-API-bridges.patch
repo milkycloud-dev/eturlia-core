@@ -149,18 +149,20 @@ index cf2ba18d6ac95961059e01093f018c5fe2530049..45d9e115ba10e4a309e220ed0430413b
                  if (deathEvent == null || !deathEvent.isCancelled()) {
                      // if (this.deathScore >= 0 && entityliving != null) { // Paper - Fix item duplication and teleport issues; moved to be run earlier in #dropAllDeathLoot before destroying the drop items in CraftEventFactory#callEntityDeathEvent
                      //     entityliving.awardKillScore(this, this.deathScore, damageSource);
-@@ -1890,7 +1890,13 @@ public abstract class LivingEntity extends Entity implements Attackable {
+@@ -1890,7 +1890,15 @@ public abstract class LivingEntity extends Entity implements Attackable {
      // Paper start
      protected boolean clearEquipmentSlots = true;
      protected Set<EquipmentSlot> clearedEquipmentSlots = new java.util.HashSet<>();
--    protected org.bukkit.event.entity.EntityDeathEvent dropAllDeathLoot(ServerLevel world, DamageSource damageSource) {
 +
-+    // Eturlia: vanilla/NeoForge void signature for Farm & Charm / Let's Do mixins (@Inject ...;)V)
++    // Eturlia: vanilla/NeoForge void signature for Farm & Charm / Let's Do mixins (@Inject ...;)V).
++    // Anchor only — the Paper body lives in paperDropAllDeathLoot below, which calls this so the
++    // mod injections actually run. Without that call nothing in the server ever invoked it.
 +    protected void dropAllDeathLoot(ServerLevel world, DamageSource damageSource) {
-+        this.paperDropAllDeathLoot(world, damageSource);
 +    }
 +
+-    protected org.bukkit.event.entity.EntityDeathEvent dropAllDeathLoot(ServerLevel world, DamageSource damageSource) {
 +    protected org.bukkit.event.entity.EntityDeathEvent paperDropAllDeathLoot(ServerLevel world, DamageSource damageSource) {
++        this.dropAllDeathLoot(world, damageSource); // Eturlia: run the vanilla-shaped anchor for mod mixins
          // Paper end
          boolean flag = this.lastHurtByPlayerTime > 0;
  

@@ -16,6 +16,7 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -58,9 +59,11 @@ public final class RegionContextCrashReport {
 
     private RegionContextCrashReport(Thread thread, Throwable cause) {
         String threadName = thread.getName();
-        long threadId = thread.getId();
+        long threadId = thread.threadId();
         String regionId = extractRegionId(threadName);
-        String timestamp = new SimpleDateFormat(TIMESTAMP_FMT).format(new Date());
+        // Locale.ROOT: under a non-Gregorian default locale (th_TH) "yyyy" renders the
+        // Buddhist year, so the report would be stamped 2569 instead of 2026.
+        String timestamp = new SimpleDateFormat(TIMESTAMP_FMT, Locale.ROOT).format(new Date());
 
         Runtime rt = Runtime.getRuntime();
         long used = rt.totalMemory() - rt.freeMemory();
@@ -225,7 +228,7 @@ public final class RegionContextCrashReport {
             return null;
         }
         String region = str(data.get("regionId")).replaceAll("[^a-zA-Z0-9._-]", "_");
-        String timestamp = new SimpleDateFormat("yyyy-MM-dd_HH.mm.ss").format(new Date());
+        String timestamp = new SimpleDateFormat("yyyy-MM-dd_HH.mm.ss", Locale.ROOT).format(new Date());
         String base = "crash-" + timestamp + "-region-" + region;
         java.io.File txt = new java.io.File(dir, base + ".txt");
         java.io.File json = new java.io.File(dir, base + ".json");
@@ -301,7 +304,10 @@ public final class RegionContextCrashReport {
     }
 
     private static String mb(long bytes) {
-        return String.format("%.1f", bytes / (1024.0 * 1024.0));
+        // Locale.ROOT: the default locale decides the decimal separator, so on any
+        // comma-decimal locale (pl, de, ru, fr, ...) this produced "3920,0" and the crash
+        // report's JSON became unparseable ("jvmMaxMemoryMB": 3920,0,).
+        return String.format(Locale.ROOT, "%.1f", bytes / (1024.0 * 1024.0));
     }
 
     private static String str(Object v) {
@@ -345,7 +351,18 @@ public final class RegionContextCrashReport {
                 case '\n': out.append("\\n");  break;
                 case '\r': out.append("\\r");  break;
                 case '\t': out.append("\\t");  break;
-                default:   out.append(c);      break;
+                case '\b': out.append("\\b");  break;
+                case '\f': out.append("\\f");  break;
+                default:
+                    // JSON forbids raw control characters; an exception message carrying one
+                    // (NUL from native code, ESC from an ANSI-coloured message) would have
+                    // produced a report no parser accepts.
+                    if (c < 0x20) {
+                        out.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        out.append(c);
+                    }
+                    break;
             }
         }
         return out.toString();

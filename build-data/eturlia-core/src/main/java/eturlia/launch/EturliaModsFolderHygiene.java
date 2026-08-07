@@ -8,7 +8,6 @@ package eturlia.launch;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.Locale;
 import java.util.stream.Stream;
 
@@ -19,37 +18,69 @@ import java.util.stream.Stream;
  * discover them. Operators can restore by renaming back. This is not "removing mods" —
  * Eturlia already provides Folia-safe equivalents (bundled spark; Sable needs no Arclight
  * AABB patch).</p>
+ *
+ * <p>Because this mutates the operator's {@code mods/} directory, it is configurable:</p>
+ * <ul>
+ *   <li>{@code -Deturlia.mods.hygiene=skip} — rename conflicting jars (default)</li>
+ *   <li>{@code -Deturlia.mods.hygiene=warn} — only report them, change nothing</li>
+ *   <li>{@code -Deturlia.mods.hygiene=off} — do not even scan</li>
+ * </ul>
  */
 final class EturliaModsFolderHygiene {
 
     private static final String SKIP_SUFFIX = ".eturlia-skipped";
 
+    /** Selects rename / report-only / disabled behaviour. */
+    private static final String PROP_MODE = "eturlia.mods.hygiene";
+
+    enum Mode {
+        SKIP, WARN, OFF;
+
+        static Mode current() {
+            String raw = System.getProperty(PROP_MODE);
+            if (raw == null || raw.isBlank()) {
+                return SKIP;
+            }
+            try {
+                return valueOf(raw.trim().toUpperCase(Locale.ROOT));
+            } catch (IllegalArgumentException e) {
+                System.err.println("[eturlia] Unknown " + PROP_MODE + "=" + raw
+                        + " (expected skip|warn|off) — using skip");
+                return SKIP;
+            }
+        }
+    }
+
     private EturliaModsFolderHygiene() {}
 
     static void apply(Path gameDir) {
+        Mode mode = Mode.current();
+        if (mode == Mode.OFF) {
+            return;
+        }
         Path mods = gameDir.resolve("mods");
         if (!Files.isDirectory(mods)) {
             return;
         }
         try (Stream<Path> stream = Files.list(mods)) {
-            stream.filter(Files::isRegularFile).forEach(EturliaModsFolderHygiene::maybeSkip);
+            stream.filter(Files::isRegularFile).forEach(jar -> maybeSkip(jar, mode));
         } catch (IOException e) {
             System.err.println("[eturlia] mods/ hygiene scan failed: " + e);
         }
     }
 
-    private static void maybeSkip(Path jar) {
+    private static void maybeSkip(Path jar, Mode mode) {
         String name = jar.getFileName().toString();
         String lower = name.toLowerCase(Locale.ROOT);
         if (lower.endsWith(SKIP_SUFFIX) || !lower.endsWith(".jar")) {
             return;
         }
         if (isSparkNeoforge(lower)) {
-            skip(jar, "spark-neoforge conflicts with Eturlia's Folia-bundled spark (JPMS). /spark stays available.");
+            skip(jar, mode, "spark-neoforge conflicts with Eturlia's Folia-bundled spark (JPMS). /spark stays available.");
             return;
         }
         if (isOriginalArclightSable(lower)) {
-            skip(jar, "Arclight sable AABB patch targets Arclight; Eturlia already has Folia bridges. Use arclight_sable_patch-*-eturlia-shim.jar if a modId placeholder is required.");
+            skip(jar, mode, "Arclight sable AABB patch targets Arclight; Eturlia already has Folia bridges. Use arclight_sable_patch-*-eturlia-shim.jar if a modId placeholder is required.");
         }
     }
 
@@ -65,12 +96,28 @@ final class EturliaModsFolderHygiene {
         return !lower.contains("eturlia-shim") && !lower.contains("eturlia_shim");
     }
 
-    private static void skip(Path jar, String reason) {
+    private static void skip(Path jar, Mode mode, String reason) {
+        if (mode == Mode.WARN) {
+            System.out.println("[eturlia] " + jar.getFileName() + " is not compatible: " + reason
+                    + " Left untouched (" + PROP_MODE + "=warn).");
+            return;
+        }
         Path target = jar.resolveSibling(jar.getFileName().toString() + SKIP_SUFFIX);
+        if (Files.exists(target)) {
+            // Never clobber an earlier soft-skip: that file is the operator's copy, and
+            // REPLACE_EXISTING would silently discard it.
+            System.out.println("[eturlia] " + jar.getFileName() + " is not compatible: " + reason
+                    + " A previous soft-skip (" + target.getFileName() + ") already exists,"
+                    + " so nothing was renamed — remove one of the two files.");
+            return;
+        }
         try {
-            Files.move(jar, target, StandardCopyOption.REPLACE_EXISTING);
+            Files.move(jar, target);
             System.out.println("[eturlia] Soft-skipped (not deleted): " + jar.getFileName()
-                    + " → " + target.getFileName() + " — " + reason);
+                    + " -> " + target.getFileName() + " — " + reason);
+            System.out.println("[eturlia] Renaming it back re-triggers this on the next boot."
+                    + " Remove the jar, or start with -D" + PROP_MODE + "=warn (report only)"
+                    + " or -D" + PROP_MODE + "=off (disable this check).");
         } catch (IOException e) {
             System.err.println("[eturlia] Failed to soft-skip " + jar + ": " + e);
         }
