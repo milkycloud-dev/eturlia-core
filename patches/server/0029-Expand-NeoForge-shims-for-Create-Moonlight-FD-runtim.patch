@@ -10,7 +10,7 @@ EntityType.Builder tracking aliases, Item.modifyDefaultComponentsFrom,
 RegistryOps copy ctor, and BlockState IBlockStateExtension.
 
 diff --git a/src/main/java/net/minecraft/core/Vec3i.java b/src/main/java/net/minecraft/core/Vec3i.java
-index 7b0fc7135bc107103dcaed6dc0707b1829928fae..4dff7aec5e11836a45f9c095e8766ef6647a67be 100644
+index 7b0fc7135bc107103dcaed6dc0707b1829928fae..0be4624e6ac2b508008004d01077828e20cc0e72 100644
 --- a/src/main/java/net/minecraft/core/Vec3i.java
 +++ b/src/main/java/net/minecraft/core/Vec3i.java
 @@ -41,12 +41,14 @@ public class Vec3i implements Comparable<Vec3i> {
@@ -18,14 +18,14 @@ index 7b0fc7135bc107103dcaed6dc0707b1829928fae..4dff7aec5e11836a45f9c095e8766ef6
  
      @Override
 -    public final boolean equals(Object object) { // Paper - Perf: Final for inline
-+    // Crelia/NeoForge: Create TrackNodeLocation overrides equals — cannot be final (Paper inlined it)
++    // Eturlia/NeoForge: Create TrackNodeLocation overrides equals — cannot be final (Paper inlined it)
 +    public boolean equals(Object object) {
          return this == object || object instanceof Vec3i vec3i && this.getX() == vec3i.getX() && this.getY() == vec3i.getY() && this.getZ() == vec3i.getZ();
      }
  
      @Override
 -    public final int hashCode() { // Paper - Perf: Final for inline
-+    // Crelia/NeoForge: keep hashCode overridable with equals
++    // Eturlia/NeoForge: keep hashCode overridable with equals
 +    public int hashCode() {
          return (this.getY() + this.getZ() * 31) * 31 + this.getX();
      }
