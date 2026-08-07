@@ -42,7 +42,9 @@ echo "=== Compiling Eturlia core + self-test ==="
     $(find build-data/eturlia-core/src/main/java/eturlia/core -name '*.java') \
     $(find build-data/eturlia-core/src/test/java -name '*.java') \
     $(find build-data/eturlia-launcher/src/main/java -name '*.java') \
-    $(find build-data/eturlia-launcher/src/test/java -name '*.java')
+    $(find build-data/eturlia-launcher/src/test/java -name '*.java') \
+    $(find build-data/eturlia-server-templates/src/main/java -name '*.java') \
+    $(find build-data/eturlia-server-templates/src/test/java -name '*.java')
 
 echo
 echo "=== eturlia.core self-test ==="
@@ -51,3 +53,13 @@ echo "=== eturlia.core self-test ==="
 echo
 echo "=== eturlia.launcher self-test ==="
 "$JAVA" -cp "$OUT_DIR" eturlia.launcher.EturliaLauncherSelfTest
+
+echo
+echo "=== concurrency / stress ==="
+"$JAVA" -cp "$OUT_DIR" eturlia.core.loading.EturliaStressTest
+
+echo
+echo "=== runtime boot (dev mode, no Minecraft) ==="
+# Own JVM: this one installs log handlers and a shutdown hook, and replaces
+# System.out/err to capture the startup console.
+"$JAVA" -cp "$OUT_DIR" eturlia.EturliaRuntimeSelfTest

@@ -118,6 +118,9 @@ public final class EturliaServerLaunchHandler extends CommonDevLaunchHandler {
         if (craftMain == null) {
             throw new ClassNotFoundException("org.bukkit.craftbukkit.Main not in module minecraft");
         }
+
+        installEturliaRuntime(gameLayer, arguments);
+
         Method main = craftMain.getMethod("main", String[].class);
         String[] foliaArgs = stripFmlArgs(arguments);
         try {
@@ -126,6 +129,48 @@ public final class EturliaServerLaunchHandler extends CommonDevLaunchHandler {
             Throwable cause = e.getCause() != null ? e.getCause() : e;
             throw cause;
         }
+    }
+
+    /**
+     * Installs the Eturlia runtime (startup banner, quiet console + diagnostics log,
+     * region-aware event bus, region-annotated crash handler, mod compatibility report)
+     * before handing control to CraftBukkit.
+     *
+     * <p>Previously nothing on the boot path referenced {@code eturlia.EturliaServer}, so all
+     * of that was dead code while the README advertised it. It is called reflectively because
+     * {@code eturlia-server-templates} is compiled after this module and is not on its compile
+     * classpath.</p>
+     *
+     * <p>Failure here is logged and ignored: diagnostics must never stop a server booting.</p>
+     */
+    private static void installEturliaRuntime(ModuleLayer gameLayer, String[] arguments) {
+        try {
+            Class<?> eturliaServer = Class.forName(
+                    "eturlia.EturliaServer", true, EturliaServerLaunchHandler.class.getClassLoader());
+            Method install = eturliaServer.getMethod(
+                    "installRuntime", Path.class, String.class, String.class);
+            install.invoke(null, resolveGameDir(), argValue(arguments, "--fml.mcVersion"),
+                    argValue(arguments, "--fml.neoForgeVersion"));
+        } catch (ClassNotFoundException e) {
+            System.out.println("[Eturlia] eturlia.EturliaServer not on the classpath — "
+                    + "starting without the Eturlia runtime (no banner, no region crash reports)");
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+            Throwable cause = e instanceof InvocationTargetException && e.getCause() != null
+                    ? e.getCause()
+                    : e;
+            System.out.println("[Eturlia] Eturlia runtime install failed (" + cause
+                    + ") — continuing without it");
+        }
+    }
+
+    /** Returns the value following {@code flag}, or an empty string when absent. */
+    private static String argValue(String[] args, String flag) {
+        for (int i = 0; i < args.length - 1; i++) {
+            if (flag.equals(args[i])) {
+                return args[i + 1];
+            }
+        }
+        return "";
     }
 
     /** CraftBukkit's joptsimple rejects unknown {@code --fml.*} flags. */
