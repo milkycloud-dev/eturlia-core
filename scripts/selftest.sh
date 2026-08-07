@@ -41,7 +41,8 @@ echo "=== Compiling Eturlia core + self-test ==="
 "$JAVAC" --release 21 -nowarn -d "$OUT_DIR" \
     $(find build-data/eturlia-core/src/main/java/eturlia/core -name '*.java') \
     $(find build-data/eturlia-core/src/test/java -name '*.java') \
-    $(find build-data/eturlia-launcher/src/main/java -name '*.java')
+    $(find build-data/eturlia-launcher/src/main/java -name '*.java') \
+    $(find build-data/eturlia-launcher/src/test/java -name '*.java')
 
 echo
 echo "=== eturlia.core self-test ==="
