@@ -8,6 +8,7 @@ the vanilla signature. Pass Bukkit/Paper extras via ThreadLocal from
 ServerLevel instead.
 
 diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
+index ed2c93bc2947fddae222c9599a45494ef3bcc2c7..2c14e60ac28837a26b881c9be8edbaf38d60a0c4 100644
 --- a/src/main/java/net/minecraft/server/level/ServerLevel.java
 +++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
 @@ -610,7 +610,9 @@ public class ServerLevel extends Level implements WorldGenLevel, ca.spottedleaf.
@@ -22,6 +23,7 @@ diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/mai
          this.convertable = convertable_conversionsession;
          this.uuid = WorldUUID.getUUID(convertable_conversionsession.levelDirectory.path().toFile());
 diff --git a/src/main/java/net/minecraft/world/level/Level.java b/src/main/java/net/minecraft/world/level/Level.java
+index 8b0378398636887279df92294ffaba6f125397c2..47b6b18f9fc394b51c205630952250317dc3968e 100644
 --- a/src/main/java/net/minecraft/world/level/Level.java
 +++ b/src/main/java/net/minecraft/world/level/Level.java
 @@ -703,7 +703,39 @@ public abstract class Level extends net.neoforged.neoforge.attachment.Attachment

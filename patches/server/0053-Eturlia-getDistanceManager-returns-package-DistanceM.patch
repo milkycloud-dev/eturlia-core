@@ -9,6 +9,7 @@ ChunkMap$DistanceManager.inEntityTickingRange and Sable's WrapOperation
 targeting DistanceManager missed. Qualify the return type.
 
 diff --git a/src/main/java/net/minecraft/server/level/ChunkMap.java b/src/main/java/net/minecraft/server/level/ChunkMap.java
+index 48931193a5cbda08bb8df78d4d02f2ecec3ef0f2..19e5bcb37d9746726ba5983c4d1819f745a1b2e6 100644
 --- a/src/main/java/net/minecraft/server/level/ChunkMap.java
 +++ b/src/main/java/net/minecraft/server/level/ChunkMap.java
 @@ -622,7 +622,9 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider

@@ -6,6 +6,7 @@ Subject: [PATCH] Eturlia: keep suggestion flags consistent in commands packet
 
 
 diff --git a/src/main/java/net/minecraft/network/protocol/game/ClientboundCommandsPacket.java b/src/main/java/net/minecraft/network/protocol/game/ClientboundCommandsPacket.java
+index d5978f64a0ac95d0800511ed1d395d1bac16c250..3d7878425e9aed4fd404808a32d2dcc367ec63b8 100644
 --- a/src/main/java/net/minecraft/network/protocol/game/ClientboundCommandsPacket.java
 +++ b/src/main/java/net/minecraft/network/protocol/game/ClientboundCommandsPacket.java
 @@ -213,15 +213,15 @@ public class ClientboundCommandsPacket implements Packet<ClientGamePacketListene

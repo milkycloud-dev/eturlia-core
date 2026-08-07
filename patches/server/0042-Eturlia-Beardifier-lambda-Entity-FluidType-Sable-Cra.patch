@@ -12,6 +12,7 @@ Subject: [PATCH] Eturlia: Beardifier lambda + Entity FluidType + Sable
   arclight_sable_patch is unnecessary on Eturlia.
 
 diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
+index 252887757c99987575a317dcf14bb3b40cf8a788..7829219ed5449862854e687907e1370690db1971 100644
 --- a/src/main/java/net/minecraft/world/entity/Entity.java
 +++ b/src/main/java/net/minecraft/world/entity/Entity.java
 @@ -1927,6 +1927,9 @@ public abstract class Entity extends net.neoforged.neoforge.attachment.Attachmen
@@ -70,6 +71,7 @@ diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/jav
 +    }
  }
 diff --git a/src/main/java/net/minecraft/world/level/levelgen/Beardifier.java b/src/main/java/net/minecraft/world/level/levelgen/Beardifier.java
+index ca93a97256350789ca56f910862c9d717ca7670b..69331312de1ddefd6a9bb7af36674538f35ca75b 100644
 --- a/src/main/java/net/minecraft/world/level/levelgen/Beardifier.java
 +++ b/src/main/java/net/minecraft/world/level/levelgen/Beardifier.java
 @@ -39,6 +39,22 @@ public class Beardifier implements DensityFunctions.BeardifierOrMarker {
@@ -105,6 +107,7 @@ diff --git a/src/main/java/net/minecraft/world/level/levelgen/Beardifier.java b/
  
      @VisibleForTesting
 diff --git a/src/main/java/org/bukkit/craftbukkit/CraftWorld.java b/src/main/java/org/bukkit/craftbukkit/CraftWorld.java
+index 0a7b7ae7649855d8cbd66eccc5b95d656c74ec16..44943f3e3f2919257802ffdceb62160ad7de564d 100644
 --- a/src/main/java/org/bukkit/craftbukkit/CraftWorld.java
 +++ b/src/main/java/org/bukkit/craftbukkit/CraftWorld.java
 @@ -1148,6 +1148,12 @@ public class CraftWorld extends CraftRegionAccessor implements World {

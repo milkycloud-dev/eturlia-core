@@ -12,6 +12,7 @@ the region. Restore Folia's disable of the bundled profiler, skip tick hooks
 when disabled, and catch failures if spark is ever re-enabled.
 
 diff --git a/src/main/java/io/papermc/paper/SparksFly.java b/src/main/java/io/papermc/paper/SparksFly.java
+index 9825ba84d1592459cd401b7d4f9accba49366248..cf80817381a47985101d9f34179f874a986bd441 100644
 --- a/src/main/java/io/papermc/paper/SparksFly.java
 +++ b/src/main/java/io/papermc/paper/SparksFly.java
 @@ -109,14 +109,15 @@ public final class SparksFly {

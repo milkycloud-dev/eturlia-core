@@ -8,6 +8,7 @@ ResourcePackLoader.populatePackRepository requires a mutable sources set
 and addPackFinder(); without it boot fails with NoSuchMethodError.
 
 diff --git a/src/main/java/net/minecraft/server/packs/repository/PackRepository.java b/src/main/java/net/minecraft/server/packs/repository/PackRepository.java
+index 7cae8350023fb138bfcc5af28af6d36a3433d063..99a3a04de15112e2515c4a1ef9bcb00dc1b6c226 100644
 --- a/src/main/java/net/minecraft/server/packs/repository/PackRepository.java
 +++ b/src/main/java/net/minecraft/server/packs/repository/PackRepository.java
 @@ -23,7 +23,8 @@ public class PackRepository {

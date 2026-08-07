@@ -12,6 +12,7 @@ ServerLevel capability listener cleanup so ServerModLoader.load()
 and handleServerAboutToStart complete under Folia.
 
 diff --git a/src/main/java/net/minecraft/commands/synchronization/ArgumentTypeInfos.java b/src/main/java/net/minecraft/commands/synchronization/ArgumentTypeInfos.java
+index 7b118a92a6eb779f800ae8f5d8f6e3c861fc4f6a..f96e0ce808bf532bed6e1644bc6911abbf983865 100644
 --- a/src/main/java/net/minecraft/commands/synchronization/ArgumentTypeInfos.java
 +++ b/src/main/java/net/minecraft/commands/synchronization/ArgumentTypeInfos.java
 @@ -10,7 +10,6 @@ import com.mojang.brigadier.arguments.LongArgumentType;
@@ -65,6 +66,7 @@ diff --git a/src/main/java/net/minecraft/commands/synchronization/ArgumentTypeIn
  
      private static <T extends ArgumentType<?>> Class<T> fixClassType(Class<? super T> clazz) {
 diff --git a/src/main/java/net/minecraft/resources/RegistryDataLoader.java b/src/main/java/net/minecraft/resources/RegistryDataLoader.java
+index 3053243866c655829fe2e980446b4abf1da6d37c..f1a5ffcf9eef3db38bd17bc2d2cfa9d02c5755fc 100644
 --- a/src/main/java/net/minecraft/resources/RegistryDataLoader.java
 +++ b/src/main/java/net/minecraft/resources/RegistryDataLoader.java
 @@ -100,7 +100,7 @@ public class RegistryDataLoader {
@@ -113,6 +115,7 @@ diff --git a/src/main/java/net/minecraft/resources/RegistryDataLoader.java b/src
              return new RegistryDataLoader.Loader<>(this, writableRegistry, errors);
          }
 diff --git a/src/main/java/net/minecraft/server/WorldLoader.java b/src/main/java/net/minecraft/server/WorldLoader.java
+index a1873a1a9591a14c1210efb8744233bd68a7c6b8..786d83f332563f91048fb1ed2b123f34f6697ea8 100644
 --- a/src/main/java/net/minecraft/server/WorldLoader.java
 +++ b/src/main/java/net/minecraft/server/WorldLoader.java
 @@ -33,7 +33,7 @@ public class WorldLoader {
@@ -125,6 +128,7 @@ diff --git a/src/main/java/net/minecraft/server/WorldLoader.java b/src/main/java
              RegistryAccess.Frozen frozen = layeredRegistryAccess2.getAccessForLoading(RegistryLayer.DIMENSIONS);
              RegistryAccess.Frozen frozen2 = RegistryDataLoader.load(closeableResourceManager, frozen, RegistryDataLoader.DIMENSION_REGISTRIES);
 diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
+index 46998045a6342750ad0c4bb9af9fa7e18e6eec84..b7283958d50d2d7a9007df0e1c69c652046084f1 100644
 --- a/src/main/java/net/minecraft/server/level/ServerLevel.java
 +++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
 @@ -226,6 +226,9 @@ public class ServerLevel extends Level implements WorldGenLevel, ca.spottedleaf.
@@ -161,6 +165,7 @@ diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/mai
 +    }
  }
 diff --git a/src/main/java/net/minecraft/world/entity/SpawnPlacements.java b/src/main/java/net/minecraft/world/entity/SpawnPlacements.java
+index e68e464a42096e6c048c81765f85d5e9f4581c6d..b709f5f2e8758c117dfb7798f92d4ce3724d0db4 100644
 --- a/src/main/java/net/minecraft/world/entity/SpawnPlacements.java
 +++ b/src/main/java/net/minecraft/world/entity/SpawnPlacements.java
 @@ -46,6 +46,10 @@ import net.minecraft.world.level.levelgen.Heightmap;
@@ -206,6 +211,7 @@ diff --git a/src/main/java/net/minecraft/world/entity/SpawnPlacements.java b/src
 +    }
  }
 diff --git a/src/main/java/net/minecraft/world/item/CreativeModeTab.java b/src/main/java/net/minecraft/world/item/CreativeModeTab.java
+index 479aa4a81b3c062fe6828184fdbdd1ff690ece2e..4beaf01130cb67c2376b9213348cfbf68380f835 100644
 --- a/src/main/java/net/minecraft/world/item/CreativeModeTab.java
 +++ b/src/main/java/net/minecraft/world/item/CreativeModeTab.java
 @@ -1,9 +1,12 @@
@@ -473,6 +479,7 @@ diff --git a/src/main/java/net/minecraft/world/item/CreativeModeTab.java b/src/m
                  creativeModeTab.showTitle = this.showTitle;
                  creativeModeTab.canScroll = this.canScroll;
 diff --git a/src/main/java/net/minecraft/world/item/crafting/Ingredient.java b/src/main/java/net/minecraft/world/item/crafting/Ingredient.java
+index e314f36951e9ac15c57137e24fce8c410373130a..86c8c9e43ac99beafed233583cf46f01b1ce104d 100644
 --- a/src/main/java/net/minecraft/world/item/crafting/Ingredient.java
 +++ b/src/main/java/net/minecraft/world/item/crafting/Ingredient.java
 @@ -43,6 +43,13 @@ public final class Ingredient implements Predicate<ItemStack> {
@@ -490,6 +497,7 @@ diff --git a/src/main/java/net/minecraft/world/item/crafting/Ingredient.java b/s
      public Ingredient(Stream<? extends Ingredient.Value> entries) {
          this.values = (Ingredient.Value[]) entries.toArray((i) -> {
 diff --git a/src/main/java/net/minecraft/world/level/biome/Biome.java b/src/main/java/net/minecraft/world/level/biome/Biome.java
+index 435bdda38366e57f707366df8e09b3997b6e6600..eea6375272347de0438f0d9b020e38c3c95f71b5 100644
 --- a/src/main/java/net/minecraft/world/level/biome/Biome.java
 +++ b/src/main/java/net/minecraft/world/level/biome/Biome.java
 @@ -64,6 +64,7 @@ public final class Biome {
@@ -553,6 +561,7 @@ diff --git a/src/main/java/net/minecraft/world/level/biome/Biome.java b/src/main
  
      public int getFogColor() {
 diff --git a/src/main/java/net/minecraft/world/level/biome/BiomeGenerationSettings.java b/src/main/java/net/minecraft/world/level/biome/BiomeGenerationSettings.java
+index f1380eedf4fb776d1909cb44b770e081330ad84e..20772ec276f193aee7529b4238c5f0d48cdc86f5 100644
 --- a/src/main/java/net/minecraft/world/level/biome/BiomeGenerationSettings.java
 +++ b/src/main/java/net/minecraft/world/level/biome/BiomeGenerationSettings.java
 @@ -49,6 +49,7 @@ public class BiomeGenerationSettings {
@@ -582,6 +591,7 @@ diff --git a/src/main/java/net/minecraft/world/level/biome/BiomeGenerationSettin
          return this.flowerFeatures.get();
      }
 diff --git a/src/main/java/net/minecraft/world/level/biome/MobSpawnSettings.java b/src/main/java/net/minecraft/world/level/biome/MobSpawnSettings.java
+index cb7465ed9bdebe1b31f02d11725e75ff8b44ca66..b9fbf17db5c1135bb771f5f3609cbc5dbbab6110 100644
 --- a/src/main/java/net/minecraft/world/level/biome/MobSpawnSettings.java
 +++ b/src/main/java/net/minecraft/world/level/biome/MobSpawnSettings.java
 @@ -50,6 +50,8 @@ public class MobSpawnSettings {
@@ -622,6 +632,7 @@ diff --git a/src/main/java/net/minecraft/world/level/biome/MobSpawnSettings.java
          return this.creatureGenerationProbability;
      }
 diff --git a/src/main/java/net/minecraft/world/level/block/entity/BlockEntityType.java b/src/main/java/net/minecraft/world/level/block/entity/BlockEntityType.java
+index e7691f856f85469c06f2b5a2a3db3120ec6f193d..42a451f26030b07484decd7f693294a288749334 100644
 --- a/src/main/java/net/minecraft/world/level/block/entity/BlockEntityType.java
 +++ b/src/main/java/net/minecraft/world/level/block/entity/BlockEntityType.java
 @@ -304,6 +304,13 @@ public class BlockEntityType<T extends BlockEntity> {
@@ -639,6 +650,7 @@ diff --git a/src/main/java/net/minecraft/world/level/block/entity/BlockEntityTyp
          return this.validBlocks.contains(state.getBlock());
      }
 diff --git a/src/main/java/net/minecraft/world/level/chunk/ChunkGenerator.java b/src/main/java/net/minecraft/world/level/chunk/ChunkGenerator.java
+index cead18e4f8ea278b999fa0e1aff58580a6604645..1d895a3af69180763424e4918f49e64e76c2b82f 100644
 --- a/src/main/java/net/minecraft/world/level/chunk/ChunkGenerator.java
 +++ b/src/main/java/net/minecraft/world/level/chunk/ChunkGenerator.java
 @@ -94,13 +94,18 @@ public abstract class ChunkGenerator {
@@ -662,6 +674,7 @@ diff --git a/src/main/java/net/minecraft/world/level/chunk/ChunkGenerator.java b
          this.featuresPerStep.get();
      }
 diff --git a/src/main/java/net/minecraft/world/level/levelgen/structure/Structure.java b/src/main/java/net/minecraft/world/level/levelgen/structure/Structure.java
+index 47c5257491d8b86d9c53b83e02947157fbadf86f..eb0c586f28bd5551b760bfb7b62d520c5b76ecaa 100644
 --- a/src/main/java/net/minecraft/world/level/levelgen/structure/Structure.java
 +++ b/src/main/java/net/minecraft/world/level/levelgen/structure/Structure.java
 @@ -44,6 +44,7 @@ public abstract class Structure {

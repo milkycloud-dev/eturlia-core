@@ -7,6 +7,7 @@ NeoForge CanItemPerformAbility calls ItemStack.canPerformAction via
 invokevirtual; without the method, water fluid ticks crash the region.
 
 diff --git a/src/main/java/net/minecraft/world/item/Item.java b/src/main/java/net/minecraft/world/item/Item.java
+index a8d97662db9bb77f160a43d69e3f121b4f054aec..7ea84e400353e3d13fd78f9701c7247b63c99336 100644
 --- a/src/main/java/net/minecraft/world/item/Item.java
 +++ b/src/main/java/net/minecraft/world/item/Item.java
 @@ -262,6 +262,11 @@ public class Item implements FeatureElement, ItemLike {
@@ -22,6 +23,7 @@ diff --git a/src/main/java/net/minecraft/world/item/Item.java b/src/main/java/ne
      }
  
 diff --git a/src/main/java/net/minecraft/world/item/ItemStack.java b/src/main/java/net/minecraft/world/item/ItemStack.java
+index 37bfbf585aef7662629154c545e0d25eec8e3981..0b503d72d0d7fe1e4db628a6bfc4b9444fa6b02f 100644
 --- a/src/main/java/net/minecraft/world/item/ItemStack.java
 +++ b/src/main/java/net/minecraft/world/item/ItemStack.java
 @@ -1395,4 +1395,9 @@ public final class ItemStack implements DataComponentHolder {

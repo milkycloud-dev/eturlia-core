@@ -9,6 +9,7 @@ hidden/children APIs, and PackRepository must expand child packs when
 discovering/selecting so mod jar datapacks load correctly.
 
 diff --git a/src/main/java/net/minecraft/server/packs/OverlayMetadataSection.java b/src/main/java/net/minecraft/server/packs/OverlayMetadataSection.java
+index edc35301b91c45bf92ea34364648d7bbfa8b49c1..75068411ed82f7b7e3fa32682ded55eaab511c49 100644
 --- a/src/main/java/net/minecraft/server/packs/OverlayMetadataSection.java
 +++ b/src/main/java/net/minecraft/server/packs/OverlayMetadataSection.java
 @@ -15,6 +15,8 @@ public record OverlayMetadataSection(List<OverlayMetadataSection.OverlayEntry> o
@@ -21,6 +22,7 @@ diff --git a/src/main/java/net/minecraft/server/packs/OverlayMetadataSection.jav
      private static DataResult<String> validateOverlayDir(String directoryName) {
          return !DIR_VALIDATOR.matcher(directoryName).matches()
 diff --git a/src/main/java/net/minecraft/server/packs/repository/Pack.java b/src/main/java/net/minecraft/server/packs/repository/Pack.java
+index 988f4c3ec8d39c36218ec571c7af52addcacc31d..1a4330f231e7cd02406c6dfe2eaa267f38a9242d 100644
 --- a/src/main/java/net/minecraft/server/packs/repository/Pack.java
 +++ b/src/main/java/net/minecraft/server/packs/repository/Pack.java
 @@ -4,6 +4,7 @@ import com.mojang.logging.LogUtils;
@@ -139,6 +141,7 @@ diff --git a/src/main/java/net/minecraft/server/packs/repository/Pack.java b/src
  
      public static enum Position {
 diff --git a/src/main/java/net/minecraft/server/packs/repository/PackRepository.java b/src/main/java/net/minecraft/server/packs/repository/PackRepository.java
+index 99a3a04de15112e2515c4a1ef9bcb00dc1b6c226..ddf3d1726c2c5dd7db1c6999429388aa90cb8f8f 100644
 --- a/src/main/java/net/minecraft/server/packs/repository/PackRepository.java
 +++ b/src/main/java/net/minecraft/server/packs/repository/PackRepository.java
 @@ -13,7 +13,6 @@ import java.util.Set;

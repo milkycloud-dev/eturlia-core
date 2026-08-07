@@ -8,6 +8,7 @@ CompoundTag.put calls in vanilla saveWithoutId(CompoundTag) so Sable's
 descriptor-less Redirect applies.
 
 diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
+index b909620e11fa51652dd591e7822b5ac2cda5a718..d44e2af6b551ca3104ff04bd68dd2890c17a4875 100644
 --- a/src/main/java/net/minecraft/world/entity/Entity.java
 +++ b/src/main/java/net/minecraft/world/entity/Entity.java
 @@ -2397,7 +2397,7 @@ public abstract class Entity extends net.neoforged.neoforge.attachment.Attachmen

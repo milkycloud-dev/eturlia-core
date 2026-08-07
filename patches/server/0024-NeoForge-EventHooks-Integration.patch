@@ -5,6 +5,7 @@ Subject: [PATCH] NeoForge EventHooks Integration
 
 
 diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
+index 90d78ddf8518c0df307cdaa8b7cfb5549491c6e5..46998045a6342750ad0c4bb9af9fa7e18e6eec84 100644
 --- a/src/main/java/net/minecraft/server/level/ServerLevel.java
 +++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
 @@ -172,6 +172,9 @@ import net.minecraft.world.phys.shapes.Shapes;
@@ -34,6 +35,7 @@ diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/mai
  
          if (flag1) {
 diff --git a/src/main/java/net/minecraft/server/players/PlayerList.java b/src/main/java/net/minecraft/server/players/PlayerList.java
+index 9acb477df682a27b4340e4068d6b81df1925fc0b..2c2a14dcfb88379e83ba5d875fc0bc268d1fbd0c 100644
 --- a/src/main/java/net/minecraft/server/players/PlayerList.java
 +++ b/src/main/java/net/minecraft/server/players/PlayerList.java
 @@ -103,6 +103,9 @@ import net.minecraft.world.scores.DisplaySlot;
@@ -55,6 +57,7 @@ diff --git a/src/main/java/net/minecraft/server/players/PlayerList.java b/src/ma
          // CraftBukkit start - Only add if the player wasn't moved in the event
          if (player.level() == worldserver1 && !worldserver1.players().contains(player)) {
 diff --git a/src/main/java/net/minecraft/world/entity/LivingEntity.java b/src/main/java/net/minecraft/world/entity/LivingEntity.java
+index 9b8fd458c851d72901568845d973330ed58260a9..c746e9dbc52ce75d1fc89c750900828462c49686 100644
 --- a/src/main/java/net/minecraft/world/entity/LivingEntity.java
 +++ b/src/main/java/net/minecraft/world/entity/LivingEntity.java
 @@ -133,6 +133,10 @@ import net.minecraft.world.phys.Vec3;
@@ -86,6 +89,7 @@ diff --git a/src/main/java/net/minecraft/world/entity/LivingEntity.java b/src/ma
      }
  
 diff --git a/src/main/java/net/minecraft/world/entity/player/Player.java b/src/main/java/net/minecraft/world/entity/player/Player.java
+index b3377ed06d703f54e01ba174e5a06dc928cdff96..8412e9bb5a79926b30b0f96ecc409fbd07aacdf3 100644
 --- a/src/main/java/net/minecraft/world/entity/player/Player.java
 +++ b/src/main/java/net/minecraft/world/entity/player/Player.java
 @@ -114,6 +114,9 @@ import net.minecraft.world.phys.Vec3;
@@ -115,6 +119,7 @@ diff --git a/src/main/java/net/minecraft/world/entity/player/Player.java b/src/m
              --this.currentImpulseContextResetGraceTime;
          }
 diff --git a/src/main/java/net/minecraft/world/level/Explosion.java b/src/main/java/net/minecraft/world/level/Explosion.java
+index e642638f70dffab027f8c538889e3b17da1c29df..d2dfbcd5aa578e492b57588e77a95deb6a5e0e32 100644
 --- a/src/main/java/net/minecraft/world/level/Explosion.java
 +++ b/src/main/java/net/minecraft/world/level/Explosion.java
 @@ -48,6 +48,9 @@ import org.bukkit.event.entity.EntityExplodeEvent;

@@ -6,6 +6,7 @@ Subject: [PATCH] Eturlia: Recipe.CONDITIONAL_CODEC for NeoForge/Create
 Create AddPackFindersEvent requires Recipe.CONDITIONAL_CODEC from NeoForge.
 
 diff --git a/src/main/java/net/minecraft/world/item/crafting/Recipe.java b/src/main/java/net/minecraft/world/item/crafting/Recipe.java
+index b57568d5e9c4c148a4b3c303c925a813fdd5dc67..306d1504b17d5d2125717f606a671b9037944d2c 100644
 --- a/src/main/java/net/minecraft/world/item/crafting/Recipe.java
 +++ b/src/main/java/net/minecraft/world/item/crafting/Recipe.java
 @@ -16,6 +16,9 @@ import net.minecraft.world.level.block.Blocks;

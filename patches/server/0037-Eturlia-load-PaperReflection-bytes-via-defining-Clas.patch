@@ -9,6 +9,7 @@ in the TRANSFORMER layer, which NPEs plugin class loading. Feed ClassReaders
 built from each type's defining loader instead.
 
 diff --git a/src/main/java/io/papermc/paper/pluginremap/reflect/ReflectionRemapper.java b/src/main/java/io/papermc/paper/pluginremap/reflect/ReflectionRemapper.java
+index a3045afbc0cc057e99189b909367b21cf6a9e03f..1724522a4ff68b2d6544cb1ee745f08a30e9194f 100644
 --- a/src/main/java/io/papermc/paper/pluginremap/reflect/ReflectionRemapper.java
 +++ b/src/main/java/io/papermc/paper/pluginremap/reflect/ReflectionRemapper.java
 @@ -6,8 +6,12 @@ import io.papermc.paper.util.MappingEnvironment;

@@ -10,6 +10,7 @@ Conversions from 7-arg callers. Restore no-arg loadLevel() for
 DedicatedServerMixin At-target on Folia/CraftBukkit.
 
 diff --git a/src/main/java/net/minecraft/resources/RegistryDataLoader.java b/src/main/java/net/minecraft/resources/RegistryDataLoader.java
+index f1a5ffcf9eef3db38bd17bc2d2cfa9d02c5755fc..239e977689a9e973d71e1d4290501c07cc9e1bb4 100644
 --- a/src/main/java/net/minecraft/resources/RegistryDataLoader.java
 +++ b/src/main/java/net/minecraft/resources/RegistryDataLoader.java
 @@ -194,16 +194,38 @@ public class RegistryDataLoader {
@@ -70,6 +71,7 @@ diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/
          if (!JvmProfiler.INSTANCE.isRunning()) {
              ;
 diff --git a/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java b/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
+index 301d7fa29fce2997a5881b3852896eff5af33672..56d9cc67b428a12364110d23aee1ae3e0b767fbc 100644
 --- a/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
 +++ b/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
 @@ -105,6 +105,12 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface

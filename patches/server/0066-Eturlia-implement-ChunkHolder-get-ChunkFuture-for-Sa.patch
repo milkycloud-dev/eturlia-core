@@ -9,6 +9,7 @@ calls getFullChunkFuture().getNow(...); return completed snapshots from
 Moonrise chunk readiness instead.
 
 diff --git a/src/main/java/net/minecraft/server/level/ChunkHolder.java b/src/main/java/net/minecraft/server/level/ChunkHolder.java
+index 4db96543e2072e47040bb25a9d97ea6a69c4a43d..682bc6f7519cd8d004994fa1e1ddd344e09fa938 100644
 --- a/src/main/java/net/minecraft/server/level/ChunkHolder.java
 +++ b/src/main/java/net/minecraft/server/level/ChunkHolder.java
 @@ -168,15 +168,31 @@ public class ChunkHolder extends GenerationChunkHolder implements ca.spottedleaf

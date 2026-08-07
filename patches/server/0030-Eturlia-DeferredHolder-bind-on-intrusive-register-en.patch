@@ -10,6 +10,7 @@ PersistentEntitySectionManager construction in ServerLevel.<init> as a
 Moonlight FakeServerLevel mixin target (Folia still ticks via moonrise).
 
 diff --git a/src/main/java/net/minecraft/core/MappedRegistry.java b/src/main/java/net/minecraft/core/MappedRegistry.java
+index f830120d3c3be8f8715dd9a6c9afeee503b7144a..6ad4330c521f429d165043da4a58544313d281f5 100644
 --- a/src/main/java/net/minecraft/core/MappedRegistry.java
 +++ b/src/main/java/net/minecraft/core/MappedRegistry.java
 @@ -146,9 +146,11 @@ public class MappedRegistry<T> extends net.neoforged.neoforge.registries.BaseMap
@@ -26,6 +27,7 @@ diff --git a/src/main/java/net/minecraft/core/MappedRegistry.java b/src/main/jav
          }
  
 diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
+index 102400c478b813258809e28c5629fcd3928b44e6..ed2c93bc2947fddae222c9599a45494ef3bcc2c7 100644
 --- a/src/main/java/net/minecraft/server/level/ServerLevel.java
 +++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
 @@ -223,6 +223,9 @@ public class ServerLevel extends Level implements WorldGenLevel, ca.spottedleaf.

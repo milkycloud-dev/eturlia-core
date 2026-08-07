@@ -7,6 +7,7 @@ Paper/Folia renumbered the stopSleeping ifPresent lambda; Sable Redirects
 setPos inside lambda$stopSleeping$12.
 
 diff --git a/src/main/java/net/minecraft/world/entity/LivingEntity.java b/src/main/java/net/minecraft/world/entity/LivingEntity.java
+index 6f1ab20d08e06d9cb4d71513d13ec4006827d9fb..348ad90adc788457604f0f6f097cac9685119de4 100644
 --- a/src/main/java/net/minecraft/world/entity/LivingEntity.java
 +++ b/src/main/java/net/minecraft/world/entity/LivingEntity.java
 @@ -4454,7 +4454,13 @@ public abstract class LivingEntity extends Entity implements Attackable {

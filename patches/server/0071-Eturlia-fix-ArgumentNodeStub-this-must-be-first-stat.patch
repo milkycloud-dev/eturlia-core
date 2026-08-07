@@ -5,6 +5,7 @@ Subject: [PATCH] Eturlia: fix ArgumentNodeStub this() must be first statement
 
 
 diff --git a/src/main/java/net/minecraft/network/protocol/game/ClientboundCommandsPacket.java b/src/main/java/net/minecraft/network/protocol/game/ClientboundCommandsPacket.java
+index 3d7878425e9aed4fd404808a32d2dcc367ec63b8..244251f91e96c0f6a69d2a8d4aa48356fc51cb33 100644
 --- a/src/main/java/net/minecraft/network/protocol/game/ClientboundCommandsPacket.java
 +++ b/src/main/java/net/minecraft/network/protocol/game/ClientboundCommandsPacket.java
 @@ -215,11 +215,10 @@ public class ClientboundCommandsPacket implements Packet<ClientGamePacketListene
