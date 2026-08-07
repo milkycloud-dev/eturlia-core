@@ -8,6 +8,7 @@ in configurePackRepository/DataPackConfig.addModPacks so Lithostitched
 template_list (and Terralith/Incendium) datapacks actually load.
 
 diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
+index 86c2f8887f3e8c73e570d02a9df9150a9b693d02..3ddbf6ab14941919237f562a4bad2a039ab576c0 100644
 --- a/src/main/java/net/minecraft/server/MinecraftServer.java
 +++ b/src/main/java/net/minecraft/server/MinecraftServer.java
 @@ -2565,12 +2565,15 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa

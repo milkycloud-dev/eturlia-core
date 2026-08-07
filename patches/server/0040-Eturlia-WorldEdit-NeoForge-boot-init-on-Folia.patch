@@ -11,6 +11,7 @@ Subject: [PATCH] Eturlia: WorldEdit NeoForge boot + init on Folia
    before ServerStarted setupRegistries.
 
 diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
+index e213967dc1dd97ff43552e0a6cb630d91ce3ddb6..746fab1c7ca3374450a86620fef8a0f523e0e88e 100644
 --- a/src/main/java/net/minecraft/server/MinecraftServer.java
 +++ b/src/main/java/net/minecraft/server/MinecraftServer.java
 @@ -1325,6 +1325,19 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa

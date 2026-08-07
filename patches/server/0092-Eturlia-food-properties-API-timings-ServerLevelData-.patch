@@ -28,6 +28,7 @@ index 2f0d9b953802dee821cfde82d22b0567cce8ee91..69f78a67a829543ba2a22a7eaa081e53
      }
  }
 diff --git a/src/main/java/net/minecraft/world/item/Item.java b/src/main/java/net/minecraft/world/item/Item.java
+index b0eaa0525d81d52a236d76200514e3e3b420f4aa..cdc1d162baf6393d0e1e1c5f8482e4c34fc2536c 100644
 --- a/src/main/java/net/minecraft/world/item/Item.java
 +++ b/src/main/java/net/minecraft/world/item/Item.java
 @@ -274,6 +274,12 @@ public class Item implements FeatureElement, ItemLike {

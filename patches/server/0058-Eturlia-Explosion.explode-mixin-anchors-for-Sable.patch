@@ -8,6 +8,7 @@ so Sable's @Inject into explode() found 0 targets. Restore a Set local
 (for HEAD LocalRef) and a never-taken vanilla-shaped resistance call.
 
 diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
+index 473345532990c507996a81ac7629be4bd89b98d7..d15683cd23fa5e590e721f75c26f146f630d89e2 100644
 --- a/src/main/java/net/minecraft/server/MinecraftServer.java
 +++ b/src/main/java/net/minecraft/server/MinecraftServer.java
 @@ -1837,6 +1837,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa

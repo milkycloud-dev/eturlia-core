@@ -55,6 +55,7 @@ index f1a5ffcf9eef3db38bd17bc2d2cfa9d02c5755fc..239e977689a9e973d71e1d4290501c07
      static <E> void loadContentsFromManager(
          ResourceManager resourceManager,
 diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
+index 746fab1c7ca3374450a86620fef8a0f523e0e88e..5c9d0a486b2b6c0b75b44caad57c159abc61def5 100644
 --- a/src/main/java/net/minecraft/server/MinecraftServer.java
 +++ b/src/main/java/net/minecraft/server/MinecraftServer.java
 @@ -520,6 +520,12 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa

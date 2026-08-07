@@ -12,6 +12,7 @@ Subject: [PATCH] Eturlia: Moonlight Folia bridges + NeoForge interaction +
 - Port CommonHooks interaction / break / EntityInteractSpecific hooks
 
 diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
+index 659c6e45ae42199365d05334c6a7c2d0953c8a21..e213967dc1dd97ff43552e0a6cb630d91ce3ddb6 100644
 --- a/src/main/java/net/minecraft/server/MinecraftServer.java
 +++ b/src/main/java/net/minecraft/server/MinecraftServer.java
 @@ -2457,18 +2457,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa

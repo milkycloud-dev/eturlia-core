@@ -15,16 +15,6 @@ Key changes:
 - ServerLifecycleHooks.handleServerStopped() called in stopPart2
 - NeoForge EventHooks.fireServerTickPre/Post for server tick events
 
-Lifecycle ordering fixes:
-- handleServerStarted() used to sit after Thread.sleep(Long.MAX_VALUE), so
-  ServerStartedEvent never fired at all; it now runs right after "Done".
-- handleServerStarting() used to sit inside the for(;;) loop and could fire
-  repeatedly; it now runs exactly once, before "Done".
-- handleServerAboutToStart() now runs before RegionizedServer.init() instead of
-  after it, so mod config loading happens before region threading starts.
-- The duplicate handleServerStopping() on the safeShutdown path was removed;
-  stopServer() already fires ServerStoppingEvent.
-
 diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
 index 4ed79a51c89d54a7b2ab65a99b5b09cc807f4d4e..4b35c256ea3e6cf5405b950886ef621b4185dffb 100644
 --- a/src/main/java/net/minecraft/server/MinecraftServer.java
@@ -57,47 +47,45 @@ index 4ed79a51c89d54a7b2ab65a99b5b09cc807f4d4e..4b35c256ea3e6cf5405b950886ef621b
          this.resources.close();
  
          try {
-@@ -1288,11 +1288,14 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -1206,6 +1213,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+         // Paper end
+         this.running = false;
+         this.stopServer(); // Folia - region threading
++        ServerLifecycleHooks.handleServerStopping(this); // NeoForge - fire ServerStoppingEvent (safeShutdown path)
+         if (waitForShutdown) {
+             try {
+                 this.serverThread.join();
+@@ -1288,11 +1296,14 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
              // Folia start - region threading
              if (true) {
-+                ServerLifecycleHooks.handleServerAboutToStart(this); // NeoForge - fire ServerAboutToStartEvent (before region init)
                  io.papermc.paper.threadedregions.RegionizedServer.getInstance().init(); // Folia - region threading - only after loading worlds
-+                ServerLifecycleHooks.handleServerStarting(this); // NeoForge - fire ServerStartingEvent (once, before Done)
++                ServerLifecycleHooks.handleServerAboutToStart(this); // NeoForge - fire ServerAboutToStartEvent
                  String doneTime = String.format(java.util.Locale.ROOT, "%.3fs", (double) (Util.getNanos() - serverStartTime) / 1.0E9D);
                  LOGGER.info("Done ({})! For help, type \"help\"", doneTime);
-+                ServerLifecycleHooks.handleServerStarted(this); // NeoForge - fire ServerStartedEvent (once, after Done)
                  for (;;) {
++                ServerLifecycleHooks.handleServerStarting(this); // NeoForge - fire ServerStartingEvent
                      try {
                          Thread.sleep(Long.MAX_VALUE);
++                ServerLifecycleHooks.handleServerStarted(this); // NeoForge - fire ServerStartedEvent
                      } catch (final InterruptedException ex) {}
                  }
              }
-@@ -1672,6 +1682,15 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -1672,6 +1683,9 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
              return scheduledEnd - System.nanoTime() > targetBuffer;
          };
          this.server.spark.tickStart(); // Paper - spark
 +        // NeoForge start - server tick pre event
-+        // Eturlia: Folia runs this body once per region, so firing the event here handed every
-+        // listener N concurrent invocations per tick. Only the first region to reach a given
-+        // tick number fires it, which restores NeoForge's once-per-tick contract. It is still
-+        // delivered on a region thread, so listeners must not assume the global thread.
-+        if (eturlia$firstTickPre(region.getCurrentTick())) {
-+            EventHooks.fireServerTickPre(shouldKeepTicking, this);
-+        }
++        EventHooks.fireServerTickPre(shouldKeepTicking, this);
 +        // NeoForge end
          new com.destroystokyo.paper.event.server.ServerTickStartEvent((int)region.getCurrentTick()).callEvent(); // Paper
          // Folia end - region threading
          co.aikar.timings.TimingsManager.FULL_SERVER_TICK.startTiming(); // Paper
-@@ -1764,6 +1783,13 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -1764,6 +1778,9 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
          this.profiler.pop();
          org.spigotmc.WatchdogThread.tick(); // Spigot
          co.aikar.timings.TimingsManager.FULL_SERVER_TICK.stopTiming(); // Paper
 +        // NeoForge start - server tick post event
-+        // Eturlia: gated like fireServerTickPre above, on its own counter — one Post per
-+        // tick number, possibly from a different region thread than the Pre.
-+        if (eturlia$firstTickPost(region.getCurrentTick())) {
-+            EventHooks.fireServerTickPost(shouldKeepTicking, this);
-+        }
++        EventHooks.fireServerTickPost(shouldKeepTicking, this);
 +        // NeoForge end
      }
  
