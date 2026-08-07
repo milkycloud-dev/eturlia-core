@@ -100,6 +100,11 @@ jobs:
           done
           unzip -p "$JAR" META-INF/MANIFEST.MF | grep -q "Main-Class: eturlia.launcher.Main"
           echo "ok: Main-Class"
+          # The manifest must also be inside the nested eturlia-core library, which is what
+          # actually runs in the server JVM — the launcher jar is not on its classpath.
+          unzip -p "$JAR" "META-INF/eturlia-libraries/eturlia-core.jar" > /tmp/eturlia-core.jar
+          unzip -l /tmp/eturlia-core.jar "eturlia-supported.json" > /dev/null             || { echo "MISSING: eturlia-supported.json inside eturlia-core.jar"; exit 1; }
+          echo "ok: eturlia-supported.json inside eturlia-core.jar"
           sha256sum "$JAR"
 
       - name: Upload jar
