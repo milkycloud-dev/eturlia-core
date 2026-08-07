@@ -79,8 +79,15 @@ public final class EturliaConfig {
             }
             INSTANCE = new EturliaConfig(map);
             INSTANCE.applySystemProperties();
+            int loadedVersion = INSTANCE.version();
             LOGGER.info("Loaded Eturlia config from " + file.toAbsolutePath()
-                    + " (_version=" + INSTANCE.version() + ")");
+                    + " (_version=" + loadedVersion + ")");
+            if (loadedVersion != CURRENT_VERSION) {
+                LOGGER.warning("config/eturlia.yml has _version=" + loadedVersion
+                        + " but this build expects " + CURRENT_VERSION
+                        + ". New keys are NOT merged into an existing file — compare against"
+                        + " the defaults shipped in the jar (/eturlia.yml) after upgrading.");
+            }
             return INSTANCE;
         } catch (IOException e) {
             LOGGER.log(Level.SEVERE, "Failed to load eturlia.yml — using empty defaults", e);
@@ -242,6 +249,26 @@ public final class EturliaConfig {
         return getBoolean("neoforge", "remind-sable-shim", true);
     }
 
+    public int lodMaxRenderDistance() {
+        return getInt("lod", "max-render-distance", -1);
+    }
+
+    public boolean lodDhServerComponent() {
+        return getBoolean("lod", "dh-server-component", false);
+    }
+
+    public boolean lodVoxySupport() {
+        return getBoolean("lod", "voxy-support", false);
+    }
+
+    public String lithostitchedMinVersion() {
+        return getString("mods", "require-lithostitched-min", "");
+    }
+
+    public boolean blockLithostitchedPrerelease() {
+        return getBoolean("mods", "block-lithostitched-prerelease", true);
+    }
+
     public void applySystemProperties() {
         String guard = regionGuard();
         if (guard != null && !guard.isBlank()) {
@@ -264,7 +291,20 @@ public final class EturliaConfig {
         if (lodEnabled()) {
             System.setProperty("eturlia.lod.enabled", "true");
             System.setProperty("eturlia.lod.mode", lodMode());
+            // These three were documented in eturlia.yml but never reached ClientLodConfig.
+            int maxRender = lodMaxRenderDistance();
+            if (maxRender >= 0) {
+                System.setProperty("eturlia.lod.max-render-distance", Integer.toString(maxRender));
+            }
+            System.setProperty("eturlia.lod.dh-server-component", Boolean.toString(lodDhServerComponent()));
+            System.setProperty("eturlia.lod.voxy-support", Boolean.toString(lodVoxySupport()));
         }
+        String lithoMin = lithostitchedMinVersion();
+        if (lithoMin != null && !lithoMin.isBlank()) {
+            System.setProperty("eturlia.lithostitched.min-version", lithoMin.trim());
+        }
+        System.setProperty("eturlia.lithostitched.block-prerelease",
+                Boolean.toString(blockLithostitchedPrerelease()));
     }
 
     public void applyToPaperGlobal(Object globalConfiguration) {
@@ -353,7 +393,10 @@ public final class EturliaConfig {
             }
 
             LOGGER.info("Eturlia: applied config/eturlia.yml overrides to Paper global configuration");
-        } catch (ReflectiveOperationException e) {
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            // Field type/visibility drift in Paper throws IllegalArgumentException /
+            // SecurityException, which are NOT ReflectiveOperationException. Letting those
+            // escape aborted server configuration loading entirely.
             LOGGER.log(Level.WARNING, "Eturlia: failed to apply paper-global overrides from eturlia.yml", e);
         }
     }
@@ -497,9 +540,19 @@ public final class EturliaConfig {
                 if (raw.isBlank()) {
                     continue;
                 }
+                if (raw.startsWith("\t") || raw.startsWith(" \t")) {
+                    LOGGER.warning("eturlia.yml: TAB indentation is not supported by the built-in"
+                            + " parser (YAML forbids tabs for indentation) — line ignored: " + line.trim());
+                    continue;
+                }
                 int indent = leadingSpaces(raw);
                 String content = raw.trim();
                 if (content.isEmpty()) {
+                    continue;
+                }
+                if (content.startsWith("- ") || "-".equals(content)) {
+                    LOGGER.warning("eturlia.yml: sequences (\"- item\") are not supported by the"
+                            + " built-in parser — line ignored: " + content);
                     continue;
                 }
                 while (indents.size() > 1 && indent <= indents.peek()) {

@@ -82,7 +82,7 @@ fi
 
 # ---------- Setup ----------
 
-WORK_DIR="$(mktemp -d eturlia-benchmark.XXXXXX)"
+WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/eturlia-benchmark.XXXXXX")"
 SERVER_DIR="$WORK_DIR/server"
 
 mkdir -p "$SERVER_DIR/crash-reports" "$SERVER_DIR/logs"
@@ -119,6 +119,21 @@ RCON_CMD=""
 if command -v mcrcon &>/dev/null; then
     RCON_CMD="mcrcon -H 127.0.0.1 -P ${RCON_PORT} -p '${RCON_PASSWORD}' -c -w 5"
 fi
+
+# The jar is a wrapper that spawns the real server as a child JVM. SIGTERM lets the
+# wrapper's shutdown hook stop that child; SIGKILL would orphan it (held world lock,
+# occupied port), so escalate only after giving the hook a chance.
+stop_server_hard() {
+    [ -n "${SERVER_PID:-}" ] || return 0
+    kill -TERM "$SERVER_PID" 2>/dev/null || true
+    waited=0
+    while kill -0 "$SERVER_PID" 2>/dev/null && [ $waited -lt 15 ]; do
+        sleep 1
+        waited=$((waited + 1))
+    done
+    pkill -9 -P "$SERVER_PID" 2>/dev/null || true
+    kill -9 "$SERVER_PID" 2>/dev/null || true
+}
 
 send_command() {
     local cmd="$1"
@@ -286,7 +301,7 @@ run_benchmark() {
     # Wait for startup
     if ! wait_for_server; then
         echo "FAIL: Server did not start for ${label}" | tee -a "$LOG_FILE"
-        kill -9 "$SERVER_PID" 2>/dev/null || true
+        stop_server_hard
         return 1
     fi
 
@@ -390,7 +405,7 @@ run_benchmark() {
     done
 
     if kill -0 "$SERVER_PID" 2>/dev/null; then
-        kill -9 "$SERVER_PID" 2>/dev/null || true
+        stop_server_hard
     fi
 
     echo "Server stopped" | tee -a "$LOG_FILE"

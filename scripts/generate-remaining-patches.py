@@ -7,7 +7,12 @@ These patches are adapted for the Folia-patched decompiled source.
 
 import os
 
-PATCH_DIR = "/home/z/my-project/eturlia-neoforge/folia-server/minecraft-patches/features"
+# Resolved from the repository root; override with ETURLIA_FEATURES_DIR if the working
+# tree lives elsewhere. (Was hard-coded to one developer's /home/z/... path.)
+PATCH_DIR = os.environ.get(
+    "ETURLIA_FEATURES_DIR",
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                 "folia-server", "minecraft-patches", "features"))
 PATCH_HEADER = """From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Eturlia <eturlia@users.noreply.github.com>
 Date: Mon, 1 Jan 2024 00:00:00 +0000

@@ -37,13 +37,20 @@ public final class RegionEntityListFacade<T> implements Iterable<T> {
     }
 
     public void replaceLocalSnapshot(Iterable<? extends T> entities) {
-        localSnapshot.clear();
+        // Build off to the side, then swap in one shot: element-by-element add on a
+        // CopyOnWriteArrayList copies the whole backing array per element (O(n^2)) and
+        // leaves readers observing a half-filled list in the meantime.
+        java.util.ArrayList<T> replacement = new java.util.ArrayList<>();
         if (entities != null) {
             for (T e : entities) {
                 if (e != null) {
-                    localSnapshot.add(e);
+                    replacement.add(e);
                 }
             }
+        }
+        synchronized (localSnapshot) {
+            localSnapshot.clear();
+            localSnapshot.addAll(replacement);
         }
     }
 
