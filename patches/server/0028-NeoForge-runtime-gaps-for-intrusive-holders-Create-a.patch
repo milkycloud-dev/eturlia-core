@@ -184,95 +184,26 @@ index 545ee62ebb9ce9bfc28428f98ae116c415f373c1..f830120d3c3be8f8715dd9a6c9afeee5
      // used to clear intrusive holders from GameEvent, Item, Block, EntityType, and Fluid from unused instances of those types
      public void clearIntrusiveHolder(final T instance) {
 diff --git a/src/main/java/net/minecraft/resources/RegistryOps.java b/src/main/java/net/minecraft/resources/RegistryOps.java
-new file mode 100644
-index 0000000000000000000000000000000000000000..be5165a33ce55463df40e18cdd8250f1ba5da801
---- /dev/null
+index 28985f4d3cd605481e567071b45d6cd3064f44d2..be5165a33ce55463df40e18cdd8250f1ba5da801 100644
+--- a/src/main/java/net/minecraft/resources/RegistryOps.java
 +++ b/src/main/java/net/minecraft/resources/RegistryOps.java
-@@ -0,0 +1,160 @@
-+package net.minecraft.resources;
-+
-+import com.mojang.serialization.DataResult;
-+import com.mojang.serialization.Dynamic;
-+import com.mojang.serialization.DynamicOps;
-+import com.mojang.serialization.Lifecycle;
-+import com.mojang.serialization.codecs.RecordCodecBuilder;
-+import java.util.Map;
-+import java.util.Optional;
-+import java.util.concurrent.ConcurrentHashMap;
-+import net.minecraft.core.Holder;
-+import net.minecraft.core.HolderGetter;
-+import net.minecraft.core.HolderLookup;
-+import net.minecraft.core.HolderOwner;
-+import net.minecraft.core.Registry;
-+import net.minecraft.util.ExtraCodecs;
-+
-+public class RegistryOps<T> extends DelegatingOps<T> {
-+    public final RegistryOps.RegistryInfoLookup lookupProvider;
-+
-+    public static <T> RegistryOps<T> create(DynamicOps<T> delegate, HolderLookup.Provider wrapperLookup) {
-+        return create(delegate, new RegistryOps.HolderLookupAdapter(wrapperLookup));
-+    }
-+
-+    public static <T> RegistryOps<T> create(DynamicOps<T> delegate, RegistryOps.RegistryInfoLookup registryInfoGetter) {
-+        return new RegistryOps<>(delegate, registryInfoGetter);
-+    }
-+
-+    public static <T> Dynamic<T> injectRegistryContext(Dynamic<T> dynamic, HolderLookup.Provider registryLookup) {
-+        return new Dynamic<>(registryLookup.createSerializationContext(dynamic.getOps()), dynamic.getValue());
-+    }
-+
-+    private RegistryOps(DynamicOps<T> delegate, RegistryOps.RegistryInfoLookup registryInfoGetter) {
-+        super(delegate);
-+        this.lookupProvider = registryInfoGetter;
-+    }
-+
+@@ -35,6 +35,12 @@ public class RegistryOps<T> extends DelegatingOps<T> {
+         this.lookupProvider = registryInfoGetter;
+     }
+ 
 +    // NeoForge: used by ConditionalOps / ContextAwareReloadListener
 +    protected RegistryOps(RegistryOps<T> other) {
 +        super(other.delegate);
 +        this.lookupProvider = other.lookupProvider;
 +    }
 +
-+    public <U> RegistryOps<U> withParent(DynamicOps<U> delegate) {
-+        return (RegistryOps<U>)(delegate == this.delegate ? this : new RegistryOps<>(delegate, this.lookupProvider));
-+    }
-+
-+    public <E> Optional<HolderOwner<E>> owner(ResourceKey<? extends Registry<? extends E>> registryRef) {
-+        return this.lookupProvider.lookup(registryRef).map(RegistryOps.RegistryInfo::owner);
-+    }
-+
-+    public <E> Optional<HolderGetter<E>> getter(ResourceKey<? extends Registry<? extends E>> registryRef) {
-+        return this.lookupProvider.lookup(registryRef).map(RegistryOps.RegistryInfo::getter);
-+    }
-+
-+    @Override
-+    public boolean equals(Object object) {
-+        if (this == object) {
-+            return true;
-+        } else if (object != null && this.getClass() == object.getClass()) {
-+            RegistryOps<?> registryOps = (RegistryOps<?>)object;
-+            return this.delegate.equals(registryOps.delegate) && this.lookupProvider.equals(registryOps.lookupProvider);
-+        } else {
-+            return false;
-+        }
-+    }
-+
-+    @Override
-+    public int hashCode() {
-+        return this.delegate.hashCode() * 31 + this.lookupProvider.hashCode();
-+    }
-+
-+    public static <E, O> RecordCodecBuilder<O, HolderGetter<E>> retrieveGetter(ResourceKey<? extends Registry<? extends E>> registryRef) {
-+        return ExtraCodecs.retrieveContext(
-+                ops -> ops instanceof RegistryOps<?> registryOps
-+                        ? registryOps.lookupProvider
-+                            .lookup(registryRef)
-+                            .map(info -> DataResult.success(info.getter(), info.elementsLifecycle()))
-+                            .orElseGet(() -> DataResult.error(() -> "Unknown registry: " + registryRef))
-+                        : DataResult.error(() -> "Not a registry ops")
-+            )
-+            .forGetter(object -> null);
-+    }
-+
+     public <U> RegistryOps<U> withParent(DynamicOps<U> delegate) {
+         return (RegistryOps<U>)(delegate == this.delegate ? this : new RegistryOps<>(delegate, this.lookupProvider));
+     }
+@@ -76,6 +82,22 @@ public class RegistryOps<T> extends DelegatingOps<T> {
+             .forGetter(object -> null);
+     }
+ 
 +    public static <E> com.mojang.serialization.MapCodec<HolderLookup.RegistryLookup<E>> retrieveRegistryLookup(ResourceKey<? extends Registry<? extends E>> resourceKey) {
 +        return ExtraCodecs.retrieveContext(ops -> {
 +            if (!(ops instanceof RegistryOps<?> registryOps)) {
@@ -289,66 +220,9 @@ index 0000000000000000000000000000000000000000..be5165a33ce55463df40e18cdd8250f1
 +        });
 +    }
 +
-+    public static <E, O> RecordCodecBuilder<O, Holder.Reference<E>> retrieveElement(ResourceKey<E> key) {
-+        ResourceKey<? extends Registry<E>> resourceKey = ResourceKey.createRegistryKey(key.registry());
-+        return ExtraCodecs.retrieveContext(
-+                ops -> ops instanceof RegistryOps<?> registryOps
-+                        ? registryOps.lookupProvider
-+                            .lookup(resourceKey)
-+                            .flatMap(info -> info.getter().get(key))
-+                            .map(DataResult::success)
-+                            .orElseGet(() -> DataResult.error(() -> "Can't find value: " + key))
-+                        : DataResult.error(() -> "Not a registry ops")
-+            )
-+            .forGetter(object -> null);
-+    }
-+
-+    public static final class HolderLookupAdapter implements RegistryOps.RegistryInfoLookup {
-+        private final HolderLookup.Provider lookupProvider;
-+        private final Map<ResourceKey<? extends Registry<?>>, Optional<? extends RegistryOps.RegistryInfo<?>>> lookups = new ConcurrentHashMap<>();
-+
-+        public HolderLookupAdapter(HolderLookup.Provider registriesLookup) {
-+            this.lookupProvider = registriesLookup;
-+        }
-+
-+        @Override
-+        public <E> Optional<RegistryOps.RegistryInfo<E>> lookup(ResourceKey<? extends Registry<? extends E>> registryRef) {
-+            return (Optional<RegistryOps.RegistryInfo<E>>)this.lookups.computeIfAbsent(registryRef, this::createLookup);
-+        }
-+
-+        private Optional<RegistryOps.RegistryInfo<Object>> createLookup(ResourceKey<? extends Registry<?>> registryRef) {
-+            return this.lookupProvider.lookup(registryRef).map(RegistryOps.RegistryInfo::fromRegistryLookup);
-+        }
-+
-+        @Override
-+        public boolean equals(Object object) {
-+            if (this == object) {
-+                return true;
-+            } else {
-+                if (object instanceof RegistryOps.HolderLookupAdapter holderLookupAdapter && this.lookupProvider.equals(holderLookupAdapter.lookupProvider)) {
-+                    return true;
-+                }
-+
-+                return false;
-+            }
-+        }
-+
-+        @Override
-+        public int hashCode() {
-+            return this.lookupProvider.hashCode();
-+        }
-+    }
-+
-+    public static record RegistryInfo<T>(HolderOwner<T> owner, HolderGetter<T> getter, Lifecycle elementsLifecycle) {
-+        public static <T> RegistryOps.RegistryInfo<T> fromRegistryLookup(HolderLookup.RegistryLookup<T> wrapper) {
-+            return new RegistryOps.RegistryInfo<>(wrapper, wrapper, wrapper.registryLifecycle());
-+        }
-+    }
-+
-+    public interface RegistryInfoLookup {
-+        <T> Optional<RegistryOps.RegistryInfo<T>> lookup(ResourceKey<? extends Registry<? extends T>> registryRef);
-+    }
-+}
+     public static <E, O> RecordCodecBuilder<O, Holder.Reference<E>> retrieveElement(ResourceKey<E> key) {
+         ResourceKey<? extends Registry<E>> resourceKey = ResourceKey.createRegistryKey(key.registry());
+         return ExtraCodecs.retrieveContext(
 diff --git a/src/main/java/net/minecraft/server/ReloadableServerResources.java b/src/main/java/net/minecraft/server/ReloadableServerResources.java
 index 6de563b7adea957a7ead1c00c4900060fa5df277..f18908fc81307d2761957ded08a4903cdc1f1fec 100644
 --- a/src/main/java/net/minecraft/server/ReloadableServerResources.java
@@ -464,285 +338,91 @@ index b7283958d50d2d7a9007df0e1c69c652046084f1..c80208c1da49dcaf0bc51a4b2e06dae0
      private final GameEventDispatcher gameEventDispatcher;
      public boolean noSave;
 diff --git a/src/main/java/net/minecraft/server/packs/resources/SimplePreparableReloadListener.java b/src/main/java/net/minecraft/server/packs/resources/SimplePreparableReloadListener.java
-new file mode 100644
-index 0000000000000000000000000000000000000000..23e4df7222f3695656339da222ac32117bb492f8
---- /dev/null
+index 298e3eddd600f0b2e48ce2d4080cf68adff59a3a..23e4df7222f3695656339da222ac32117bb492f8 100644
+--- a/src/main/java/net/minecraft/server/packs/resources/SimplePreparableReloadListener.java
 +++ b/src/main/java/net/minecraft/server/packs/resources/SimplePreparableReloadListener.java
-@@ -0,0 +1,25 @@
-+package net.minecraft.server.packs.resources;
-+
-+import java.util.concurrent.CompletableFuture;
-+import java.util.concurrent.Executor;
-+import net.minecraft.util.profiling.ProfilerFiller;
-+
+@@ -4,7 +4,7 @@ import java.util.concurrent.CompletableFuture;
+ import java.util.concurrent.Executor;
+ import net.minecraft.util.profiling.ProfilerFiller;
+ 
+-public abstract class SimplePreparableReloadListener<T> implements PreparableReloadListener {
 +public abstract class SimplePreparableReloadListener<T> extends net.neoforged.neoforge.resource.ContextAwareReloadListener implements PreparableReloadListener {
-+    @Override
-+    public final CompletableFuture<Void> reload(
-+        PreparableReloadListener.PreparationBarrier synchronizer,
-+        ResourceManager manager,
-+        ProfilerFiller prepareProfiler,
-+        ProfilerFiller applyProfiler,
-+        Executor prepareExecutor,
-+        Executor applyExecutor
-+    ) {
-+        return CompletableFuture.<T>supplyAsync(() -> this.prepare(manager, prepareProfiler), prepareExecutor)
-+            .thenCompose(synchronizer::wait)
-+            .thenAcceptAsync(prepared -> this.apply((T)prepared, manager, applyProfiler), applyExecutor);
-+    }
-+
-+    protected abstract T prepare(ResourceManager manager, ProfilerFiller profiler);
-+
-+    protected abstract void apply(T prepared, ResourceManager manager, ProfilerFiller profiler);
-+}
+     @Override
+     public final CompletableFuture<Void> reload(
+         PreparableReloadListener.PreparationBarrier synchronizer,
 diff --git a/src/main/java/net/minecraft/world/food/FoodProperties.java b/src/main/java/net/minecraft/world/food/FoodProperties.java
-new file mode 100644
-index 0000000000000000000000000000000000000000..3451dc035d2b631bc79340fc46f6a1e84afa6c2b
---- /dev/null
+index c60cdb3ef4cffacf02c35c53c198af1ee8d21b6f..3451dc035d2b631bc79340fc46f6a1e84afa6c2b 100644
+--- a/src/main/java/net/minecraft/world/food/FoodProperties.java
 +++ b/src/main/java/net/minecraft/world/food/FoodProperties.java
-@@ -0,0 +1,127 @@
-+package net.minecraft.world.food;
-+
-+import com.google.common.collect.ImmutableList;
-+import com.mojang.serialization.Codec;
-+import com.mojang.serialization.codecs.RecordCodecBuilder;
-+import java.util.List;
-+import java.util.Optional;
-+import net.minecraft.network.RegistryFriendlyByteBuf;
-+import net.minecraft.network.codec.ByteBufCodecs;
-+import net.minecraft.network.codec.StreamCodec;
-+import net.minecraft.util.ExtraCodecs;
-+import net.minecraft.world.effect.MobEffectInstance;
-+import net.minecraft.world.item.ItemStack;
-+import net.minecraft.world.level.ItemLike;
-+
-+public record FoodProperties(
-+    int nutrition, float saturation, boolean canAlwaysEat, float eatSeconds, Optional<ItemStack> usingConvertsTo, List<FoodProperties.PossibleEffect> effects
-+) {
-+    public static final float DEFAULT_EAT_SECONDS = 1.6F;
-+    public static final Codec<FoodProperties> DIRECT_CODEC = RecordCodecBuilder.create(
-+        instance -> instance.group(
-+                    ExtraCodecs.NON_NEGATIVE_INT.fieldOf("nutrition").forGetter(FoodProperties::nutrition),
-+                    Codec.FLOAT.fieldOf("saturation").forGetter(FoodProperties::saturation),
-+                    Codec.BOOL.optionalFieldOf("can_always_eat", Boolean.valueOf(false)).forGetter(FoodProperties::canAlwaysEat),
-+                    ExtraCodecs.POSITIVE_FLOAT.optionalFieldOf("eat_seconds", 1.6F).forGetter(FoodProperties::eatSeconds),
-+                    ItemStack.SINGLE_ITEM_CODEC.optionalFieldOf("using_converts_to").forGetter(FoodProperties::usingConvertsTo),
-+                    FoodProperties.PossibleEffect.CODEC.listOf().optionalFieldOf("effects", List.of()).forGetter(FoodProperties::effects)
-+                )
-+                .apply(instance, FoodProperties::new)
-+    );
-+    public static final StreamCodec<RegistryFriendlyByteBuf, FoodProperties> DIRECT_STREAM_CODEC = StreamCodec.composite(
-+        ByteBufCodecs.VAR_INT,
-+        FoodProperties::nutrition,
-+        ByteBufCodecs.FLOAT,
-+        FoodProperties::saturation,
-+        ByteBufCodecs.BOOL,
-+        FoodProperties::canAlwaysEat,
-+        ByteBufCodecs.FLOAT,
-+        FoodProperties::eatSeconds,
-+        ItemStack.STREAM_CODEC.apply(ByteBufCodecs::optional),
-+        FoodProperties::usingConvertsTo,
-+        FoodProperties.PossibleEffect.STREAM_CODEC.apply(ByteBufCodecs.list()),
-+        FoodProperties::effects,
-+        FoodProperties::new
-+    );
-+
-+    public int eatDurationTicks() {
-+        return (int)(this.eatSeconds * 20.0F);
-+    }
-+
-+    public static class Builder {
-+        private int nutrition;
-+        private float saturationModifier;
-+        private boolean canAlwaysEat;
-+        private float eatSeconds = 1.6F;
-+        private Optional<ItemStack> usingConvertsTo = Optional.empty();
-+        private final ImmutableList.Builder<FoodProperties.PossibleEffect> effects = ImmutableList.builder();
-+
-+        public FoodProperties.Builder nutrition(int nutrition) {
-+            this.nutrition = nutrition;
-+            return this;
-+        }
-+
-+        public FoodProperties.Builder saturationModifier(float saturationModifier) {
-+            this.saturationModifier = saturationModifier;
-+            return this;
-+        }
-+
-+        public FoodProperties.Builder alwaysEdible() {
-+            this.canAlwaysEat = true;
-+            return this;
-+        }
-+
-+        public FoodProperties.Builder fast() {
-+            this.eatSeconds = 0.8F;
-+            return this;
-+        }
-+
+@@ -76,11 +76,18 @@ public record FoodProperties(
+             return this;
+         }
+ 
 +        /** @deprecated NeoForge: Prefer {@link #effect(java.util.function.Supplier, float)} for DeferredRegister effects */
 +        @Deprecated
-+        public FoodProperties.Builder effect(MobEffectInstance effect, float chance) {
-+            this.effects.add(new FoodProperties.PossibleEffect(effect, chance));
-+            return this;
-+        }
-+
+         public FoodProperties.Builder effect(MobEffectInstance effect, float chance) {
+             this.effects.add(new FoodProperties.PossibleEffect(effect, chance));
+             return this;
+         }
+ 
 +        public FoodProperties.Builder effect(java.util.function.Supplier<MobEffectInstance> effectIn, float probability) {
 +            this.effects.add(new FoodProperties.PossibleEffect(effectIn, probability));
 +            return this;
 +        }
 +
-+        public FoodProperties.Builder usingConvertsTo(ItemLike item) {
-+            this.usingConvertsTo = Optional.of(new ItemStack(item));
-+            return this;
-+        }
-+
-+        public FoodProperties build() {
-+            float f = FoodConstants.saturationByModifier(this.nutrition, this.saturationModifier);
-+            return new FoodProperties(this.nutrition, f, this.canAlwaysEat, this.eatSeconds, this.usingConvertsTo, this.effects.build());
-+        }
-+    }
-+
+         public FoodProperties.Builder usingConvertsTo(ItemLike item) {
+             this.usingConvertsTo = Optional.of(new ItemStack(item));
+             return this;
+@@ -92,7 +99,7 @@ public record FoodProperties(
+         }
+     }
+ 
+-    public static record PossibleEffect(MobEffectInstance effect, float probability) {
 +    public static record PossibleEffect(java.util.function.Supplier<MobEffectInstance> effectSupplier, float probability) {
-+        public static final Codec<FoodProperties.PossibleEffect> CODEC = RecordCodecBuilder.create(
-+            instance -> instance.group(
-+                        MobEffectInstance.CODEC.fieldOf("effect").forGetter(FoodProperties.PossibleEffect::effect),
-+                        Codec.floatRange(0.0F, 1.0F).optionalFieldOf("probability", 1.0F).forGetter(FoodProperties.PossibleEffect::probability)
-+                    )
-+                    .apply(instance, FoodProperties.PossibleEffect::new)
-+        );
-+        public static final StreamCodec<RegistryFriendlyByteBuf, FoodProperties.PossibleEffect> STREAM_CODEC = StreamCodec.composite(
-+            MobEffectInstance.STREAM_CODEC,
-+            FoodProperties.PossibleEffect::effect,
-+            ByteBufCodecs.FLOAT,
-+            FoodProperties.PossibleEffect::probability,
-+            FoodProperties.PossibleEffect::new
-+        );
-+
+         public static final Codec<FoodProperties.PossibleEffect> CODEC = RecordCodecBuilder.create(
+             instance -> instance.group(
+                         MobEffectInstance.CODEC.fieldOf("effect").forGetter(FoodProperties.PossibleEffect::effect),
+@@ -108,8 +115,13 @@ public record FoodProperties(
+             FoodProperties.PossibleEffect::new
+         );
+ 
 +        // Public for CraftBukkit + codec constructors that pass a concrete MobEffectInstance.
 +        public PossibleEffect(MobEffectInstance effect, float probability) {
 +            this(() -> effect, probability);
 +        }
 +
-+        public MobEffectInstance effect() {
+         public MobEffectInstance effect() {
+-            return new MobEffectInstance(this.effect);
 +            return new MobEffectInstance(this.effectSupplier.get());
-+        }
-+    }
-+}
+         }
+     }
+ }
 diff --git a/src/main/java/net/minecraft/world/item/Item.java b/src/main/java/net/minecraft/world/item/Item.java
-new file mode 100644
-index 0000000000000000000000000000000000000000..a8d97662db9bb77f160a43d69e3f121b4f054aec
---- /dev/null
+index 8fd54bccb7af59da9113d8a289d12d8fad1fb467..a8d97662db9bb77f160a43d69e3f121b4f054aec 100644
+--- a/src/main/java/net/minecraft/world/item/Item.java
 +++ b/src/main/java/net/minecraft/world/item/Item.java
-@@ -0,0 +1,499 @@
-+package net.minecraft.world.item;
-+
-+import com.google.common.collect.Interner;
-+import com.google.common.collect.Interners;
-+import com.google.common.collect.Maps;
-+import com.mojang.logging.LogUtils;
-+import java.util.List;
-+import java.util.Map;
-+import java.util.Optional;
-+import javax.annotation.Nullable;
-+import net.minecraft.SharedConstants;
-+import net.minecraft.Util;
-+import net.minecraft.core.BlockPos;
-+import net.minecraft.core.Holder;
-+import net.minecraft.core.HolderLookup;
-+import net.minecraft.core.component.DataComponentMap;
+@@ -14,6 +14,7 @@ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.Holder;
+ import net.minecraft.core.HolderLookup;
+ import net.minecraft.core.component.DataComponentMap;
 +import net.minecraft.core.component.DataComponentPatch;
-+import net.minecraft.core.component.DataComponentType;
-+import net.minecraft.core.component.DataComponents;
-+import net.minecraft.core.registries.BuiltInRegistries;
-+import net.minecraft.network.chat.Component;
-+import net.minecraft.resources.ResourceKey;
-+import net.minecraft.resources.ResourceLocation;
-+import net.minecraft.sounds.SoundEvent;
-+import net.minecraft.sounds.SoundEvents;
-+import net.minecraft.util.Mth;
-+import net.minecraft.util.Unit;
-+import net.minecraft.world.InteractionHand;
-+import net.minecraft.world.InteractionResult;
-+import net.minecraft.world.InteractionResultHolder;
-+import net.minecraft.world.damagesource.DamageSource;
-+import net.minecraft.world.entity.Entity;
-+import net.minecraft.world.entity.EquipmentSlot;
-+import net.minecraft.world.entity.LivingEntity;
-+import net.minecraft.world.entity.SlotAccess;
-+import net.minecraft.world.entity.item.ItemEntity;
-+import net.minecraft.world.entity.player.Player;
-+import net.minecraft.world.flag.FeatureElement;
-+import net.minecraft.world.flag.FeatureFlag;
-+import net.minecraft.world.flag.FeatureFlagSet;
-+import net.minecraft.world.flag.FeatureFlags;
-+import net.minecraft.world.food.FoodProperties;
-+import net.minecraft.world.inventory.ClickAction;
-+import net.minecraft.world.inventory.Slot;
-+import net.minecraft.world.inventory.tooltip.TooltipComponent;
-+import net.minecraft.world.item.component.ItemAttributeModifiers;
-+import net.minecraft.world.item.component.Tool;
-+import net.minecraft.world.item.context.UseOnContext;
-+import net.minecraft.world.level.ClipContext;
-+import net.minecraft.world.level.ItemLike;
-+import net.minecraft.world.level.Level;
-+import net.minecraft.world.level.block.Block;
-+import net.minecraft.world.level.block.state.BlockState;
-+import net.minecraft.world.level.saveddata.maps.MapId;
-+import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
-+import net.minecraft.world.phys.BlockHitResult;
-+import net.minecraft.world.phys.Vec3;
-+import org.slf4j.Logger;
-+
-+public class Item implements FeatureElement, ItemLike {
-+    private static final Logger LOGGER = LogUtils.getLogger();
-+    public static final Map<Block, Item> BY_BLOCK = Maps.newHashMap();
-+    public static final ResourceLocation BASE_ATTACK_DAMAGE_ID = ResourceLocation.withDefaultNamespace("base_attack_damage");
-+    public static final ResourceLocation BASE_ATTACK_SPEED_ID = ResourceLocation.withDefaultNamespace("base_attack_speed");
-+    public static final int DEFAULT_MAX_STACK_SIZE = 64;
-+    public static final int ABSOLUTE_MAX_STACK_SIZE = 99;
-+    public static final int MAX_BAR_WIDTH = 13;
-+    private final Holder.Reference<Item> builtInRegistryHolder = BuiltInRegistries.ITEM.createIntrusiveHolder(this);
+ import net.minecraft.core.component.DataComponentType;
+ import net.minecraft.core.component.DataComponents;
+ import net.minecraft.core.registries.BuiltInRegistries;
+@@ -65,7 +66,8 @@ public class Item implements FeatureElement, ItemLike {
+     public static final int ABSOLUTE_MAX_STACK_SIZE = 99;
+     public static final int MAX_BAR_WIDTH = 13;
+     private final Holder.Reference<Item> builtInRegistryHolder = BuiltInRegistries.ITEM.createIntrusiveHolder(this);
+-    private final DataComponentMap components;
 +    // NeoForge AT: private-f — mutable so ModifyDefaultComponentsEvent can rewrite defaults
 +    private DataComponentMap components;
-+    @Nullable
-+    private final Item craftingRemainingItem;
-+    @Nullable
-+    private String descriptionId;
-+    private final FeatureFlagSet requiredFeatures;
-+
-+    public static int getId(Item item) {
-+        return item == null ? 0 : BuiltInRegistries.ITEM.getId(item);
-+    }
-+
-+    public static Item byId(int id) {
-+        return BuiltInRegistries.ITEM.byId(id);
-+    }
-+
-+    @Deprecated
-+    public static Item byBlock(Block block) {
-+        return BY_BLOCK.getOrDefault(block, Items.AIR);
-+    }
-+
-+    public Item(Item.Properties settings) {
-+        this.components = settings.buildAndValidateComponents();
-+        this.craftingRemainingItem = settings.craftingRemainingItem;
-+        this.requiredFeatures = settings.requiredFeatures;
-+        if (SharedConstants.IS_RUNNING_IN_IDE) {
-+            String string = this.getClass().getSimpleName();
-+            if (!string.endsWith("Item")) {
-+                LOGGER.error("Item classes should end with Item and {} doesn't.", string);
-+            }
-+        }
-+    }
-+
-+    @Deprecated
-+    public Holder.Reference<Item> builtInRegistryHolder() {
-+        return this.builtInRegistryHolder;
-+    }
-+
-+    public DataComponentMap components() {
-+        return this.components;
-+    }
-+
+     @Nullable
+     private final Item craftingRemainingItem;
+     @Nullable
+@@ -106,6 +108,18 @@ public class Item implements FeatureElement, ItemLike {
+         return this.components;
+     }
+ 
 +    /** @deprecated Neo: do not use, use {@link net.neoforged.neoforge.event.ModifyDefaultComponentsEvent} instead */
 +    @org.jetbrains.annotations.ApiStatus.Internal
 +    @Deprecated
@@ -755,383 +435,36 @@ index 0000000000000000000000000000000000000000..a8d97662db9bb77f160a43d69e3f121b
 +        this.components = Properties.COMPONENT_INTERNER.intern(Properties.validateComponents(builder.build()));
 +    }
 +
-+    public int getDefaultMaxStackSize() {
-+        return this.components.getOrDefault(DataComponents.MAX_STACK_SIZE, 1);
-+    }
-+
-+    public void onUseTick(Level world, LivingEntity user, ItemStack stack, int remainingUseTicks) {
-+    }
-+
-+    public void onDestroyed(ItemEntity entity) {
-+    }
-+
-+    public void verifyComponentsAfterLoad(ItemStack stack) {
-+    }
-+
-+    public boolean canAttackBlock(BlockState state, Level world, BlockPos pos, Player miner) {
-+        return true;
-+    }
-+
-+    @Override
-+    public Item asItem() {
-+        return this;
-+    }
-+
-+    public InteractionResult useOn(UseOnContext context) {
-+        return InteractionResult.PASS;
-+    }
-+
-+    public float getDestroySpeed(ItemStack stack, BlockState state) {
-+        Tool tool = stack.get(DataComponents.TOOL);
-+        return tool != null ? tool.getMiningSpeed(state) : 1.0F;
-+    }
-+
-+    public InteractionResultHolder<ItemStack> use(Level world, Player user, InteractionHand hand) {
-+        ItemStack itemStack = user.getItemInHand(hand);
-+        FoodProperties foodProperties = itemStack.get(DataComponents.FOOD);
-+        if (foodProperties != null) {
-+            if (user.canEat(foodProperties.canAlwaysEat())) {
-+                user.startUsingItem(hand);
-+                return InteractionResultHolder.consume(itemStack);
-+            } else {
-+                return InteractionResultHolder.fail(itemStack);
-+            }
-+        } else {
-+            return InteractionResultHolder.pass(user.getItemInHand(hand));
-+        }
-+    }
-+
-+    public ItemStack finishUsingItem(ItemStack stack, Level world, LivingEntity user) {
-+        FoodProperties foodProperties = stack.get(DataComponents.FOOD);
-+        return foodProperties != null ? user.eat(world, stack, foodProperties) : stack;
-+    }
-+
-+    public boolean isBarVisible(ItemStack stack) {
-+        return stack.isDamaged();
-+    }
-+
-+    public int getBarWidth(ItemStack stack) {
-+        return Mth.clamp(Math.round(13.0F - (float)stack.getDamageValue() * 13.0F / (float)stack.getMaxDamage()), 0, 13);
-+    }
-+
-+    public int getBarColor(ItemStack stack) {
-+        int i = stack.getMaxDamage();
-+        float f = Math.max(0.0F, ((float)i - (float)stack.getDamageValue()) / (float)i);
-+        return Mth.hsvToRgb(f / 3.0F, 1.0F, 1.0F);
-+    }
-+
-+    public boolean overrideStackedOnOther(ItemStack stack, Slot slot, ClickAction clickType, Player player) {
-+        return false;
-+    }
-+
-+    public boolean overrideOtherStackedOnMe(
-+        ItemStack stack, ItemStack otherStack, Slot slot, ClickAction clickType, Player player, SlotAccess cursorStackReference
-+    ) {
-+        return false;
-+    }
-+
-+    public float getAttackDamageBonus(Entity target, float baseAttackDamage, DamageSource damageSource) {
-+        return 0.0F;
-+    }
-+
-+    public boolean hurtEnemy(ItemStack stack, LivingEntity target, LivingEntity attacker) {
-+        return false;
-+    }
-+
-+    public void postHurtEnemy(ItemStack stack, LivingEntity target, LivingEntity attacker) {
-+    }
-+
-+    public boolean mineBlock(ItemStack stack, Level world, BlockState state, BlockPos pos, LivingEntity miner) {
-+        Tool tool = stack.get(DataComponents.TOOL);
-+        if (tool == null) {
-+            return false;
-+        } else {
-+            if (!world.isClientSide && state.getDestroySpeed(world, pos) != 0.0F && tool.damagePerBlock() > 0) {
-+                stack.hurtAndBreak(tool.damagePerBlock(), miner, EquipmentSlot.MAINHAND);
-+            }
-+
-+            return true;
-+        }
-+    }
-+
-+    public boolean isCorrectToolForDrops(ItemStack stack, BlockState state) {
-+        Tool tool = stack.get(DataComponents.TOOL);
-+        return tool != null && tool.isCorrectForDrops(state);
-+    }
-+
-+    public InteractionResult interactLivingEntity(ItemStack stack, Player user, LivingEntity entity, InteractionHand hand) {
-+        return InteractionResult.PASS;
-+    }
-+
-+    public Component getDescription() {
-+        return Component.translatable(this.getDescriptionId());
-+    }
-+
-+    @Override
-+    public String toString() {
-+        return BuiltInRegistries.ITEM.wrapAsHolder(this).getRegisteredName();
-+    }
-+
-+    protected String getOrCreateDescriptionId() {
-+        if (this.descriptionId == null) {
-+            this.descriptionId = Util.makeDescriptionId("item", BuiltInRegistries.ITEM.getKey(this));
-+        }
-+
-+        return this.descriptionId;
-+    }
-+
-+    public String getDescriptionId() {
-+        return this.getOrCreateDescriptionId();
-+    }
-+
-+    public String getDescriptionId(ItemStack stack) {
-+        return this.getDescriptionId();
-+    }
-+
-+    @Nullable
-+    public final Item getCraftingRemainingItem() {
-+        return this.craftingRemainingItem;
-+    }
-+
-+    public boolean hasCraftingRemainingItem() {
-+        return this.craftingRemainingItem != null;
-+    }
-+
-+    public void inventoryTick(ItemStack stack, Level world, Entity entity, int slot, boolean selected) {
-+    }
-+
-+    public void onCraftedBy(ItemStack stack, Level world, Player player) {
-+        this.onCraftedPostProcess(stack, world);
-+    }
-+
-+    public void onCraftedPostProcess(ItemStack stack, Level world) {
-+    }
-+
-+    public boolean isComplex() {
-+        return false;
-+    }
-+
-+    public UseAnim getUseAnimation(ItemStack stack) {
-+        return stack.has(DataComponents.FOOD) ? UseAnim.EAT : UseAnim.NONE;
-+    }
-+
-+    public int getUseDuration(ItemStack stack, LivingEntity user) {
-+        FoodProperties foodProperties = stack.get(DataComponents.FOOD);
-+        return foodProperties != null ? foodProperties.eatDurationTicks() : 0;
-+    }
-+
-+    public void releaseUsing(ItemStack stack, Level world, LivingEntity user, int remainingUseTicks) {
-+    }
-+
-+    public void appendHoverText(ItemStack stack, Item.TooltipContext context, List<Component> tooltip, TooltipFlag type) {
-+    }
-+
-+    public Optional<TooltipComponent> getTooltipImage(ItemStack stack) {
-+        return Optional.empty();
-+    }
-+
-+    public Component getName(ItemStack stack) {
-+        return Component.translatable(this.getDescriptionId(stack));
-+    }
-+
-+    public boolean isFoil(ItemStack stack) {
-+        return stack.isEnchanted();
-+    }
-+
-+    public boolean isEnchantable(ItemStack stack) {
-+        return stack.getMaxStackSize() == 1 && stack.has(DataComponents.MAX_DAMAGE);
-+    }
-+
-+    protected static BlockHitResult getPlayerPOVHitResult(Level world, Player player, ClipContext.Fluid fluidHandling) {
-+        Vec3 vec3 = player.getEyePosition();
-+        Vec3 vec32 = vec3.add(player.calculateViewVector(player.getXRot(), player.getYRot()).scale(player.blockInteractionRange()));
-+        return world.clip(new ClipContext(vec3, vec32, ClipContext.Block.OUTLINE, fluidHandling, player));
-+    }
-+
-+    public int getEnchantmentValue() {
-+        return 0;
-+    }
-+
-+    public boolean isValidRepairItem(ItemStack stack, ItemStack ingredient) {
-+        return false;
-+    }
-+
-+    @Deprecated
-+    public ItemAttributeModifiers getDefaultAttributeModifiers() {
-+        return ItemAttributeModifiers.EMPTY;
-+    }
-+
-+    public boolean useOnRelease(ItemStack stack) {
-+        return false;
-+    }
-+
-+    public ItemStack getDefaultInstance() {
-+        return new ItemStack(this);
-+    }
-+
-+    public SoundEvent getDrinkingSound() {
-+        return SoundEvents.GENERIC_DRINK;
-+    }
-+
-+    public SoundEvent getEatingSound() {
-+        return SoundEvents.GENERIC_EAT;
-+    }
-+
-+    public SoundEvent getBreakingSound() {
-+        return SoundEvents.ITEM_BREAK;
-+    }
-+
-+    public boolean canFitInsideContainerItems() {
-+        return true;
-+    }
-+
-+    @Override
-+    public FeatureFlagSet requiredFeatures() {
-+        return this.requiredFeatures;
-+    }
-+
-+    public static class Properties {
+     public int getDefaultMaxStackSize() {
+         return this.components.getOrDefault(DataComponents.MAX_STACK_SIZE, 1);
+     }
+@@ -342,7 +356,7 @@ public class Item implements FeatureElement, ItemLike {
+     }
+ 
+     public static class Properties {
+-        private static final Interner<DataComponentMap> COMPONENT_INTERNER = Interners.newStrongInterner();
 +        static final Interner<DataComponentMap> COMPONENT_INTERNER = Interners.newStrongInterner();
-+        @Nullable
-+        private DataComponentMap.Builder components;
-+        @Nullable
-+        Item craftingRemainingItem;
-+        FeatureFlagSet requiredFeatures = FeatureFlags.VANILLA_SET;
-+
-+        public Item.Properties food(FoodProperties foodComponent) {
-+            return this.component(DataComponents.FOOD, foodComponent);
-+        }
-+
-+        public Item.Properties stacksTo(int maxCount) {
-+            return this.component(DataComponents.MAX_STACK_SIZE, maxCount);
-+        }
-+
-+        public Item.Properties durability(int maxDamage) {
-+            this.component(DataComponents.MAX_DAMAGE, maxDamage);
-+            this.component(DataComponents.MAX_STACK_SIZE, 1);
-+            this.component(DataComponents.DAMAGE, 0);
-+            return this;
-+        }
-+
-+        public Item.Properties craftRemainder(Item recipeRemainder) {
-+            this.craftingRemainingItem = recipeRemainder;
-+            return this;
-+        }
-+
-+        public Item.Properties rarity(Rarity rarity) {
-+            return this.component(DataComponents.RARITY, rarity);
-+        }
-+
-+        public Item.Properties fireResistant() {
-+            return this.component(DataComponents.FIRE_RESISTANT, Unit.INSTANCE);
-+        }
-+
-+        public Item.Properties jukeboxPlayable(ResourceKey<JukeboxSong> songKey) {
-+            return this.component(DataComponents.JUKEBOX_PLAYABLE, new JukeboxPlayable(new EitherHolder<>(songKey), true));
-+        }
-+
-+        public Item.Properties requiredFeatures(FeatureFlag... features) {
-+            this.requiredFeatures = FeatureFlags.REGISTRY.subset(features);
-+            return this;
-+        }
-+
-+        public <T> Item.Properties component(DataComponentType<T> type, T value) {
-+            if (this.components == null) {
-+                this.components = DataComponentMap.builder().addAll(DataComponents.COMMON_ITEM_COMPONENTS);
-+            }
-+
-+            this.components.set(type, value);
-+            return this;
-+        }
-+
-+        public Item.Properties attributes(ItemAttributeModifiers attributeModifiersComponent) {
-+            return this.component(DataComponents.ATTRIBUTE_MODIFIERS, attributeModifiersComponent);
-+        }
-+
-+        DataComponentMap buildAndValidateComponents() {
+         @Nullable
+         private DataComponentMap.Builder components;
+         @Nullable
+@@ -400,12 +414,14 @@ public class Item implements FeatureElement, ItemLike {
+         }
+ 
+         DataComponentMap buildAndValidateComponents() {
+-            DataComponentMap dataComponentMap = this.buildComponents();
 +            return validateComponents(this.buildComponents());
 +        }
 +
 +        public static DataComponentMap validateComponents(DataComponentMap dataComponentMap) {
-+            if (dataComponentMap.has(DataComponents.DAMAGE) && dataComponentMap.getOrDefault(DataComponents.MAX_STACK_SIZE, 1) > 1) {
-+                throw new IllegalStateException("Item cannot have both durability and be stackable");
-+            }
+             if (dataComponentMap.has(DataComponents.DAMAGE) && dataComponentMap.getOrDefault(DataComponents.MAX_STACK_SIZE, 1) > 1) {
+                 throw new IllegalStateException("Item cannot have both durability and be stackable");
+-            } else {
+-                return dataComponentMap;
+             }
 +            return dataComponentMap;
-+        }
-+
-+        private DataComponentMap buildComponents() {
-+            return this.components == null ? DataComponents.COMMON_ITEM_COMPONENTS : COMPONENT_INTERNER.intern(this.components.build());
-+        }
-+    }
-+
-+    public interface TooltipContext {
-+        Item.TooltipContext EMPTY = new Item.TooltipContext() {
-+            @Nullable
-+            @Override
-+            public HolderLookup.Provider registries() {
-+                return null;
-+            }
-+
-+            @Override
-+            public float tickRate() {
-+                return 20.0F;
-+            }
-+
-+            @Nullable
-+            @Override
-+            public MapItemSavedData mapData(MapId mapIdComponent) {
-+                return null;
-+            }
-+        };
-+
-+        @Nullable
-+        HolderLookup.Provider registries();
-+
-+        float tickRate();
-+
-+        @Nullable
-+        MapItemSavedData mapData(MapId mapIdComponent);
-+
-+        static Item.TooltipContext of(@Nullable Level world) {
-+            return world == null ? EMPTY : new Item.TooltipContext() {
-+                @Override
-+                public HolderLookup.Provider registries() {
-+                    return world.registryAccess();
-+                }
-+
-+                @Override
-+                public float tickRate() {
-+                    return world.tickRateManager().tickrate();
-+                }
-+
-+                @Override
-+                public MapItemSavedData mapData(MapId mapIdComponent) {
-+                    return world.getMapData(mapIdComponent);
-+                }
-+            };
-+        }
-+
-+        static Item.TooltipContext of(HolderLookup.Provider registryLookup) {
-+            return new Item.TooltipContext() {
-+                @Override
-+                public HolderLookup.Provider registries() {
-+                    return registryLookup;
-+                }
-+
-+                @Override
-+                public float tickRate() {
-+                    return 20.0F;
-+                }
-+
-+                @Nullable
-+                @Override
-+                public MapItemSavedData mapData(MapId mapIdComponent) {
-+                    return null;
-+                }
-+            };
-+        }
-+    }
-+}
+         }
+ 
+         private DataComponentMap buildComponents() {
 diff --git a/src/main/java/net/minecraft/world/item/ItemStack.java b/src/main/java/net/minecraft/world/item/ItemStack.java
 index 7027faae6dfd69ff39cc15e8802f5c9ab45b0d13..37bfbf585aef7662629154c545e0d25eec8e3981 100644
 --- a/src/main/java/net/minecraft/world/item/ItemStack.java
@@ -1155,48 +488,42 @@ index 7027faae6dfd69ff39cc15e8802f5c9ab45b0d13..37bfbf585aef7662629154c545e0d25e
              });
          }
 diff --git a/src/main/java/net/minecraft/world/item/Rarity.java b/src/main/java/net/minecraft/world/item/Rarity.java
-new file mode 100644
-index 0000000000000000000000000000000000000000..d7f9150e073f4d168505bccb8f336c4ddb04ffaa
---- /dev/null
+index fc74e25def25629f0d33aa04e52f8b5da61e3f65..d7f9150e073f4d168505bccb8f336c4ddb04ffaa 100644
+--- a/src/main/java/net/minecraft/world/item/Rarity.java
 +++ b/src/main/java/net/minecraft/world/item/Rarity.java
-@@ -0,0 +1,63 @@
-+package net.minecraft.world.item;
-+
-+import com.mojang.serialization.Codec;
-+import io.netty.buffer.ByteBuf;
-+import java.util.function.IntFunction;
+@@ -3,13 +3,18 @@ package net.minecraft.world.item;
+ import com.mojang.serialization.Codec;
+ import io.netty.buffer.ByteBuf;
+ import java.util.function.IntFunction;
 +import java.util.function.UnaryOperator;
-+import net.minecraft.ChatFormatting;
+ import net.minecraft.ChatFormatting;
 +import net.minecraft.network.chat.Style;
-+import net.minecraft.network.codec.ByteBufCodecs;
-+import net.minecraft.network.codec.StreamCodec;
-+import net.minecraft.util.ByIdMap;
-+import net.minecraft.util.StringRepresentable;
-+
+ import net.minecraft.network.codec.ByteBufCodecs;
+ import net.minecraft.network.codec.StreamCodec;
+ import net.minecraft.util.ByIdMap;
+ import net.minecraft.util.StringRepresentable;
+ 
+-public enum Rarity implements StringRepresentable {
 +@net.neoforged.fml.common.asm.enumextension.IndexedEnum
 +@net.neoforged.fml.common.asm.enumextension.NamedEnum(1)
 +@net.neoforged.fml.common.asm.enumextension.NetworkedEnum(net.neoforged.fml.common.asm.enumextension.NetworkedEnum.NetworkCheck.BIDIRECTIONAL)
 +public enum Rarity implements StringRepresentable, net.neoforged.fml.common.asm.enumextension.IExtensibleEnum {
-+    COMMON(0, "common", ChatFormatting.WHITE),
-+    UNCOMMON(1, "uncommon", ChatFormatting.YELLOW),
-+    RARE(2, "rare", ChatFormatting.AQUA),
-+    EPIC(3, "epic", ChatFormatting.LIGHT_PURPLE);
-+
-+    public static final Codec<Rarity> CODEC = StringRepresentable.fromValues(Rarity::values);
-+    public static final IntFunction<Rarity> BY_ID = ByIdMap.continuous(value -> value.id, values(), ByIdMap.OutOfBoundsStrategy.ZERO);
-+    public static final StreamCodec<ByteBuf, Rarity> STREAM_CODEC = ByteBufCodecs.idMapper(BY_ID, value -> value.id);
-+    private final int id;
-+    private final String name;
-+    private final ChatFormatting color;
+     COMMON(0, "common", ChatFormatting.WHITE),
+     UNCOMMON(1, "uncommon", ChatFormatting.YELLOW),
+     RARE(2, "rare", ChatFormatting.AQUA),
+@@ -21,19 +26,38 @@ public enum Rarity implements StringRepresentable {
+     private final int id;
+     private final String name;
+     private final ChatFormatting color;
 +    private final UnaryOperator<Style> styleModifier;
-+
-+    private Rarity(final int index, final String name, final ChatFormatting formatting) {
-+        this.id = index;
-+        this.name = name;
-+        this.color = formatting;
+ 
+     private Rarity(final int index, final String name, final ChatFormatting formatting) {
+         this.id = index;
+         this.name = name;
+         this.color = formatting;
 +        this.styleModifier = style -> style.withColor(formatting);
-+    }
-+
+     }
+ 
 +    Rarity(int id, String name, UnaryOperator<Style> styleModifier) {
 +        this.id = id;
 +        this.name = name;
@@ -1206,23 +533,23 @@ index 0000000000000000000000000000000000000000..d7f9150e073f4d168505bccb8f336c4d
 +
 +    /** @deprecated NeoForge: Use {@link #getStyleModifier()} */
 +    @Deprecated
-+    public ChatFormatting color() {
-+        return this.color;
-+    }
-+
+     public ChatFormatting color() {
+         return this.color;
+     }
+ 
 +    public UnaryOperator<Style> getStyleModifier() {
 +        return this.styleModifier;
 +    }
 +
-+    @Override
-+    public String getSerializedName() {
-+        return this.name;
-+    }
+     @Override
+     public String getSerializedName() {
+         return this.name;
+     }
 +
 +    public static net.neoforged.fml.common.asm.enumextension.ExtensionInfo getExtensionInfo() {
 +        return net.neoforged.fml.common.asm.enumextension.ExtensionInfo.nonExtended(Rarity.class);
 +    }
-+}
+ }
 diff --git a/src/main/java/net/minecraft/world/level/block/FenceGateBlock.java b/src/main/java/net/minecraft/world/level/block/FenceGateBlock.java
 index 26ed17e433cbafbbf788231f27f296f08048adfe..8807b54befb1f88605bd5869752194e59fe57a3f 100644
 --- a/src/main/java/net/minecraft/world/level/block/FenceGateBlock.java
@@ -1382,98 +709,29 @@ index d0109633e8bdf109cfc9178963d7b6cf92f8b189..96054e3119b889754ee9b951d627bf2f
          }
  
 diff --git a/src/main/java/net/minecraft/world/level/levelgen/DebugLevelSource.java b/src/main/java/net/minecraft/world/level/levelgen/DebugLevelSource.java
-new file mode 100644
-index 0000000000000000000000000000000000000000..474a2c4e5486ac5d5fde4e560df54d293a69d991
---- /dev/null
+index a892a6cdaef15203921ba3cfaa3e277f0ffc1ab1..474a2c4e5486ac5d5fde4e560df54d293a69d991 100644
+--- a/src/main/java/net/minecraft/world/level/levelgen/DebugLevelSource.java
 +++ b/src/main/java/net/minecraft/world/level/levelgen/DebugLevelSource.java
-@@ -0,0 +1,151 @@
-+package net.minecraft.world.level.levelgen;
-+
-+import com.mojang.serialization.MapCodec;
-+import com.mojang.serialization.codecs.RecordCodecBuilder;
-+import java.util.List;
-+import java.util.concurrent.CompletableFuture;
-+import java.util.stream.Collectors;
-+import java.util.stream.StreamSupport;
-+import net.minecraft.core.BlockPos;
-+import net.minecraft.core.Holder;
-+import net.minecraft.core.SectionPos;
-+import net.minecraft.core.registries.BuiltInRegistries;
-+import net.minecraft.resources.RegistryOps;
-+import net.minecraft.server.level.WorldGenRegion;
-+import net.minecraft.util.Mth;
-+import net.minecraft.world.level.ChunkPos;
-+import net.minecraft.world.level.LevelHeightAccessor;
-+import net.minecraft.world.level.NoiseColumn;
-+import net.minecraft.world.level.StructureManager;
-+import net.minecraft.world.level.WorldGenLevel;
-+import net.minecraft.world.level.biome.Biome;
-+import net.minecraft.world.level.biome.BiomeManager;
-+import net.minecraft.world.level.biome.Biomes;
-+import net.minecraft.world.level.biome.FixedBiomeSource;
-+import net.minecraft.world.level.block.Blocks;
-+import net.minecraft.world.level.block.state.BlockState;
-+import net.minecraft.world.level.chunk.ChunkAccess;
-+import net.minecraft.world.level.chunk.ChunkGenerator;
-+import net.minecraft.world.level.levelgen.blending.Blender;
-+
-+public class DebugLevelSource extends ChunkGenerator {
-+    public static final MapCodec<DebugLevelSource> CODEC = RecordCodecBuilder.mapCodec(
-+        instance -> instance.group(RegistryOps.retrieveElement(Biomes.PLAINS)).apply(instance, instance.stable(DebugLevelSource::new))
-+    );
-+    private static final int BLOCK_MARGIN = 2;
+@@ -33,11 +33,12 @@ public class DebugLevelSource extends ChunkGenerator {
+         instance -> instance.group(RegistryOps.retrieveElement(Biomes.PLAINS)).apply(instance, instance.stable(DebugLevelSource::new))
+     );
+     private static final int BLOCK_MARGIN = 2;
+-    private static final List<BlockState> ALL_BLOCKS = StreamSupport.stream(BuiltInRegistries.BLOCK.spliterator(), false)
 +    // Neo: refreshed after mod blocks register via initValidStates()
 +    private static List<BlockState> ALL_BLOCKS = StreamSupport.stream(BuiltInRegistries.BLOCK.spliterator(), false)
-+        .flatMap(block -> block.getStateDefinition().getPossibleStates().stream())
-+        .collect(Collectors.toList());
+         .flatMap(block -> block.getStateDefinition().getPossibleStates().stream())
+         .collect(Collectors.toList());
+-    private static final int GRID_WIDTH = Mth.ceil(Mth.sqrt((float)ALL_BLOCKS.size()));
+-    private static final int GRID_HEIGHT = Mth.ceil((float)ALL_BLOCKS.size() / (float)GRID_WIDTH);
 +    private static int GRID_WIDTH = Mth.ceil(Mth.sqrt((float)ALL_BLOCKS.size()));
 +    private static int GRID_HEIGHT = Mth.ceil((float)ALL_BLOCKS.size() / (float)GRID_WIDTH);
-+    protected static final BlockState AIR = Blocks.AIR.defaultBlockState();
-+    protected static final BlockState BARRIER = Blocks.BARRIER.defaultBlockState();
-+    public static final int HEIGHT = 70;
-+    public static final int BARRIER_HEIGHT = 60;
-+
-+    public DebugLevelSource(Holder.Reference<Biome> biomeEntry) {
-+        super(new FixedBiomeSource(biomeEntry));
-+    }
-+
-+    @Override
-+    protected MapCodec<? extends ChunkGenerator> codec() {
-+        return CODEC;
-+    }
-+
-+    @Override
-+    public void buildSurface(WorldGenRegion region, StructureManager structures, RandomState noiseConfig, ChunkAccess chunk) {
-+    }
-+
-+    @Override
-+    public void applyBiomeDecoration(WorldGenLevel world, ChunkAccess chunk, StructureManager structureAccessor) {
-+        BlockPos.MutableBlockPos mutableBlockPos = new BlockPos.MutableBlockPos();
-+        ChunkPos chunkPos = chunk.getPos();
-+        int i = chunkPos.x;
-+        int j = chunkPos.z;
-+
-+        for (int k = 0; k < 16; k++) {
-+            for (int l = 0; l < 16; l++) {
-+                int m = SectionPos.sectionToBlockCoord(i, k);
-+                int n = SectionPos.sectionToBlockCoord(j, l);
-+                world.setBlock(mutableBlockPos.set(m, 60, n), BARRIER, 2);
-+                BlockState blockState = getBlockStateFor(m, n);
-+                world.setBlock(mutableBlockPos.set(m, 70, n), blockState, 2);
-+            }
-+        }
-+    }
-+
-+    @Override
-+    public CompletableFuture<ChunkAccess> fillFromNoise(Blender blender, RandomState noiseConfig, StructureManager structureAccessor, ChunkAccess chunk) {
-+        return CompletableFuture.completedFuture(chunk);
-+    }
-+
-+    @Override
-+    public int getBaseHeight(int x, int z, Heightmap.Types heightmap, LevelHeightAccessor world, RandomState noiseConfig) {
-+        return 0;
-+    }
-+
+     protected static final BlockState AIR = Blocks.AIR.defaultBlockState();
+     protected static final BlockState BARRIER = Blocks.BARRIER.defaultBlockState();
+     public static final int HEIGHT = 70;
+@@ -84,6 +85,14 @@ public class DebugLevelSource extends ChunkGenerator {
+         return 0;
+     }
+ 
 +    public static void initValidStates() {
 +        ALL_BLOCKS = StreamSupport.stream(BuiltInRegistries.BLOCK.spliterator(), false)
 +            .flatMap(block -> block.getStateDefinition().getPossibleStates().stream())
@@ -1482,59 +740,6 @@ index 0000000000000000000000000000000000000000..474a2c4e5486ac5d5fde4e560df54d29
 +        GRID_HEIGHT = Mth.ceil((float) ALL_BLOCKS.size() / (float) GRID_WIDTH);
 +    }
 +
-+    @Override
-+    public NoiseColumn getBaseColumn(int x, int z, LevelHeightAccessor world, RandomState noiseConfig) {
-+        return new NoiseColumn(0, new BlockState[0]);
-+    }
-+
-+    @Override
-+    public void addDebugScreenInfo(List<String> text, RandomState noiseConfig, BlockPos pos) {
-+    }
-+
-+    public static BlockState getBlockStateFor(int x, int z) {
-+        BlockState blockState = AIR;
-+        if (x > 0 && z > 0 && x % 2 != 0 && z % 2 != 0) {
-+            x /= 2;
-+            z /= 2;
-+            if (x <= GRID_WIDTH && z <= GRID_HEIGHT) {
-+                int i = Mth.abs(x * GRID_WIDTH + z);
-+                if (i < ALL_BLOCKS.size()) {
-+                    blockState = ALL_BLOCKS.get(i);
-+                }
-+            }
-+        }
-+
-+        return blockState;
-+    }
-+
-+    @Override
-+    public void applyCarvers(
-+        WorldGenRegion chunkRegion,
-+        long seed,
-+        RandomState noiseConfig,
-+        BiomeManager biomeAccess,
-+        StructureManager structureAccessor,
-+        ChunkAccess chunk,
-+        GenerationStep.Carving carverStep
-+    ) {
-+    }
-+
-+    @Override
-+    public void spawnOriginalMobs(WorldGenRegion region) {
-+    }
-+
-+    @Override
-+    public int getMinY() {
-+        return 0;
-+    }
-+
-+    @Override
-+    public int getGenDepth() {
-+        return 384;
-+    }
-+
-+    @Override
-+    public int getSeaLevel() {
-+        return 63;
-+    }
-+}
+     @Override
+     public NoiseColumn getBaseColumn(int x, int z, LevelHeightAccessor world, RandomState noiseConfig) {
+         return new NoiseColumn(0, new BlockState[0]);
