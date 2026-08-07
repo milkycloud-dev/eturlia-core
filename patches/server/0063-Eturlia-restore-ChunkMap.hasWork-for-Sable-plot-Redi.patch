@@ -8,7 +8,6 @@ Redirects the second Long2ObjectLinkedOpenHashMap.isEmpty() call.
 Restore vanilla-shaped empty maps + hasWork body.
 
 diff --git a/src/main/java/net/minecraft/server/level/ChunkMap.java b/src/main/java/net/minecraft/server/level/ChunkMap.java
-index 2755fd5336bcf10a921ed75f061a4595c7df548c..aaa40ca1eafed203aaec3fd9ebb868aacdecc1d0 100644
 --- a/src/main/java/net/minecraft/server/level/ChunkMap.java
 +++ b/src/main/java/net/minecraft/server/level/ChunkMap.java
 @@ -411,8 +411,12 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider

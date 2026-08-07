@@ -8,7 +8,6 @@ Update MinecraftServer, CraftWorld, CraftDataPackManager,
 ScheduleCommand, ChunkStatusTasks after Mojang-typed serverLevelData.
 
 diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
-index 3ddbf6ab14941919237f562a4bad2a039ab576c0..8f49231f4cb1230df4c5d450335d28e2e314e989 100644
 --- a/src/main/java/net/minecraft/server/MinecraftServer.java
 +++ b/src/main/java/net/minecraft/server/MinecraftServer.java
 @@ -1744,7 +1744,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
@@ -30,7 +29,6 @@ index 3ddbf6ab14941919237f562a4bad2a039ab576c0..8f49231f4cb1230df4c5d450335d28e2
              worldData.setDifficulty(worldData.isHardcore() ? Difficulty.HARD : difficulty);
              level.setSpawnSettings(worldData.getDifficulty() != Difficulty.PEACEFUL && ((DedicatedServer) this).settings.getProperties().spawnMonsters, this.isSpawningAnimals());
 diff --git a/src/main/java/net/minecraft/server/commands/ScheduleCommand.java b/src/main/java/net/minecraft/server/commands/ScheduleCommand.java
-index d090f94a9a8a314df01e83a031dd18d5c6f1caf9..88047970e057781875f17c24776691fd82eed5b6 100644
 --- a/src/main/java/net/minecraft/server/commands/ScheduleCommand.java
 +++ b/src/main/java/net/minecraft/server/commands/ScheduleCommand.java
 @@ -55,7 +55,7 @@ public class ScheduleCommand {
@@ -43,7 +41,6 @@ index d090f94a9a8a314df01e83a031dd18d5c6f1caf9..88047970e057781875f17c24776691fd
              ((Either) function.getSecond()).ifLeft((net_minecraft_commands_functions_commandfunction) -> {
                  String s = minecraftkey.toString();
 diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
-index ae1cc7907954478a4ca7468cfd24cf53c34f8664..e60f7f1c47144ac433c808d7acac91c757c9a697 100644
 --- a/src/main/java/net/minecraft/server/level/ServerLevel.java
 +++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
 @@ -202,7 +202,7 @@ public class ServerLevel extends Level implements WorldGenLevel, ca.spottedleaf.
@@ -74,7 +71,6 @@ index ae1cc7907954478a4ca7468cfd24cf53c34f8664..e60f7f1c47144ac433c808d7acac91c7
  
          this.getChunkSource().getDataStorage().save(async); // Paper - Write SavedData IO async
 diff --git a/src/main/java/net/minecraft/world/level/chunk/status/ChunkStatusTasks.java b/src/main/java/net/minecraft/world/level/chunk/status/ChunkStatusTasks.java
-index b993c4b2595e2879b25753c2e34530f3622c18fa..0b302bc153444ead90cf3ebe06b426bcc6900e4c 100644
 --- a/src/main/java/net/minecraft/world/level/chunk/status/ChunkStatusTasks.java
 +++ b/src/main/java/net/minecraft/world/level/chunk/status/ChunkStatusTasks.java
 @@ -38,7 +38,7 @@ public class ChunkStatusTasks {
@@ -87,7 +83,6 @@ index b993c4b2595e2879b25753c2e34530f3622c18fa..0b302bc153444ead90cf3ebe06b426bc
          }
  
 diff --git a/src/main/java/org/bukkit/craftbukkit/CraftWorld.java b/src/main/java/org/bukkit/craftbukkit/CraftWorld.java
-index 44943f3e3f2919257802ffdceb62160ad7de564d..5a9716aa8dac97afdb665d83db1da1729765072b 100644
 --- a/src/main/java/org/bukkit/craftbukkit/CraftWorld.java
 +++ b/src/main/java/org/bukkit/craftbukkit/CraftWorld.java
 @@ -1401,7 +1401,7 @@ public class CraftWorld extends CraftRegionAccessor implements World {
@@ -127,7 +122,6 @@ index 44943f3e3f2919257802ffdceb62160ad7de564d..5a9716aa8dac97afdb665d83db1da172
  
      @Override
 diff --git a/src/main/java/org/bukkit/craftbukkit/packs/CraftDataPackManager.java b/src/main/java/org/bukkit/craftbukkit/packs/CraftDataPackManager.java
-index c1800ad648bdc2de53736f80da8c3cd95801dbfd..0fc44c06b4241abc443879374a571c7658a06390 100644
 --- a/src/main/java/org/bukkit/craftbukkit/packs/CraftDataPackManager.java
 +++ b/src/main/java/org/bukkit/craftbukkit/packs/CraftDataPackManager.java
 @@ -52,7 +52,7 @@ public class CraftDataPackManager implements DataPackManager {

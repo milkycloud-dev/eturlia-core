@@ -9,7 +9,6 @@ of vanilla tickServer(BooleanSupplier). Add empty overload and call it
 at the end of the Folia tick.
 
 diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
-index afb282b4f6b7445a3412915d1d73762699d4ba4c..473345532990c507996a81ac7629be4bd89b98d7 100644
 --- a/src/main/java/net/minecraft/server/MinecraftServer.java
 +++ b/src/main/java/net/minecraft/server/MinecraftServer.java
 @@ -1714,6 +1714,35 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa

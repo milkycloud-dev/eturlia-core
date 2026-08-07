@@ -10,7 +10,6 @@ Level getLightBlock inject shape, furnace burn 5-arg, ConditionalOps for
 datapack registries and recipes.
 
 diff --git a/src/main/java/net/minecraft/resources/RegistryDataLoader.java b/src/main/java/net/minecraft/resources/RegistryDataLoader.java
-index 239e977689a9e973d71e1d4290501c07cc9e1bb4..a2b48c340c488d8821105b0b0aac2cdfdcbe4ee3 100644
 --- a/src/main/java/net/minecraft/resources/RegistryDataLoader.java
 +++ b/src/main/java/net/minecraft/resources/RegistryDataLoader.java
 @@ -197,21 +197,27 @@ public class RegistryDataLoader {
@@ -62,7 +61,6 @@ index 239e977689a9e973d71e1d4290501c07cc9e1bb4..a2b48c340c488d8821105b0b0aac2cdf
          for (Entry<ResourceLocation, Resource> entry : fileToIdConverter.listMatchingResources(resourceManager).entrySet()) {
              ResourceLocation resourceLocation = entry.getKey();
 diff --git a/src/main/java/net/minecraft/world/entity/monster/Creeper.java b/src/main/java/net/minecraft/world/entity/monster/Creeper.java
-index d1041f2a4f1b3ea29ad532006e18cdc30c5019fa..cd52f6dce882a487709775303b417c9b3060ecfd 100644
 --- a/src/main/java/net/minecraft/world/entity/monster/Creeper.java
 +++ b/src/main/java/net/minecraft/world/entity/monster/Creeper.java
 @@ -271,7 +271,13 @@ public class Creeper extends Monster implements PowerableMob {
@@ -81,7 +79,6 @@ index d1041f2a4f1b3ea29ad532006e18cdc30c5019fa..cd52f6dce882a487709775303b417c9b
              this.triggerOnDeathMobEffects(Entity.RemovalReason.KILLED);
              this.discard(EntityRemoveEvent.Cause.EXPLODE); // CraftBukkit - add Bukkit remove cause
 diff --git a/src/main/java/net/minecraft/world/inventory/CraftingMenu.java b/src/main/java/net/minecraft/world/inventory/CraftingMenu.java
-index f9e4714cb0ee74505ed72200abed7756aa68dc90..37786255b7d95f8fb7d0a2e10e4adf212434d353 100644
 --- a/src/main/java/net/minecraft/world/inventory/CraftingMenu.java
 +++ b/src/main/java/net/minecraft/world/inventory/CraftingMenu.java
 @@ -29,7 +29,7 @@ public class CraftingMenu extends RecipeBookMenu<CraftingInput, CraftingRecipe>
@@ -106,7 +103,6 @@ index f9e4714cb0ee74505ed72200abed7756aa68dc90..37786255b7d95f8fb7d0a2e10e4adf21
          this.access = context;
          this.player = playerInventory.player;
 diff --git a/src/main/java/net/minecraft/world/inventory/InventoryMenu.java b/src/main/java/net/minecraft/world/inventory/InventoryMenu.java
-index 6400a5a8a999fc0d3123821286b319d562438f5b..90cf8a592bb8b27bf7372ab1b066c1b0d3dc80ad 100644
 --- a/src/main/java/net/minecraft/world/inventory/InventoryMenu.java
 +++ b/src/main/java/net/minecraft/world/inventory/InventoryMenu.java
 @@ -41,7 +41,7 @@ public class InventoryMenu extends RecipeBookMenu<CraftingInput, CraftingRecipe>
@@ -131,7 +127,6 @@ index 6400a5a8a999fc0d3123821286b319d562438f5b..90cf8a592bb8b27bf7372ab1b066c1b0
          this.setTitle(Component.translatable("container.crafting")); // SPIGOT-4722: Allocate title for player inventory
          // CraftBukkit end
 diff --git a/src/main/java/net/minecraft/world/item/ProjectileWeaponItem.java b/src/main/java/net/minecraft/world/item/ProjectileWeaponItem.java
-index 32dd0b13a0819f597d8a93c6bc3a155781067544..2c8918525f2d154acc6133da0247df0bb0bb20bd 100644
 --- a/src/main/java/net/minecraft/world/item/ProjectileWeaponItem.java
 +++ b/src/main/java/net/minecraft/world/item/ProjectileWeaponItem.java
 @@ -115,8 +115,18 @@ public abstract class ProjectileWeaponItem extends Item {
@@ -154,7 +149,6 @@ index 32dd0b13a0819f597d8a93c6bc3a155781067544..2c8918525f2d154acc6133da0247df0b
          // Paper end
          if (projectileStack.isEmpty()) {
 diff --git a/src/main/java/net/minecraft/world/item/crafting/RecipeManager.java b/src/main/java/net/minecraft/world/item/crafting/RecipeManager.java
-index de7c77c1b25680ecc65f0f43f2391aff269a974f..9cf903cfcaf8c5fdeb8e95a6fe1ccf84e9a150ec 100644
 --- a/src/main/java/net/minecraft/world/item/crafting/RecipeManager.java
 +++ b/src/main/java/net/minecraft/world/item/crafting/RecipeManager.java
 @@ -57,19 +57,25 @@ public class RecipeManager extends SimpleJsonResourceReloadListener {
@@ -190,7 +184,6 @@ index de7c77c1b25680ecc65f0f43f2391aff269a974f..9cf903cfcaf8c5fdeb8e95a6fe1ccf84
                  RecipeManager.LOGGER.error("Parsing error loading recipe {}", minecraftkey, jsonparseexception);
              }
 diff --git a/src/main/java/net/minecraft/world/level/Level.java b/src/main/java/net/minecraft/world/level/Level.java
-index 61da660cbf67c69b9f69a604a352dc866aef410c..62097f2b55768c77d4a178030058a18f7c6ac36e 100644
 --- a/src/main/java/net/minecraft/world/level/Level.java
 +++ b/src/main/java/net/minecraft/world/level/Level.java
 @@ -1068,9 +1068,12 @@ public abstract class Level extends net.neoforged.neoforge.attachment.Attachment
@@ -210,7 +203,6 @@ index 61da660cbf67c69b9f69a604a352dc866aef410c..62097f2b55768c77d4a178030058a18f
          ca.spottedleaf.moonrise.common.util.TickThread.ensureTickThread((ServerLevel)this, pos, "Updating block asynchronously"); // Folia - region threading
          io.papermc.paper.threadedregions.RegionizedWorldData worldData = this.getCurrentWorldData(); // Folia - region threading
 diff --git a/src/main/java/net/minecraft/world/level/block/FlowerPotBlock.java b/src/main/java/net/minecraft/world/level/block/FlowerPotBlock.java
-index 521fdbaaa119a998d8a086eeef43dc4fbb6d7bc4..717f6513af758990fd2a6b35667ea0cc5cbb468f 100644
 --- a/src/main/java/net/minecraft/world/level/block/FlowerPotBlock.java
 +++ b/src/main/java/net/minecraft/world/level/block/FlowerPotBlock.java
 @@ -48,6 +48,8 @@ public class FlowerPotBlock extends Block {
@@ -266,7 +258,6 @@ index 521fdbaaa119a998d8a086eeef43dc4fbb6d7bc4..717f6513af758990fd2a6b35667ea0cc
      protected boolean isPathfindable(BlockState state, PathComputationType type) {
          return false;
 diff --git a/src/main/java/net/minecraft/world/level/block/SugarCaneBlock.java b/src/main/java/net/minecraft/world/level/block/SugarCaneBlock.java
-index c48c622e92cedeaa46b929c7adfedec98dd5a3fb..951c167556fd06cab9ea678a0a2983f0f43813dc 100644
 --- a/src/main/java/net/minecraft/world/level/block/SugarCaneBlock.java
 +++ b/src/main/java/net/minecraft/world/level/block/SugarCaneBlock.java
 @@ -64,7 +64,13 @@ public class SugarCaneBlock extends Block {
@@ -297,7 +288,6 @@ index c48c622e92cedeaa46b929c7adfedec98dd5a3fb..951c167556fd06cab9ea678a0a2983f0
      protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
          builder.add(SugarCaneBlock.AGE);
 diff --git a/src/main/java/net/minecraft/world/level/block/entity/AbstractFurnaceBlockEntity.java b/src/main/java/net/minecraft/world/level/block/entity/AbstractFurnaceBlockEntity.java
-index 730aca233f6e7564d4cb85b5b628d23c4f01d2f4..ad28b549c53de40c15fcbeac59e9f270a6ce8ad0 100644
 --- a/src/main/java/net/minecraft/world/level/block/entity/AbstractFurnaceBlockEntity.java
 +++ b/src/main/java/net/minecraft/world/level/block/entity/AbstractFurnaceBlockEntity.java
 @@ -77,6 +77,9 @@ public abstract class AbstractFurnaceBlockEntity extends BaseContainerBlockEntit

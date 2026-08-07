@@ -26,7 +26,6 @@ Lifecycle ordering fixes:
   stopServer() already fires ServerStoppingEvent.
 
 diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
-index 4ed79a51c89d54a7b2ab65a99b5b09cc807f4d4e..4b35c256ea3e6cf5405b950886ef621b4185dffb 100644
 --- a/src/main/java/net/minecraft/server/MinecraftServer.java
 +++ b/src/main/java/net/minecraft/server/MinecraftServer.java
 @@ -48,6 +48,11 @@ import java.util.concurrent.CompletableFuture;

@@ -9,7 +9,6 @@ IHolderExtension; Folia does not apply ModLauncher interface injection
 to remapped Holder, so declare the superinterface explicitly.
 
 diff --git a/src/main/java/net/minecraft/core/Holder.java b/src/main/java/net/minecraft/core/Holder.java
-index 4d2231868b786da9071c3dff2c073b478a486e8a..b28b9152ef46f8c41356ed350da3cd7e26dc58aa 100644
 --- a/src/main/java/net/minecraft/core/Holder.java
 +++ b/src/main/java/net/minecraft/core/Holder.java
 @@ -11,7 +11,7 @@ import net.minecraft.resources.ResourceKey;

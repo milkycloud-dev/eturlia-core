@@ -12,7 +12,6 @@ Interface injection does not apply to the nested Folia server jar, so implement
 IBlockExtension on Block and expose FireBlock burn/ignite odds.
 
 diff --git a/src/main/java/net/minecraft/world/level/block/Block.java b/src/main/java/net/minecraft/world/level/block/Block.java
-index 64759367cb0dd7401d7a12517a7448d3cbca1a82..dab36c16927f6e62769067a1739a5c527fb777b8 100644
 --- a/src/main/java/net/minecraft/world/level/block/Block.java
 +++ b/src/main/java/net/minecraft/world/level/block/Block.java
 @@ -62,7 +62,10 @@ import net.minecraft.world.phys.shapes.Shapes;
@@ -28,7 +27,6 @@ index 64759367cb0dd7401d7a12517a7448d3cbca1a82..dab36c16927f6e62769067a1739a5c52
      public static final MapCodec<Block> CODEC = simpleCodec(Block::new);
      private static final Logger LOGGER = LogUtils.getLogger();
 diff --git a/src/main/java/net/minecraft/world/level/block/FireBlock.java b/src/main/java/net/minecraft/world/level/block/FireBlock.java
-index 1862bb81db8caae29ae0bcf11b71eb035c97db5d..781ed7a0989c8e48f68917c153ba2bb436e26e70 100644
 --- a/src/main/java/net/minecraft/world/level/block/FireBlock.java
 +++ b/src/main/java/net/minecraft/world/level/block/FireBlock.java
 @@ -267,11 +267,12 @@ public class FireBlock extends BaseFireBlock {
