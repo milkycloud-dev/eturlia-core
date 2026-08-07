@@ -455,7 +455,7 @@ public class EturliaModLoadingPlugin {
     }
 
     /** Parses the {@code supportedMods} array. Entries without a modId are skipped. */
-    private List<ModEntry> parseModEntries(Object rawArray) {
+    List<ModEntry> parseModEntries(Object rawArray) { // package-private: exercised by EturliaCoreSelfTest
         List<ModEntry> entries = new ArrayList<>();
         if (!(rawArray instanceof List<?> list)) {
             return entries;
@@ -479,7 +479,7 @@ public class EturliaModLoadingPlugin {
     }
 
     /** Parses the {@code excludedMods} array. Entries without a modId are skipped. */
-    private List<ExcludedMod> parseExcludedMods(Object rawArray) {
+    List<ExcludedMod> parseExcludedMods(Object rawArray) { // package-private: exercised by EturliaCoreSelfTest
         List<ExcludedMod> entries = new ArrayList<>();
         if (!(rawArray instanceof List<?> list)) {
             return entries;

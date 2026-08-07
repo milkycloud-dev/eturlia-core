@@ -16,6 +16,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Fast feedback: the dependency-free core checks do not need the Folia/NeoForge
+  # toolchain, so they fail in seconds instead of after the full patch+jar build.
+  selftest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Eturlia core self-test
+        run: scripts/selftest.sh
+
   apply-and-jar:
     runs-on: ubuntu-latest
     timeout-minutes: 180
