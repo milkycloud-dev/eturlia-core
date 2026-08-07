@@ -32,7 +32,7 @@
 | **Артефакт** | `eturlia-1.21.1-neoforge-21.1.248.jar` |
 | **Launch target** | `eturliaserver` |
 | **Точка входа** | `eturlia.EturliaServer` |
-| **Релиз** | [v0.2.0](https://github.com/eturnercus/Core/releases/tag/v0.2.0) |
+| **Релиз** | [v0.2.2](https://github.com/eturnercus/Core/releases/tag/v0.2.2) |
 
 ## Как это работает
 
@@ -143,7 +143,7 @@ java -jar build/libs/eturlia-1.21.1-neoforge-21.1.248.jar --nogui
 
 ### Semver
 
-Теги `vMAJOR.MINOR.PATCH` (сейчас **v0.2.0**). Линия `0.x` — экспериментальная; ломающие NMS-патчи между минорными ожидаемы. Артефакт: `eturlia-1.21.1-neoforge-21.1.248.jar`.
+Теги `vMAJOR.MINOR.PATCH` (сейчас **v0.2.2**). Линия `0.x` — экспериментальная; ломающие NMS-патчи между минорными ожидаемы. Артефакт: `eturlia-1.21.1-neoforge-21.1.248.jar`.
 
 ## Структура репозитория
 
@@ -199,7 +199,7 @@ The goal is Folia’s multi-core scaling without giving up the NeoForge ecosyste
 | **Artifact** | `eturlia-1.21.1-neoforge-21.1.248.jar` |
 | **Launch target** | `eturliaserver` |
 | **Entry point** | `eturlia.EturliaServer` |
-| **Release** | [v0.2.0](https://github.com/eturnercus/Core/releases/tag/v0.2.0) |
+| **Release** | [v0.2.2](https://github.com/eturnercus/Core/releases/tag/v0.2.2) |
 
 ## How it works
 
@@ -308,7 +308,7 @@ Pack audit (mods + Folia plugins): [`docs/PACK_COMPAT_ASIC_2026-08.md`](./docs/P
 
 ### Semver
 
-Tags `vMAJOR.MINOR.PATCH` (currently **v0.2.0**). The `0.x` line is experimental; breaking NMS patches between minors are expected. Artifact: `eturlia-1.21.1-neoforge-21.1.248.jar`.
+Tags `vMAJOR.MINOR.PATCH` (currently **v0.2.2**). The `0.x` line is experimental; breaking NMS patches between minors are expected. Artifact: `eturlia-1.21.1-neoforge-21.1.248.jar`.
 
 ## Repository layout
 
