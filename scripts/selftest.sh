@@ -55,6 +55,10 @@ echo "=== eturlia.launcher self-test ==="
 "$JAVA" -cp "$OUT_DIR" eturlia.launcher.EturliaLauncherSelfTest
 
 echo
+echo "=== config: every documented key ==="
+"$JAVA" -cp "$OUT_DIR" eturlia.core.loading.EturliaConfigSelfTest
+
+echo
 echo "=== concurrency / stress ==="
 "$JAVA" -cp "$OUT_DIR" eturlia.core.loading.EturliaStressTest
 

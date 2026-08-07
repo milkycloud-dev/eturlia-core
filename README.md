@@ -164,6 +164,30 @@ Eturlia закрывает Folia↔NeoForge gaps **патчами ядра**. Н
   Пишет `eturlia.EturliaServer`, который launch handler ставит перед передачей управления
   в `org.bukkit.craftbukkit.Main`.
 
+### Конфиг ядра — `config/eturlia.yml`
+
+Всё, что специфично для Eturlia, настраивается здесь. Файл создаётся при первом запуске.
+Настройки Paper/Spigot/Bukkit **не дублируются** — для них свои файлы (ссылки в секции
+`reference:`).
+
+| Секция | Что настраивает |
+|--------|-----------------|
+| `threads` | потоки region-тика Folia и размер сетки регионов, chunk worker / IO, пул чата |
+| `jvm` | флаги **дочерней JVM**: `-Xmx`/`-Xms`, `Paper.WorkerThreadCount`, `Paper.IOThreadCount`, произвольные аргументы |
+| `chunks` | view/simulation distance, лимиты отправки и генерации чанков, автосейв |
+| `region` | режим region guard и валидации событий (`STRICT`/`WARN`/`PERMISSIVE`) |
+| `validation` | проверка region-потоков в coremod-хуках, строгий режим |
+| `logging` | файл диагностики ядра, печатать ли преды в консоль |
+| `crash` | каталог region-отчётов, ставить ли обработчик |
+| `hygiene` | что делать с несовместимыми jar'ами в `mods/` (`skip`/`warn`/`off`) |
+| `mods` | минимальная версия Lithostitched, строгая блокировка модов из манифеста |
+| `lod`, `spark`, `watchdog`, `console` | LOD-мост, spark, watchdog, цвет консоли |
+
+Количество потоков задаётся в двух местах, потому что применяется на разных этапах:
+`threads.region-tick-threads` и `region-grid-exponent` уходят в Folia
+(`GlobalConfiguration.threadedRegions`), а `jvm.worker-threads` / `jvm.io-threads` —
+на командную строку дочерней JVM, потому что Moonrise читает их до загрузки конфига.
+
 ### Консоль и логи
 
 При старте ядро печатает баннер ETURLIA и несколько строк статуса. Предупреждения и ошибки
@@ -384,6 +408,30 @@ Modder policy: [`docs/MODDER_POLICY.md`](./docs/MODDER_POLICY.md).
 - Region-annotated Eturlia reports → `eturlia-crash-reports/` (`-Deturlia.crash.dir=…`),
   written by `eturlia.EturliaServer`, which the launch handler installs before handing
   control to `org.bukkit.craftbukkit.Main`.
+
+### Core config — `config/eturlia.yml`
+
+Everything Eturlia-specific is configured here; the file is created on first boot. Paper /
+Spigot / Bukkit settings are **not duplicated** — see the `reference:` section for where those
+live.
+
+| Section | What it controls |
+|---------|------------------|
+| `threads` | Folia region tick threads and grid exponent, chunk worker / IO threads, chat pool |
+| `jvm` | flags for the **child JVM**: `-Xmx`/`-Xms`, `Paper.WorkerThreadCount`, `Paper.IOThreadCount`, arbitrary extra args |
+| `chunks` | view/simulation distance, chunk send and generation limits, autosave |
+| `region` | region guard and event validation mode (`STRICT`/`WARN`/`PERMISSIVE`) |
+| `validation` | region-thread checking in the coremod hooks, strict mode |
+| `logging` | core diagnostics file, whether warnings also print to the console |
+| `crash` | region-annotated report directory, whether to install the handler |
+| `hygiene` | what to do with incompatible jars in `mods/` (`skip`/`warn`/`off`) |
+| `mods` | minimum Lithostitched version, strict enforcement of the compatibility manifest |
+| `lod`, `spark`, `watchdog`, `console` | LOD bridge, spark, watchdog, console colour |
+
+Thread counts live in two places because they apply at different times:
+`threads.region-tick-threads` and `region-grid-exponent` are pushed into Folia's
+`GlobalConfiguration.threadedRegions`, while `jvm.worker-threads` / `jvm.io-threads` go on the
+child JVM's command line — Moonrise reads those before any config is parsed.
 
 ### Console and logs
 

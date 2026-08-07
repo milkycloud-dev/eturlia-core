@@ -36,7 +36,8 @@ public final class EturliaConfig {
 
     private static final Logger LOGGER = Logger.getLogger("EturliaConfig");
     private static final String RESOURCE = "/eturlia.yml";
-    private static final int CURRENT_VERSION = 1;
+    /** Bumped when keys are added/renamed; a mismatch warns that new keys are missing. */
+    private static final int CURRENT_VERSION = 2;
 
     private static volatile EturliaConfig INSTANCE = new EturliaConfig();
 
@@ -261,6 +262,66 @@ public final class EturliaConfig {
         return getBoolean("lod", "voxy-support", false);
     }
 
+    // -------------------------------------------------------------------------
+    // jvm: read by the launcher before the server JVM is started
+    // -------------------------------------------------------------------------
+
+    public String jvmHeapMax() {
+        return getString("jvm", "heap-max", "");
+    }
+
+    public String jvmHeapMin() {
+        return getString("jvm", "heap-min", "");
+    }
+
+    public int jvmWorkerThreads() {
+        return getInt("jvm", "worker-threads", 0);
+    }
+
+    public int jvmIoThreads() {
+        return getInt("jvm", "io-threads", 0);
+    }
+
+    public String jvmExtraArgs() {
+        return getString("jvm", "extra-args", "");
+    }
+
+    // -------------------------------------------------------------------------
+    // logging / crash / validation / hygiene
+    // -------------------------------------------------------------------------
+
+    public String logFile() {
+        return getString("logging", "file", "logs/eturlia.log");
+    }
+
+    public boolean consoleErrors() {
+        return getBoolean("logging", "console-errors", true);
+    }
+
+    public String crashDir() {
+        return getString("crash", "dir", "eturlia-crash-reports");
+    }
+
+    public boolean crashInstallHandler() {
+        return getBoolean("crash", "install-handler", true);
+    }
+
+    public boolean threadValidation() {
+        return getBoolean("validation", "thread-validation", true);
+    }
+
+    public boolean threadValidationStrict() {
+        return getBoolean("validation", "strict", false);
+    }
+
+    public String modsHygiene() {
+        return getString("hygiene", "mods-folder", "skip");
+    }
+
+    public boolean strictModLoading() {
+        return getBoolean("mods", "strict-loading", false);
+    }
+
     public String lithostitchedMinVersion() {
         return getString("mods", "require-lithostitched-min", "");
     }
@@ -305,6 +366,53 @@ public final class EturliaConfig {
         }
         System.setProperty("eturlia.lithostitched.block-prerelease",
                 Boolean.toString(blockLithostitchedPrerelease()));
+
+        // Logging / console. EturliaConsole reads these when it installs.
+        String log = logFile();
+        if (log != null && !log.isBlank()) {
+            System.setProperty("eturlia.log.file", log.trim());
+        }
+        System.setProperty("eturlia.console.errors", consoleErrors() ? "show" : "off");
+
+        // Crash reports.
+        String crash = crashDir();
+        if (crash != null && !crash.isBlank()) {
+            System.setProperty("eturlia.crash.dir", crash.trim());
+        }
+        System.setProperty("eturlia.crash.install-handler",
+                Boolean.toString(crashInstallHandler()));
+
+        // Region thread validation (read by RegionThreadValidatorHooks, which resolves these
+        // lazily precisely so a config loaded after class-init still takes effect).
+        System.setProperty("eturlia.thread.validation.enabled",
+                Boolean.toString(threadValidation()));
+        System.setProperty("eturlia.thread.validation.strict",
+                Boolean.toString(threadValidationStrict()));
+        eturlia.core.mixin.server.RegionThreadValidatorHooks.reloadModeFlags();
+
+        // mods/ hygiene.
+        String hygiene = modsHygiene();
+        if (hygiene != null && !hygiene.isBlank()) {
+            System.setProperty("eturlia.mods.hygiene", hygiene.trim().toLowerCase(Locale.ROOT));
+        }
+
+        // Mod compatibility manifest enforcement.
+        System.setProperty("eturlia.loading.strict", Boolean.toString(strictModLoading()));
+
+        // Thread counts. The launcher turns the jvm.* keys into flags on the server JVM;
+        // these mirror the threads.* values for anything reading them in-process.
+        int workers = chunkWorkerThreads();
+        if (workers >= 1) {
+            System.setProperty("eturlia.threads.chunk-worker", Integer.toString(workers));
+        }
+        int io = chunkIoThreads();
+        if (io >= 1) {
+            System.setProperty("eturlia.threads.chunk-io", Integer.toString(io));
+        }
+        int regionThreads = regionTickThreads();
+        if (regionThreads >= 1) {
+            System.setProperty("eturlia.threads.region-tick", Integer.toString(regionThreads));
+        }
     }
 
     public void applyToPaperGlobal(Object globalConfiguration) {
@@ -313,6 +421,35 @@ public final class EturliaConfig {
         }
         try {
             Class<?> gcClass = globalConfiguration.getClass();
+
+            // Folia region threading. threads.region-tick-threads / region-grid-exponent were
+            // documented but never applied to anything: GlobalConfiguration.threadedRegions is
+            // what TickRegions actually reads, and it is initialised from a @PostProcess hook,
+            // so the values have to be re-published through TickRegions.init after the edit.
+            try {
+                Object threaded = gcClass.getField("threadedRegions").get(globalConfiguration);
+                if (threaded != null) {
+                    boolean changed = false;
+                    int regionThreads = regionTickThreads();
+                    if (regionThreads >= 1) {
+                        setIntField(threaded, "threads", regionThreads);
+                        changed = true;
+                    }
+                    int gridExponent = regionGridExponent();
+                    if (gridExponent >= 0) {
+                        setIntField(threaded, "gridExponent", gridExponent);
+                        changed = true;
+                    }
+                    if (changed) {
+                        reinitTickRegions(threaded);
+                        LOGGER.info("Eturlia: region threading set to "
+                                + (regionThreads >= 1 ? regionThreads + " threads" : "auto threads")
+                                + ", grid exponent " + gridExponent);
+                    }
+                }
+            } catch (NoSuchFieldException e) {
+                LOGGER.fine("Eturlia: GlobalConfiguration.threadedRegions absent — not a Folia build?");
+            }
 
             Object chunkBasic = gcClass.getField("chunkLoadingBasic").get(globalConfiguration);
             if (chunkBasic != null) {
@@ -398,6 +535,30 @@ public final class EturliaConfig {
             // SecurityException, which are NOT ReflectiveOperationException. Letting those
             // escape aborted server configuration loading entirely.
             LOGGER.log(Level.WARNING, "Eturlia: failed to apply paper-global overrides from eturlia.yml", e);
+        }
+    }
+
+    /**
+     * Re-runs {@code TickRegions.init(threadedRegions)} after the thread count or grid
+     * exponent was changed, because Folia only reads them from that call.
+     *
+     * <p>Only meaningful before the region scheduler starts ticking; afterwards Folia ignores
+     * a changed thread count until restart, which is why this is logged rather than silent.</p>
+     */
+    private static void reinitTickRegions(Object threadedRegions) {
+        try {
+            Class<?> tickRegions = Class.forName("io.papermc.paper.threadedregions.TickRegions");
+            for (java.lang.reflect.Method method : tickRegions.getMethods()) {
+                if ("init".equals(method.getName()) && method.getParameterCount() == 1
+                        && method.getParameterTypes()[0].isInstance(threadedRegions)) {
+                    method.invoke(null, threadedRegions);
+                    return;
+                }
+            }
+            LOGGER.fine("Eturlia: TickRegions.init(ThreadedRegions) not found — thread count "
+                    + "will apply on the next restart");
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            LOGGER.log(Level.FINE, "Eturlia: could not re-init TickRegions", e);
         }
     }
 
@@ -504,8 +665,21 @@ public final class EturliaConfig {
         if (v instanceof Boolean b) {
             return b;
         }
+        if (v instanceof Number n) {
+            return n.intValue() != 0;
+        }
         if (v instanceof String s) {
-            return Boolean.parseBoolean(s.trim());
+            // Accept every YAML 1.1 spelling: the parser only coerces true/false so that
+            // string-valued settings such as console.color: off survive intact.
+            String t = s.trim().toLowerCase(Locale.ROOT);
+            if ("true".equals(t) || "yes".equals(t) || "on".equals(t) || "1".equals(t)) {
+                return true;
+            }
+            if ("false".equals(t) || "no".equals(t) || "off".equals(t) || "0".equals(t)) {
+                return false;
+            }
+            LOGGER.warning("eturlia.yml: " + section + "." + key + "=" + s
+                    + " is not a boolean — using the default (" + def + ")");
         }
         return def;
     }
@@ -609,10 +783,14 @@ public final class EturliaConfig {
                     || (value.startsWith("'") && value.endsWith("'"))) {
                 return value.substring(1, value.length() - 1);
             }
-            if ("true".equalsIgnoreCase(value) || "yes".equalsIgnoreCase(value) || "on".equalsIgnoreCase(value)) {
+            // Only "true"/"false" become booleans here. YAML 1.1 also treats on/off/yes/no as
+            // booleans, but this config uses those words as *values* — console.color: off and
+            // hygiene.mods-folder: off are strings — and coercing them turned the setting into
+            // the string "false". getBoolean() still accepts all of the spellings.
+            if ("true".equalsIgnoreCase(value)) {
                 return Boolean.TRUE;
             }
-            if ("false".equalsIgnoreCase(value) || "no".equalsIgnoreCase(value) || "off".equalsIgnoreCase(value)) {
+            if ("false".equalsIgnoreCase(value)) {
                 return Boolean.FALSE;
             }
             if ("null".equalsIgnoreCase(value) || "~".equals(value)) {

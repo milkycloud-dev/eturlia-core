@@ -59,6 +59,13 @@ for path in sorted(glob.glob('patches/server/*.patch')) + sorted(glob.glob('patc
             print('%s:%d change-free hunk (context only) — git am rejects this as "corrupt patch"'
                   % (path, header_line))
             bad += 1
+        # A context line for a blank source line must be " " (space + newline). Editors love
+        # to strip that trailing space, which turns it into a bare empty line; git is lenient
+        # about the last one but not about a bare empty line in the middle of a hunk.
+        for k in range(i + 1, j - 1):
+            if lines[k] == '' and lines[k + 1].startswith((' ', '+', '-')):
+                print('%s:%d blank context line lost its leading space' % (path, k + 1))
+                bad += 1
         i = j
 print('bad hunks:', bad)
 sys.exit(1 if bad else 0)
