@@ -11,6 +11,7 @@ At runtime, NeoForge's real ModifiableStructureInfo replaces this getter.
 For compile time, this returns the backing field directly.
 
 diff --git a/src/main/java/net/minecraft/world/level/levelgen/structure/Structure.java b/src/main/java/net/minecraft/world/level/levelgen/structure/Structure.java
+index 3fbd6e8d23f2e6020532530ef8ad7e64b8047d4b..457e677dc3c7f80507d8a44957d3f6f3314718cb 100644
 --- a/src/main/java/net/minecraft/world/level/levelgen/structure/Structure.java
 +++ b/src/main/java/net/minecraft/world/level/levelgen/structure/Structure.java
 @@ -60,6 +60,16 @@ public abstract class Structure {

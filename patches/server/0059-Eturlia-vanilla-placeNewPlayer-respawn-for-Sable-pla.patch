@@ -9,6 +9,7 @@ to placeNewPlayerWithSpawn / respawnWithReason and restore vanilla
 overloads so Sable @Inject TAIL matches.
 
 diff --git a/src/main/java/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java b/src/main/java/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java
+index 34c7fbf154c42d07b3b317b13632243a81904e3c..fe4678733af1195f1081ec14c08ea733d15ae869 100644
 --- a/src/main/java/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java
 +++ b/src/main/java/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java
 @@ -200,7 +200,7 @@ public class ServerConfigurationPacketListenerImpl extends ServerCommonPacketLis
@@ -21,6 +22,7 @@ diff --git a/src/main/java/net/minecraft/server/network/ServerConfigurationPacke
                              entityplayer,
                              clientData,
 diff --git a/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+index 089f9e18af34a72d036d8989749ea6b3d00de2ae..e40f702973e532de4926f4f3f12110f1332639f2 100644
 --- a/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
 +++ b/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
 @@ -3008,7 +3008,7 @@ public class ServerGamePacketListenerImpl extends ServerCommonPacketListenerImpl
@@ -42,6 +44,7 @@ diff --git a/src/main/java/net/minecraft/server/network/ServerGamePacketListener
                          this.player.setGameMode(GameType.SPECTATOR, org.bukkit.event.player.PlayerGameModeChangeEvent.Cause.HARDCORE_DEATH, null); // Paper - Expand PlayerGameModeChangeEvent
                          ((GameRules.BooleanValue) this.player.level().getGameRules().getRule(GameRules.RULE_SPECTATORSGENERATECHUNKS)).set(false, this.player.serverLevel()); // CraftBukkit - per-world
 diff --git a/src/main/java/net/minecraft/server/players/PlayerList.java b/src/main/java/net/minecraft/server/players/PlayerList.java
+index 2c2a14dcfb88379e83ba5d875fc0bc268d1fbd0c..542d44dcad5dd9c7e3be549b1cddb1f4f8dbf5af 100644
 --- a/src/main/java/net/minecraft/server/players/PlayerList.java
 +++ b/src/main/java/net/minecraft/server/players/PlayerList.java
 @@ -350,7 +350,12 @@ public abstract class PlayerList {
@@ -92,6 +95,7 @@ diff --git a/src/main/java/net/minecraft/server/players/PlayerList.java b/src/ma
          }
          // Folia end - region threading
 diff --git a/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java b/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
+index 12a2da086f249b3dbd61e5749b9856a2fce9ac7b..7a0285076a7b6ac6e9dc56c97770fafa80a1c5cf 100644
 --- a/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
 +++ b/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
 @@ -1510,7 +1510,7 @@ public class CraftPlayer extends CraftHumanEntity implements Player {

@@ -24,6 +24,7 @@ diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/
  
          // CraftBukkit start - moved to WorldServer.save
 diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
+index f70f7c5ef779c52fbf73938ea9f0bf0562c408a4..33a85bdd2858e90ca4450c8c8e303d0adae22cf6 100644
 --- a/src/main/java/net/minecraft/server/level/ServerLevel.java
 +++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
 @@ -1556,12 +1556,12 @@ public class ServerLevel extends Level implements WorldGenLevel, ca.spottedleaf.

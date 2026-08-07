@@ -8,6 +8,7 @@ CraftBukkit 1-arg saveWithoutId had no CompoundTag.put, so Sable's
 descriptor-less Redirect failed (0 targets). Add a dead put anchor.
 
 diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
+index b7b1519e26867407ce378374cfc37d01b592aad9..b909620e11fa51652dd591e7822b5ac2cda5a718 100644
 --- a/src/main/java/net/minecraft/world/entity/Entity.java
 +++ b/src/main/java/net/minecraft/world/entity/Entity.java
 @@ -2417,7 +2417,12 @@ public abstract class Entity extends net.neoforged.neoforge.attachment.Attachmen

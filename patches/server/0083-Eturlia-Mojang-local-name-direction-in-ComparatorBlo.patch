@@ -8,6 +8,7 @@ Create Simulated ComparatorBlockMixin uses MixinExtras @Local(name="direction").
 CraftBukkit renamed the local to enumdirection, which breaks Aeronautics/Simulated boot.
 
 diff --git a/src/main/java/net/minecraft/world/level/block/ComparatorBlock.java b/src/main/java/net/minecraft/world/level/block/ComparatorBlock.java
+index bc78a86260ec368ce882ac9c8f48354c06c586dd..b62b2267efceff9544bda37a62a1ab5161a43052 100644
 --- a/src/main/java/net/minecraft/world/level/block/ComparatorBlock.java
 +++ b/src/main/java/net/minecraft/world/level/block/ComparatorBlock.java
 @@ -88,16 +88,17 @@ public class ComparatorBlock extends DiodeBlock implements EntityBlock {

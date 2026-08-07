@@ -10,6 +10,7 @@ Add NeoForge CommonHooks/EventHooks calls to vanilla classes:
 - ItemStack: ItemTooltipEvent
 
 diff --git a/src/main/java/net/minecraft/world/entity/LivingEntity.java b/src/main/java/net/minecraft/world/entity/LivingEntity.java
+index c746e9dbc52ce75d1fc89c750900828462c49686..72b96e8733a0302ecaf38d25eda2660a39c9fe1f 100644
 --- a/src/main/java/net/minecraft/world/entity/LivingEntity.java
 +++ b/src/main/java/net/minecraft/world/entity/LivingEntity.java
 @@ -136,6 +136,7 @@ import org.slf4j.Logger;
@@ -60,6 +61,7 @@ diff --git a/src/main/java/net/minecraft/world/entity/LivingEntity.java b/src/ma
  
          if (f > 1.0E-5F) {
 diff --git a/src/main/java/net/minecraft/world/entity/item/ItemEntity.java b/src/main/java/net/minecraft/world/entity/item/ItemEntity.java
+index 9955d553dc016751edc50d9c8134cc1bb16c025e..820674e93c6fb32a84a9213af9f7e8eceb0f3baf 100644
 --- a/src/main/java/net/minecraft/world/entity/item/ItemEntity.java
 +++ b/src/main/java/net/minecraft/world/entity/item/ItemEntity.java
 @@ -29,6 +29,7 @@ import net.minecraft.world.level.Level;
@@ -91,6 +93,7 @@ diff --git a/src/main/java/net/minecraft/world/entity/item/ItemEntity.java b/src
              ItemStack itemstack = this.getItem();
              Item item = itemstack.getItem();
 diff --git a/src/main/java/net/minecraft/world/entity/projectile/Projectile.java b/src/main/java/net/minecraft/world/entity/projectile/Projectile.java
+index 0e831070fe7a9ac58de4b25b74a53b38334c695a..2d350e92748e8e337004ee76eae47a4d3a4b8a11 100644
 --- a/src/main/java/net/minecraft/world/entity/projectile/Projectile.java
 +++ b/src/main/java/net/minecraft/world/entity/projectile/Projectile.java
 @@ -29,6 +29,7 @@ import net.minecraft.world.phys.BlockHitResult;
@@ -112,6 +115,7 @@ diff --git a/src/main/java/net/minecraft/world/entity/projectile/Projectile.java
  
          if (movingobjectposition_enummovingobjecttype == HitResult.Type.ENTITY) {
 diff --git a/src/main/java/net/minecraft/world/item/ItemStack.java b/src/main/java/net/minecraft/world/item/ItemStack.java
+index 176ff4c3f367f2359303f7cd09d65b6adbc00a40..7027faae6dfd69ff39cc15e8802f5c9ab45b0d13 100644
 --- a/src/main/java/net/minecraft/world/item/ItemStack.java
 +++ b/src/main/java/net/minecraft/world/item/ItemStack.java
 @@ -88,6 +88,7 @@ import net.minecraft.world.item.enchantment.ItemEnchantments;

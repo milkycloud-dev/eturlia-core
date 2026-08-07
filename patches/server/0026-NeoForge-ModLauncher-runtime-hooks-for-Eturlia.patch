@@ -9,6 +9,7 @@ CrashReportCategory.setStackTrace, BuiltInRegistries.getVanillaRegistrationOrder
 ResourceLocation.compareNamespaced, and soft-continue ServerModLoader.load().
 
 diff --git a/src/main/java/io/papermc/paper/PaperBootstrap.java b/src/main/java/io/papermc/paper/PaperBootstrap.java
+index d543b1b107ab8d3eeb1fc3c1cadf489928d2786e..8b3df5547f33ba0d1fe2badb417849516d5241d7 100644
 --- a/src/main/java/io/papermc/paper/PaperBootstrap.java
 +++ b/src/main/java/io/papermc/paper/PaperBootstrap.java
 @@ -18,6 +18,8 @@ public final class PaperBootstrap {
@@ -21,6 +22,7 @@ diff --git a/src/main/java/io/papermc/paper/PaperBootstrap.java b/src/main/java/
      }
  
 diff --git a/src/main/java/io/papermc/paper/SparksFly.java b/src/main/java/io/papermc/paper/SparksFly.java
+index 4b30b05dcd99176715d49133fb99b96383a0ecbc..9825ba84d1592459cd401b7d4f9accba49366248 100644
 --- a/src/main/java/io/papermc/paper/SparksFly.java
 +++ b/src/main/java/io/papermc/paper/SparksFly.java
 @@ -109,7 +109,9 @@ public final class SparksFly {
@@ -45,6 +47,7 @@ diff --git a/src/main/java/io/papermc/paper/SparksFly.java b/src/main/java/io/pa
  
      private static boolean isPluginEnabled(final Server server) {
 diff --git a/src/main/java/net/minecraft/CrashReportCategory.java b/src/main/java/net/minecraft/CrashReportCategory.java
+index 2176171954609fd88f97f93408e14e018c1d6eaa..d3d9ad0faf9fccc10235fa7059ae0acf938051ef 100644
 --- a/src/main/java/net/minecraft/CrashReportCategory.java
 +++ b/src/main/java/net/minecraft/CrashReportCategory.java
 @@ -169,6 +169,11 @@ public class CrashReportCategory {
@@ -60,6 +63,7 @@ diff --git a/src/main/java/net/minecraft/CrashReportCategory.java b/src/main/jav
          if (state != null) {
              element.setDetail("Block", state::toString);
 diff --git a/src/main/java/net/minecraft/core/MappedRegistry.java b/src/main/java/net/minecraft/core/MappedRegistry.java
+index f22d22ebcedcc9c20225677844c86a1ad27c4211..545ee62ebb9ce9bfc28428f98ae116c415f373c1 100644
 --- a/src/main/java/net/minecraft/core/MappedRegistry.java
 +++ b/src/main/java/net/minecraft/core/MappedRegistry.java
 @@ -31,7 +31,7 @@ import net.minecraft.tags.TagKey;
@@ -120,6 +124,7 @@ diff --git a/src/main/java/net/minecraft/core/MappedRegistry.java b/src/main/jav
      // used to clear intrusive holders from GameEvent, Item, Block, EntityType, and Fluid from unused instances of those types
      public void clearIntrusiveHolder(final T instance) {
 diff --git a/src/main/java/net/minecraft/core/Registry.java b/src/main/java/net/minecraft/core/Registry.java
+index a3f9ecf91e09719ccdffaa80bc47c189c46cc530..9fe833606a5e0dc1360af1aad7e9c82236e25246 100644
 --- a/src/main/java/net/minecraft/core/Registry.java
 +++ b/src/main/java/net/minecraft/core/Registry.java
 @@ -22,7 +22,7 @@ import net.minecraft.tags.TagKey;
@@ -141,6 +146,7 @@ diff --git a/src/main/java/net/minecraft/core/Registry.java b/src/main/java/net/
  
      default Optional<Holder<T>> getRandomElementOf(TagKey<T> tag, RandomSource random) {
 diff --git a/src/main/java/net/minecraft/core/registries/BuiltInRegistries.java b/src/main/java/net/minecraft/core/registries/BuiltInRegistries.java
+index 0497318e8f647453f38f3a16a8be6bd9aa19253f..0c211bdefd4e35089287387d65b399dfae832a17 100644
 --- a/src/main/java/net/minecraft/core/registries/BuiltInRegistries.java
 +++ b/src/main/java/net/minecraft/core/registries/BuiltInRegistries.java
 @@ -376,6 +376,11 @@ public class BuiltInRegistries {
@@ -156,6 +162,7 @@ diff --git a/src/main/java/net/minecraft/core/registries/BuiltInRegistries.java 
      interface RegistryBootstrap<T> {
          Object run(Registry<T> registry);
 diff --git a/src/main/java/net/minecraft/locale/Language.java b/src/main/java/net/minecraft/locale/Language.java
+index a9bca1d10553f1406f7dbce3f7c40378b6abdc10..a1d809d4f250c8df2786fc623830f8bf4c58481a 100644
 --- a/src/main/java/net/minecraft/locale/Language.java
 +++ b/src/main/java/net/minecraft/locale/Language.java
 @@ -65,21 +65,51 @@ public abstract class Language {
@@ -212,6 +219,7 @@ diff --git a/src/main/java/net/minecraft/locale/Language.java b/src/main/java/ne
      public static Language getInstance() {
          return instance;
 diff --git a/src/main/java/net/minecraft/network/FriendlyByteBuf.java b/src/main/java/net/minecraft/network/FriendlyByteBuf.java
+index 0cd6a50837efce87ca052a0e1e24db2b75761196..77f93d6eddf76e4442112519f8c3e5e93b9530c7 100644
 --- a/src/main/java/net/minecraft/network/FriendlyByteBuf.java
 +++ b/src/main/java/net/minecraft/network/FriendlyByteBuf.java
 @@ -1257,6 +1257,13 @@ public class FriendlyByteBuf extends ByteBuf {
@@ -229,6 +237,7 @@ diff --git a/src/main/java/net/minecraft/network/FriendlyByteBuf.java b/src/main
          this.source.writeShort(i);
          return this;
 diff --git a/src/main/java/net/minecraft/resources/ResourceLocation.java b/src/main/java/net/minecraft/resources/ResourceLocation.java
+index 1967c43ee3a12e63365cc40ee6565307e2fd73cf..4384ed2c99a360bbb988ec86d315d39dacce3865 100644
 --- a/src/main/java/net/minecraft/resources/ResourceLocation.java
 +++ b/src/main/java/net/minecraft/resources/ResourceLocation.java
 @@ -171,6 +171,12 @@ public final class ResourceLocation implements Comparable<ResourceLocation> {
@@ -245,6 +254,7 @@ diff --git a/src/main/java/net/minecraft/resources/ResourceLocation.java b/src/m
          return this.toString().replace('/', '_').replace(':', '_');
      }
 diff --git a/src/main/java/net/minecraft/server/Main.java b/src/main/java/net/minecraft/server/Main.java
+index 581bd217304e0f9e0b2113c335694805dfb4e2a1..bb183cc65ca18937dd56a6dd00bd48385d901219 100644
 --- a/src/main/java/net/minecraft/server/Main.java
 +++ b/src/main/java/net/minecraft/server/Main.java
 @@ -123,6 +123,20 @@ public class Main {
@@ -361,6 +371,7 @@ diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/
          return this.isSaving;
      }
 diff --git a/src/main/java/net/minecraft/tags/BlockTags.java b/src/main/java/net/minecraft/tags/BlockTags.java
+index 155556bb4f8b2e867a032050803aaecf771c8ac8..77b45a0c3f7a41bc0f470a3332087baa51bdb4c8 100644
 --- a/src/main/java/net/minecraft/tags/BlockTags.java
 +++ b/src/main/java/net/minecraft/tags/BlockTags.java
 @@ -196,4 +196,8 @@ public final class BlockTags {
@@ -373,6 +384,7 @@ diff --git a/src/main/java/net/minecraft/tags/BlockTags.java b/src/main/java/net
 +    }
  }
 diff --git a/src/main/java/net/minecraft/tags/FluidTags.java b/src/main/java/net/minecraft/tags/FluidTags.java
+index cb6506f1b9aeab44368e94f02aa46f2293550f49..271f2d2a107be9bdfbcde74234d2b223f27f49f7 100644
 --- a/src/main/java/net/minecraft/tags/FluidTags.java
 +++ b/src/main/java/net/minecraft/tags/FluidTags.java
 @@ -14,4 +14,8 @@ public final class FluidTags {
@@ -385,6 +397,7 @@ diff --git a/src/main/java/net/minecraft/tags/FluidTags.java b/src/main/java/net
 +    }
  }
 diff --git a/src/main/java/net/minecraft/tags/ItemTags.java b/src/main/java/net/minecraft/tags/ItemTags.java
+index c0dd56eb5e70d2a121e87f69b5502f333a89ece5..4766de7e003eb0f3f2ae14ea12e1771d85ba3c47 100644
 --- a/src/main/java/net/minecraft/tags/ItemTags.java
 +++ b/src/main/java/net/minecraft/tags/ItemTags.java
 @@ -159,4 +159,8 @@ public final class ItemTags {
@@ -397,6 +410,7 @@ diff --git a/src/main/java/net/minecraft/tags/ItemTags.java b/src/main/java/net/
 +    }
  }
 diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
+index 2ccc358daae43dcebf03db64526f17fbd9df23f8..9d53444cedacfc0c76344437dfc04e024088657b 100644
 --- a/src/main/java/net/minecraft/world/entity/Entity.java
 +++ b/src/main/java/net/minecraft/world/entity/Entity.java
 @@ -167,7 +167,7 @@ import org.bukkit.event.player.PlayerTeleportEvent;
@@ -409,6 +423,7 @@ diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/jav
      // CraftBukkit start
      private static final int CURRENT_LEVEL = 2;
 diff --git a/src/main/java/net/minecraft/world/entity/LivingEntity.java b/src/main/java/net/minecraft/world/entity/LivingEntity.java
+index 72b96e8733a0302ecaf38d25eda2660a39c9fe1f..6f1ab20d08e06d9cb4d71513d13ec4006827d9fb 100644
 --- a/src/main/java/net/minecraft/world/entity/LivingEntity.java
 +++ b/src/main/java/net/minecraft/world/entity/LivingEntity.java
 @@ -2141,10 +2141,15 @@ public abstract class LivingEntity extends Entity implements Attackable {
@@ -430,6 +445,7 @@ diff --git a/src/main/java/net/minecraft/world/entity/LivingEntity.java b/src/ma
  
          if (i > 0) {
 diff --git a/src/main/java/net/minecraft/world/entity/item/ItemEntity.java b/src/main/java/net/minecraft/world/entity/item/ItemEntity.java
+index 820674e93c6fb32a84a9213af9f7e8eceb0f3baf..aa4402d29a92912ebd355e12b38f061c12672f40 100644
 --- a/src/main/java/net/minecraft/world/entity/item/ItemEntity.java
 +++ b/src/main/java/net/minecraft/world/entity/item/ItemEntity.java
 @@ -469,8 +469,11 @@ public class ItemEntity extends Entity implements TraceableEntity {
@@ -447,6 +463,7 @@ diff --git a/src/main/java/net/minecraft/world/entity/item/ItemEntity.java b/src
          if (!this.level().isClientSide) {
              ItemStack itemstack = this.getItem();
 diff --git a/src/main/java/net/minecraft/world/item/DyeColor.java b/src/main/java/net/minecraft/world/item/DyeColor.java
+index 0d04a0107bd1a8a2b9aeb4be55025cd554e8fb79..01bcaa0ec801d04b0dfe303730afb2a949e3cf4b 100644
 --- a/src/main/java/net/minecraft/world/item/DyeColor.java
 +++ b/src/main/java/net/minecraft/world/item/DyeColor.java
 @@ -8,9 +8,14 @@ import java.util.stream.Collectors;
@@ -512,6 +529,7 @@ diff --git a/src/main/java/net/minecraft/world/item/DyeColor.java b/src/main/jav
 +    }
  }
 diff --git a/src/main/java/net/minecraft/world/level/Explosion.java b/src/main/java/net/minecraft/world/level/Explosion.java
+index d2dfbcd5aa578e492b57588e77a95deb6a5e0e32..074b24413c80c3f5f1584e5f4fb35e05990b2014 100644
 --- a/src/main/java/net/minecraft/world/level/Explosion.java
 +++ b/src/main/java/net/minecraft/world/level/Explosion.java
 @@ -534,9 +534,8 @@ public class Explosion {
@@ -527,6 +545,7 @@ diff --git a/src/main/java/net/minecraft/world/level/Explosion.java b/src/main/j
  
          while (iterator.hasNext()) {
 diff --git a/src/main/java/net/minecraft/world/level/Level.java b/src/main/java/net/minecraft/world/level/Level.java
+index 3e739362046d624dd46412f7c50a7220d26593cf..6d8f3410f84259ee1f5517af606cb3506a80f29f 100644
 --- a/src/main/java/net/minecraft/world/level/Level.java
 +++ b/src/main/java/net/minecraft/world/level/Level.java
 @@ -103,7 +103,7 @@ import org.bukkit.entity.SpawnCategory;
@@ -539,6 +558,7 @@ diff --git a/src/main/java/net/minecraft/world/level/Level.java b/src/main/java/
      public static final Codec<ResourceKey<Level>> RESOURCE_KEY_CODEC = ResourceKey.codec(Registries.DIMENSION);
      public static final ResourceKey<Level> OVERWORLD = ResourceKey.create(Registries.DIMENSION, ResourceLocation.withDefaultNamespace("overworld"));
 diff --git a/src/main/java/net/minecraft/world/level/biome/Biome.java b/src/main/java/net/minecraft/world/level/biome/Biome.java
+index 5b8b0d139132d5f7b588fd3936eaeb997f15ee82..435bdda38366e57f707366df8e09b3997b6e6600 100644
 --- a/src/main/java/net/minecraft/world/level/biome/Biome.java
 +++ b/src/main/java/net/minecraft/world/level/biome/Biome.java
 @@ -34,8 +34,8 @@ import net.minecraft.world.level.material.Fluids;
@@ -574,6 +594,7 @@ diff --git a/src/main/java/net/minecraft/world/level/biome/Biome.java b/src/main
      private final MobSpawnSettings mobSettings;
      private final BiomeSpecialEffects specialEffects;
 diff --git a/src/main/java/net/minecraft/world/level/block/entity/BlockEntity.java b/src/main/java/net/minecraft/world/level/block/entity/BlockEntity.java
+index b7c1c8e3701fc2d67df34aaf5cebdf78e340f155..df2482fccdb317c263a7096bf3b70972649aee5a 100644
 --- a/src/main/java/net/minecraft/world/level/block/entity/BlockEntity.java
 +++ b/src/main/java/net/minecraft/world/level/block/entity/BlockEntity.java
 @@ -37,7 +37,7 @@ import org.spigotmc.CustomTimingsHandler; // Spigot
@@ -586,6 +607,7 @@ diff --git a/src/main/java/net/minecraft/world/level/block/entity/BlockEntity.ja
  
      public Timing tickTimer = MinecraftTimings.getTileEntityTimings(this); // Paper
 diff --git a/src/main/java/net/minecraft/world/level/levelgen/structure/Structure.java b/src/main/java/net/minecraft/world/level/levelgen/structure/Structure.java
+index 457e677dc3c7f80507d8a44957d3f6f3314718cb..47c5257491d8b86d9c53b83e02947157fbadf86f 100644
 --- a/src/main/java/net/minecraft/world/level/levelgen/structure/Structure.java
 +++ b/src/main/java/net/minecraft/world/level/levelgen/structure/Structure.java
 @@ -42,10 +42,11 @@ import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemp
@@ -603,6 +625,7 @@ diff --git a/src/main/java/net/minecraft/world/level/levelgen/structure/Structur
  
      public static <S extends Structure> MapCodec<S> simpleCodec(Function<Structure.StructureSettings, S> featureCreator) {
 diff --git a/src/main/java/org/bukkit/craftbukkit/CraftWorld.java b/src/main/java/org/bukkit/craftbukkit/CraftWorld.java
+index e6e83eb3974f0963916b36281b5e2ab647ae7cb8..0a7b7ae7649855d8cbd66eccc5b95d656c74ec16 100644
 --- a/src/main/java/org/bukkit/craftbukkit/CraftWorld.java
 +++ b/src/main/java/org/bukkit/craftbukkit/CraftWorld.java
 @@ -1099,7 +1099,7 @@ public class CraftWorld extends CraftRegionAccessor implements World {

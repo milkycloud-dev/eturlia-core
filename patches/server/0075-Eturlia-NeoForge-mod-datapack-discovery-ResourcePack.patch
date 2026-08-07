@@ -37,6 +37,7 @@ diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/
          }
      }
 diff --git a/src/main/java/net/minecraft/server/packs/repository/ServerPacksSource.java b/src/main/java/net/minecraft/server/packs/repository/ServerPacksSource.java
+index 396ec10a76bdadbf5be2f0e15e88eed47619004d..ca38f51fb3d95fbd497ee261308a298afc322e72 100644
 --- a/src/main/java/net/minecraft/server/packs/repository/ServerPacksSource.java
 +++ b/src/main/java/net/minecraft/server/packs/repository/ServerPacksSource.java
 @@ -83,13 +83,18 @@ public class ServerPacksSource extends BuiltInPackSource {
@@ -61,6 +62,7 @@ diff --git a/src/main/java/net/minecraft/server/packs/repository/ServerPacksSour
  
      public static PackRepository createPackRepository(LevelStorageSource.LevelStorageAccess session) {
 diff --git a/src/main/java/net/minecraft/world/level/DataPackConfig.java b/src/main/java/net/minecraft/world/level/DataPackConfig.java
+index 3338a2423275ffff000a61d49167bb631bac3e32..a59c56344d0837d78c3df5c2c45b007b1920a323 100644
 --- a/src/main/java/net/minecraft/world/level/DataPackConfig.java
 +++ b/src/main/java/net/minecraft/world/level/DataPackConfig.java
 @@ -14,11 +14,12 @@ public class DataPackConfig {

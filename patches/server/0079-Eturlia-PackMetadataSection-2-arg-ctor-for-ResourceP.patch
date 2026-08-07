@@ -7,6 +7,7 @@ Subject: [PATCH] Eturlia: PackMetadataSection 2-arg ctor for
 NeoForge ResourcePackLoader.makePack calls new PackMetadataSection(desc, ver).
 
 diff --git a/src/main/java/net/minecraft/server/packs/metadata/pack/PackMetadataSection.java b/src/main/java/net/minecraft/server/packs/metadata/pack/PackMetadataSection.java
+index 2c2e016c05fc30d0008219ee30ee4fb5e3af75da..25a748c081dc91b28bddd5d5052f200202c3409f 100644
 --- a/src/main/java/net/minecraft/server/packs/metadata/pack/PackMetadataSection.java
 +++ b/src/main/java/net/minecraft/server/packs/metadata/pack/PackMetadataSection.java
 @@ -18,4 +18,10 @@ public record PackMetadataSection(Component description, int packFormat, Optiona

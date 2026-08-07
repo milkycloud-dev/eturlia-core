@@ -11,6 +11,7 @@ FakeServerLevel; accept ServerLevelData in CB ctor with Primary
 unwrap helper.
 
 diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
+index e60f7f1c47144ac433c808d7acac91c757c9a697..e4784773a673765cc6891753a3e2c236c30dbc22 100644
 --- a/src/main/java/net/minecraft/server/level/ServerLevel.java
 +++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
 @@ -165,6 +165,7 @@ import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
@@ -86,6 +87,7 @@ diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/mai
          this.pvpMode = minecraftserver.isPvpAllowed();
          this.convertable = convertable_conversionsession;
 diff --git a/src/main/java/net/minecraft/world/entity/ai/attributes/DefaultAttributes.java b/src/main/java/net/minecraft/world/entity/ai/attributes/DefaultAttributes.java
+index 10a1434313b11dae8210484583c6bf3b627416f7..ca647c561723de5dff3e19ed1cd4579f0fa041eb 100644
 --- a/src/main/java/net/minecraft/world/entity/ai/attributes/DefaultAttributes.java
 +++ b/src/main/java/net/minecraft/world/entity/ai/attributes/DefaultAttributes.java
 @@ -173,11 +173,13 @@ public class DefaultAttributes {

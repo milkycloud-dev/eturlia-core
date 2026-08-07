@@ -9,6 +9,7 @@ contains neoforge:enum / neoforge:modid. Rewrite those nodes to string
 + ASK_SERVER for the synced suggestion tree only.
 
 diff --git a/src/main/java/net/minecraft/commands/Commands.java b/src/main/java/net/minecraft/commands/Commands.java
+index 442a5b557e5867038fcddf597951584faeedda80..119d9b366597fbc1e97e0537ba2600712b7af3c3 100644
 --- a/src/main/java/net/minecraft/commands/Commands.java
 +++ b/src/main/java/net/minecraft/commands/Commands.java
 @@ -590,7 +590,26 @@ public class Commands {

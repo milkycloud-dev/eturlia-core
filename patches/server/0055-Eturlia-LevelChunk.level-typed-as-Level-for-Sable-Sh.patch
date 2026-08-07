@@ -8,6 +8,7 @@ CraftBukkit narrowed the field to ServerLevel, so Sable's
 cast to ServerLevel where CraftBukkit/Paper need it.
 
 diff --git a/src/main/java/net/minecraft/world/level/NaturalSpawner.java b/src/main/java/net/minecraft/world/level/NaturalSpawner.java
+index 1023b0d4f52a79bc4db27130d47b6c93b464794a..d8a65a3d672b05308cfd527bc9c7358903fb8de8 100644
 --- a/src/main/java/net/minecraft/world/level/NaturalSpawner.java
 +++ b/src/main/java/net/minecraft/world/level/NaturalSpawner.java
 @@ -112,7 +112,7 @@ public final class NaturalSpawner {
@@ -20,6 +21,7 @@ diff --git a/src/main/java/net/minecraft/world/level/NaturalSpawner.java b/src/m
                      // Paper end - Optional per player mob spawns
                  });
 diff --git a/src/main/java/net/minecraft/world/level/chunk/LevelChunk.java b/src/main/java/net/minecraft/world/level/chunk/LevelChunk.java
+index fadc4fbaba5f04dfa983de2c5d97653a8e87fea7..d706ef9ec0a8752e7cce6f92076b398b695126e6 100644
 --- a/src/main/java/net/minecraft/world/level/chunk/LevelChunk.java
 +++ b/src/main/java/net/minecraft/world/level/chunk/LevelChunk.java
 @@ -84,7 +84,9 @@ public class LevelChunk extends ChunkAccess implements ca.spottedleaf.moonrise.p
@@ -56,6 +58,7 @@ diff --git a/src/main/java/net/minecraft/world/level/chunk/LevelChunk.java b/src
                  org.bukkit.World world = this.level.getWorld();
                  if (world != null) {
 diff --git a/src/main/java/org/bukkit/craftbukkit/CraftChunk.java b/src/main/java/org/bukkit/craftbukkit/CraftChunk.java
+index 45e262308aebafa377a2353661acdd122933b99e..e11c6a3796dd7a8a1c4d5caf4bdcc7deefbe9806 100644
 --- a/src/main/java/org/bukkit/craftbukkit/CraftChunk.java
 +++ b/src/main/java/org/bukkit/craftbukkit/CraftChunk.java
 @@ -61,7 +61,7 @@ public class CraftChunk implements Chunk {

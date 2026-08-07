@@ -8,6 +8,7 @@ If a non-vanilla ArgumentType still reaches packet encode, serialize as
 string + ASK_SERVER so vanilla clients do not DecoderException.
 
 diff --git a/src/main/java/net/minecraft/network/protocol/game/ClientboundCommandsPacket.java b/src/main/java/net/minecraft/network/protocol/game/ClientboundCommandsPacket.java
+index 4079b2906059e2f366a4f046834ea2850e338e00..d5978f64a0ac95d0800511ed1d395d1bac16c250 100644
 --- a/src/main/java/net/minecraft/network/protocol/game/ClientboundCommandsPacket.java
 +++ b/src/main/java/net/minecraft/network/protocol/game/ClientboundCommandsPacket.java
 @@ -213,7 +213,16 @@ public class ClientboundCommandsPacket implements Packet<ClientGamePacketListene

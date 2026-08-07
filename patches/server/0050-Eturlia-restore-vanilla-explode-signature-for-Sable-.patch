@@ -14,6 +14,7 @@ Consumer form, so the mixin never applied.
   to Level Consumer impl with Folia particles=false
 
 diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
+index 289297a762c731eb2a50d89e7b362a7c2ca42302..f70f7c5ef779c52fbf73938ea9f0bf0562c408a4 100644
 --- a/src/main/java/net/minecraft/server/level/ServerLevel.java
 +++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
 @@ -2002,10 +2002,10 @@ public class ServerLevel extends Level implements WorldGenLevel, ca.spottedleaf.
@@ -31,6 +32,7 @@ diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/mai
          if (explosion.wasCanceled) {
              return explosion;
 diff --git a/src/main/java/net/minecraft/world/level/Level.java b/src/main/java/net/minecraft/world/level/Level.java
+index 47b6b18f9fc394b51c205630952250317dc3968e..1317bbeb5bb602bfd269fa8ef40d754f9ba6c978 100644
 --- a/src/main/java/net/minecraft/world/level/Level.java
 +++ b/src/main/java/net/minecraft/world/level/Level.java
 @@ -1563,19 +1563,29 @@ public abstract class Level extends net.neoforged.neoforge.attachment.Attachment

@@ -19,6 +19,7 @@ diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/
  
      private void logTickMethodTime(long tickStartTime) {
 diff --git a/src/main/java/net/minecraft/world/level/Explosion.java b/src/main/java/net/minecraft/world/level/Explosion.java
+index 074b24413c80c3f5f1584e5f4fb35e05990b2014..494a7b8fc713f37dd6eb91b618cbe265503f2646 100644
 --- a/src/main/java/net/minecraft/world/level/Explosion.java
 +++ b/src/main/java/net/minecraft/world/level/Explosion.java
 @@ -411,6 +411,31 @@ public class Explosion {
