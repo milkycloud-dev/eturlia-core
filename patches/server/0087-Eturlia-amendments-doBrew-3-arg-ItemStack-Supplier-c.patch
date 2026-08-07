@@ -1,0 +1,116 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Fri, 7 Aug 2026 12:24:22 +0000
+Subject: [PATCH] Eturlia: amendments doBrew 3-arg + ItemStack Supplier
+ component APIs
+
+Restore Mojang doBrew(Level,BlockPos,NonNullList) for amendments
+BrewingStandMixin, resolving BrewingStandBlockEntity via world lookup
+for CraftBukkit BrewEvent. Add ItemStack set/get/getOrDefault/has/
+update/remove(Supplier) overloads for Twilight Forest DeferredHolder
+data components.
+
+diff --git a/src/main/java/net/minecraft/world/item/ItemStack.java b/src/main/java/net/minecraft/world/item/ItemStack.java
+index b183f6fd0d07bd97cb919483128fbba40b9796fe..84e5121f7877c5443e18058436fa5faa34f41f89 100644
+--- a/src/main/java/net/minecraft/world/item/ItemStack.java
++++ b/src/main/java/net/minecraft/world/item/ItemStack.java
+@@ -982,11 +982,35 @@ public final class ItemStack implements DataComponentHolder {
+         return this.components.set(type, value);
+     }
+ 
++    // Eturlia/NeoForge: MutableDataComponentHolder / IDataComponentHolderExtension Supplier overloads (Twilight Forest DeferredHolder)
++    @Nullable
++    public <T> T set(java.util.function.Supplier<? extends DataComponentType<? super T>> type, @Nullable T value) {
++        return this.set(type.get(), value);
++    }
++
++    @Nullable
++    public <T> T get(java.util.function.Supplier<? extends DataComponentType<? extends T>> type) {
++        return this.get(type.get());
++    }
++
++    public <T> T getOrDefault(java.util.function.Supplier<? extends DataComponentType<? extends T>> type, T defaultValue) {
++        return this.getOrDefault(type.get(), defaultValue);
++    }
++
++    public boolean has(java.util.function.Supplier<? extends DataComponentType<?>> type) {
++        return this.has(type.get());
++    }
++
+     @Nullable
+     public <T, U> T update(DataComponentType<T> type, T defaultValue, U change, BiFunction<T, U, T> applier) {
+         return this.set(type, applier.apply(this.getOrDefault(type, defaultValue), change));
+     }
+ 
++    @Nullable
++    public <T, U> T update(java.util.function.Supplier<? extends DataComponentType<T>> type, T defaultValue, U change, BiFunction<T, U, T> applier) {
++        return this.update(type.get(), defaultValue, change, applier);
++    }
++
+     @Nullable
+     public <T> T update(DataComponentType<T> type, T defaultValue, UnaryOperator<T> applier) {
+         T t1 = this.getOrDefault(type, defaultValue);
+@@ -994,11 +1018,21 @@ public final class ItemStack implements DataComponentHolder {
+         return this.set(type, applier.apply(t1));
+     }
+ 
++    @Nullable
++    public <T> T update(java.util.function.Supplier<? extends DataComponentType<T>> type, T defaultValue, UnaryOperator<T> applier) {
++        return this.update(type.get(), defaultValue, applier);
++    }
++
+     @Nullable
+     public <T> T remove(DataComponentType<? extends T> type) {
+         return this.components.remove(type);
+     }
+ 
++    @Nullable
++    public <T> T remove(java.util.function.Supplier<? extends DataComponentType<? extends T>> type) {
++        return this.remove(type.get());
++    }
++
+     public void applyComponentsAndValidate(DataComponentPatch changes) {
+         DataComponentPatch datacomponentpatch1 = this.components.asPatch();
+ 
+diff --git a/src/main/java/net/minecraft/world/level/block/entity/BrewingStandBlockEntity.java b/src/main/java/net/minecraft/world/level/block/entity/BrewingStandBlockEntity.java
+index 0a93bacd62249bae1800ff306b8a7c765b0e5a8b..5025c64fc4e4057ed3b34d0cee716eae7112129c 100644
+--- a/src/main/java/net/minecraft/world/level/block/entity/BrewingStandBlockEntity.java
++++ b/src/main/java/net/minecraft/world/level/block/entity/BrewingStandBlockEntity.java
+@@ -188,7 +188,8 @@ public class BrewingStandBlockEntity extends BaseContainerBlockEntity implements
+             // CraftBukkit end
+ 
+             if (flag2 && flag) {
+-                BrewingStandBlockEntity.doBrew(world, pos, blockEntity.items, blockEntity); // CraftBukkit
++                // Eturlia: call Mojang 3-arg so amendments BrewingStandMixin @Inject matches; CB BE via world lookup
++                BrewingStandBlockEntity.doBrew(world, pos, blockEntity.items);
+             } else if (!flag || !itemstack1.is(blockEntity.ingredient)) {
+                 blockEntity.brewTime = 0;
+             }
+@@ -257,19 +258,24 @@ public class BrewingStandBlockEntity extends BaseContainerBlockEntity implements
+         }
+     }
+ 
+-    private static void doBrew(Level world, BlockPos blockposition, NonNullList<ItemStack> nonnulllist, BrewingStandBlockEntity tileentitybrewingstand) { // CraftBukkit
++    // Eturlia: Mojang 3-arg descriptor for amendments @Inject into doBrew; CraftBukkit BE resolved from world
++    private static void doBrew(Level world, BlockPos blockposition, NonNullList<ItemStack> nonnulllist) {
++        BrewingStandBlockEntity tileentitybrewingstand = world.getBlockEntity(blockposition) instanceof BrewingStandBlockEntity brewingStand
++            ? brewingStand
++            : null;
+         ItemStack itemstack = (ItemStack) nonnulllist.get(3);
+         PotionBrewing potionbrewer = world.potionBrewing();
+ 
+         // CraftBukkit start
+-        InventoryHolder owner = tileentitybrewingstand.getOwner();
++        InventoryHolder owner = tileentitybrewingstand != null ? tileentitybrewingstand.getOwner() : null;
+         List<org.bukkit.inventory.ItemStack> brewResults = new ArrayList<>(3);
+         for (int i = 0; i < 3; ++i) {
+             brewResults.add(i, CraftItemStack.asCraftMirror(potionbrewer.mix(itemstack, (ItemStack) nonnulllist.get(i))));
+         }
+ 
+         if (owner != null) {
+-            BrewEvent event = new BrewEvent(CraftBlock.at(world, blockposition), (org.bukkit.inventory.BrewerInventory) owner.getInventory(), brewResults, tileentitybrewingstand.fuel);
++            int fuel = tileentitybrewingstand != null ? tileentitybrewingstand.fuel : 0;
++            BrewEvent event = new BrewEvent(CraftBlock.at(world, blockposition), (org.bukkit.inventory.BrewerInventory) owner.getInventory(), brewResults, fuel);
+             org.bukkit.Bukkit.getPluginManager().callEvent(event);
+             if (event.isCancelled()) {
+                 return;
