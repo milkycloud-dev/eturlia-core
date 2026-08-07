@@ -81,19 +81,13 @@ groups). Each section is ticked by a dedicated region thread. The key rules are:
 4. **No synchronous blocking** — Region threads must not block waiting for other regions,
    as this can deadlock the server.
 
-## Building
+## Current build status
 
-```bash
-# Build all compat modules
-./gradlew build
+These modules are still **experimental** and are maintained as a separate compat workspace.
 
-# Build a specific module
-./gradlew :eturlia-compat-create:build
-./gradlew :eturlia-compat-sable:build
-
-# Run tests
-./gradlew test
-```
+- `compat/` has **no standalone Gradle wrapper** (`./gradlew` inside this folder will fail).
+- Root CI currently validates the main Eturlia core path (`applyPatches` + standalone jar smoke).
+- The compat Gradle scripts are kept as a draft integration layer and may require local adjustment before full module builds.
 
 ## Adding a New Compat Module
 
@@ -115,5 +109,6 @@ groups). Each section is ticked by a dedicated region thread. The key rules are:
 
 ## Test Pack
 
-The `testpack/` directory contains a pinned modpack for CI testing. See
-[testpack/README.md](testpack/README.md) for details.
+The `testpack/` directory currently stores the compatibility manifests and notes
+used for manual/iterative validation planning. See
+[testpack/README.md](testpack/README.md) for the current scope.
