@@ -1,58 +1,34 @@
-# Testpack — Fixed Test Modpack for CI
+# Testpack — Compatibility Manifest
 
-This directory contains a pinned, version-locked modpack used for automated integration
-testing of the Eturlia compatibility modules against real mod JARs in CI pipelines.
+This directory currently stores a pinned compatibility manifest for the compat
+modules (Create/CBC/Sable/Aeronautics) and related notes.
 
 ## Directory Structure
 
 ```
 testpack/
-├── mods/           # Mod JARs (pinned versions for CI stability)
-│   └── README.md   # Mod version manifest
-├── config/         # Server configuration files
-│   └── .gitkeep    # Placeholder to preserve directory in git
+├── mods/
+│   └── README.md   # Version pins + compatibility notes
 └── README.md       # This file
 ```
 
-## Purpose
+## Current Scope
 
-The testpack ensures that:
+- Keep known-good mod/version references in one place.
+- Record compatibility expectations and risk notes for manual validation.
+- Provide a stable baseline for future automation work.
 
-1. **Eturlia compat modules work with real mod APIs** — CI downloads pinned mod JARs
-   (Create, Create Big Cannons, Sable, Create Aeronautics) and compiles the compat
-   modules against them, catching API breakage early.
+## About CI / Automation
 
-2. **Cross-region scenarios are testable** — The testpack includes a set of world
-   templates and test configurations that exercise region boundary crossings
-   (kinetic networks spanning regions, contraptions crossing boundaries, projectiles,
-   vehicle flight across regions).
+At the moment, this repository does **not** include the previously referenced
+`compat/scripts/*` automation helpers, and `testpack/` is not wired into the
+main Eturlia CI pipeline.
 
-3. **Version stability** — All mod versions are pinned in `mods/README.md`. Upgrades
-   are done intentionally via PR, not by auto-update, preventing CI breakage from
-   upstream mod updates.
+When automated compat CI is reintroduced, this README should be extended with
+the exact scripts and commands available in-tree.
 
-## CI Usage
+## Updating Version Pins
 
-In CI pipelines, the testpack is used as follows:
-
-```bash
-# Download pinned mod JARs based on mods/README.md manifest
-./scripts/download-test-mods.sh testpack/mods/
-
-# Compile compat modules against test mods
-./gradlew :eturlia-compat-create:compileJava --test-mods-dir testpack/mods/
-./gradlew :eturlia-compat-sable:compileJava --test-mods-dir testpack/mods/
-
-# Run integration tests with the test server
-./scripts/start-test-server.sh testpack/
-./scripts/run-integration-tests.sh
-```
-
-## Updating Mod Versions
-
-To update a pinned mod version:
-
-1. Edit `mods/README.md` to change the version hash/reference
-2. Run `./scripts/download-test-mods.sh testpack/mods/` to fetch the new JAR
-3. Run the full CI suite to verify compatibility
-4. Commit both the updated manifest and the new JAR
+1. Edit `mods/README.md`.
+2. Validate manually against your target environment.
+3. Open a PR with both the version change and validation notes.
