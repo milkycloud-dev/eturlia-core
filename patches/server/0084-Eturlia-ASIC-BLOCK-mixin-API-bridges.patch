@@ -1,0 +1,555 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Eturlia <eturlia@eturnercus.dev>
+Date: Fri, 7 Aug 2026 08:08:34 +0000
+Subject: [PATCH] Eturlia: ASIC BLOCK mixin/API bridges
+
+- ItemStack/Item getCraftingRemainingItem for Farmers Delight
+- void dropAllDeathLoot for Let's Do Farm & Charm
+- ComponentSerialization 1-arg matcher for CreativeCore
+- travel isInFluidType(FluidState) for Supplementaries
+- spawnAtLocation ItemEntity ctor for quality_food
+- Mob.checkDespawn discard()V for letmedespawn
+- BlockItem 4-arg getPlaceSound for lodestone
+- Boat.Type + DamageEffects + ItemDisplayContext + GrassColorModifier IExtensibleEnum for Twilight Forest
+
+diff --git a/src/main/java/net/minecraft/network/chat/ComponentSerialization.java b/src/main/java/net/minecraft/network/chat/ComponentSerialization.java
+index 22c6a324dedeb315eac2d3d3f55d2f3a9eebb0ad..7ac5cb51beb47bec3cc565ae06f332d193868fea 100644
+--- a/src/main/java/net/minecraft/network/chat/ComponentSerialization.java
++++ b/src/main/java/net/minecraft/network/chat/ComponentSerialization.java
+@@ -136,16 +136,31 @@ public class ComponentSerialization {
+ 
+     // Paper end - adventure; create separate codec for each locale
+ 
+-    private static Codec<Component> createCodec(Codec<Component> selfCodec) {
++    // Eturlia: locale for Paper adventure path, threaded so 1-arg createCodec keeps matcher call site (CreativeCore)
++    private static final ThreadLocal<java.util.Locale> ETURLIA_COMPONENT_LOCALE = new ThreadLocal<>();
++
++    private static Codec<Component> createCodec(Codec<Component> selfCodec, @javax.annotation.Nullable java.util.Locale locale) {
+         // Paper start - adventure; create separate codec for each locale
+-        return createCodec(selfCodec, null);
++        java.util.Locale prev = ETURLIA_COMPONENT_LOCALE.get();
++        ETURLIA_COMPONENT_LOCALE.set(locale);
++        try {
++            return createCodec(selfCodec);
++        } finally {
++            if (prev != null) {
++                ETURLIA_COMPONENT_LOCALE.set(prev);
++            } else {
++                ETURLIA_COMPONENT_LOCALE.remove();
++            }
++        }
+     }
+ 
+-    private static Codec<Component> createCodec(Codec<Component> selfCodec, @javax.annotation.Nullable java.util.Locale locale) {
++    private static Codec<Component> createCodec(Codec<Component> selfCodec) {
+         // Paper end - adventure; create separate codec for each locale
++        final java.util.Locale locale = ETURLIA_COMPONENT_LOCALE.get();
+         ComponentContents.Type<?>[] types = new ComponentContents.Type[]{
+             PlainTextContents.TYPE, TranslatableContents.TYPE, KeybindContents.TYPE, ScoreContents.TYPE, SelectorContents.TYPE, NbtContents.TYPE
+         };
++        // CreativeCore WrapOperation targets this INVOKE inside createCodec(Codec)
+         MapCodec<ComponentContents> mapCodec = createLegacyComponentMatcher(types, ComponentContents.Type::codec, ComponentContents::type, "type");
+         Codec<Component> codec = RecordCodecBuilder.create(
+             instance -> instance.group(
+diff --git a/src/main/java/net/minecraft/world/damagesource/DamageEffects.java b/src/main/java/net/minecraft/world/damagesource/DamageEffects.java
+index fd762c3238371c927dd117467b3938286730bf0a..125c7a190a50242c25b55cc165c3c6b4e3106fc9 100644
+--- a/src/main/java/net/minecraft/world/damagesource/DamageEffects.java
++++ b/src/main/java/net/minecraft/world/damagesource/DamageEffects.java
+@@ -5,7 +5,9 @@ import net.minecraft.sounds.SoundEvent;
+ import net.minecraft.sounds.SoundEvents;
+ import net.minecraft.util.StringRepresentable;
+ 
+-public enum DamageEffects implements StringRepresentable {
++@net.neoforged.fml.common.asm.enumextension.NamedEnum
++@net.neoforged.fml.common.asm.enumextension.NetworkedEnum(net.neoforged.fml.common.asm.enumextension.NetworkedEnum.NetworkCheck.CLIENTBOUND)
++public enum DamageEffects implements StringRepresentable, net.neoforged.fml.common.asm.enumextension.IExtensibleEnum {
+     HURT("hurt", SoundEvents.PLAYER_HURT),
+     THORNS("thorns", SoundEvents.THORNS_HIT),
+     DROWNING("drowning", SoundEvents.PLAYER_HURT_DROWN),
+@@ -15,11 +17,19 @@ public enum DamageEffects implements StringRepresentable {
+ 
+     public static final Codec<DamageEffects> CODEC = StringRepresentable.fromEnum(DamageEffects::values);
+     private final String id;
++    @Deprecated // Neo: Always set to null. Use the getter.
+     private final SoundEvent sound;
++    private final java.util.function.Supplier<SoundEvent> soundSupplier;
+ 
++    @net.neoforged.fml.common.asm.enumextension.ReservedConstructor
+     private DamageEffects(final String id, final SoundEvent sound) {
++        this(id, () -> sound);
++    }
++
++    private DamageEffects(String id, java.util.function.Supplier<SoundEvent> sound) {
+         this.id = id;
+-        this.sound = sound;
++        this.soundSupplier = sound;
++        this.sound = null;
+     }
+ 
+     @Override
+@@ -28,6 +38,10 @@ public enum DamageEffects implements StringRepresentable {
+     }
+ 
+     public SoundEvent sound() {
+-        return this.sound;
++        return this.soundSupplier.get();
++    }
++
++    public static net.neoforged.fml.common.asm.enumextension.ExtensionInfo getExtensionInfo() {
++        return net.neoforged.fml.common.asm.enumextension.ExtensionInfo.nonExtended(DamageEffects.class);
+     }
+ }
+diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
+index 1029e3df718b5bd15056c59615097d2d0d60eb1c..eabd0e8cf3bb1976d5c032f093842d506ef8a830 100644
+--- a/src/main/java/net/minecraft/world/entity/Entity.java
++++ b/src/main/java/net/minecraft/world/entity/Entity.java
+@@ -681,7 +681,8 @@ public abstract class Entity extends net.neoforged.neoforge.attachment.Attachmen
+ 
+     public final void discard() {
+         // CraftBukkit start - add Bukkit remove cause
+-        this.discard(null);
++        // Eturlia: default DESPAWN so Mob.checkDespawn() can call discard()V for letmedespawn mixins
++        this.discard(EntityRemoveEvent.Cause.DESPAWN);
+     }
+ 
+     public final void discard(EntityRemoveEvent.Cause cause) {
+@@ -2815,6 +2816,10 @@ public abstract class Entity extends net.neoforged.neoforge.attachment.Attachmen
+ 
+     @Nullable
+     public ItemEntity spawnAtLocation(ItemStack stack, float yOffset) {
++        // Eturlia: keep ItemEntity.<init> call site in this method for quality_food @Inject
++        if (!stack.isEmpty() && !this.level().isClientSide) {
++            new ItemEntity(this.level(), this.getX(), this.getY() + (double) yOffset, this.getZ(), stack);
++        }
+         // Paper start - Restore vanilla drops behavior
+         return this.spawnAtLocation(stack, yOffset, null);
+     }
+@@ -5862,6 +5867,11 @@ public abstract class Entity extends net.neoforged.neoforge.attachment.Attachmen
+         return this.getFluidTypeHeight(type) > 0.0D;
+     }
+ 
++    // Eturlia/NeoForge: IEntityExtension.isInFluidType(FluidState) — Supplementaries travel WrapOperation
++    public boolean isInFluidType(net.minecraft.world.level.material.FluidState state) {
++        return this.isInFluidType(state.getFluidType());
++    }
++
+     public final net.neoforged.neoforge.fluids.FluidType getEyeInFluidType() {
+         return this.forgeFluidTypeOnEyes;
+     }
+diff --git a/src/main/java/net/minecraft/world/entity/LivingEntity.java b/src/main/java/net/minecraft/world/entity/LivingEntity.java
+index cf2ba18d6ac95961059e01093f018c5fe2530049..45d9e115ba10e4a309e220ed0430413b6d1fac2e 100644
+--- a/src/main/java/net/minecraft/world/entity/LivingEntity.java
++++ b/src/main/java/net/minecraft/world/entity/LivingEntity.java
+@@ -1809,7 +1809,7 @@ public abstract class LivingEntity extends Entity implements Attackable {
+                 // Paper - move below into if for onKill
+ 
+                 // Paper start
+-                org.bukkit.event.entity.EntityDeathEvent deathEvent = this.dropAllDeathLoot(worldserver, damageSource);
++                org.bukkit.event.entity.EntityDeathEvent deathEvent = this.paperDropAllDeathLoot(worldserver, damageSource);
+                 if (deathEvent == null || !deathEvent.isCancelled()) {
+                     // if (this.deathScore >= 0 && entityliving != null) { // Paper - Fix item duplication and teleport issues; moved to be run earlier in #dropAllDeathLoot before destroying the drop items in CraftEventFactory#callEntityDeathEvent
+                     //     entityliving.awardKillScore(this, this.deathScore, damageSource);
+@@ -1890,7 +1890,13 @@ public abstract class LivingEntity extends Entity implements Attackable {
+     // Paper start
+     protected boolean clearEquipmentSlots = true;
+     protected Set<EquipmentSlot> clearedEquipmentSlots = new java.util.HashSet<>();
+-    protected org.bukkit.event.entity.EntityDeathEvent dropAllDeathLoot(ServerLevel world, DamageSource damageSource) {
++
++    // Eturlia: vanilla/NeoForge void signature for Farm & Charm / Let's Do mixins (@Inject ...;)V)
++    protected void dropAllDeathLoot(ServerLevel world, DamageSource damageSource) {
++        this.paperDropAllDeathLoot(world, damageSource);
++    }
++
++    protected org.bukkit.event.entity.EntityDeathEvent paperDropAllDeathLoot(ServerLevel world, DamageSource damageSource) {
+         // Paper end
+         boolean flag = this.lastHurtByPlayerTime > 0;
+ 
+@@ -2931,7 +2937,8 @@ public abstract class LivingEntity extends Entity implements Attackable {
+             double d1;
+             float f;
+ 
+-            if (this.isInWater() && this.isAffectedByFluids() && !this.canStandOnFluid(fluid)) {
++            // Eturlia: NeoForge-shaped fluid branch so Supplementaries can WrapOperation isInFluidType(FluidState)
++            if ((this.isInWater() || (this.isInFluidType(fluid) && fluid.getFluidType() != net.neoforged.neoforge.common.NeoForgeMod.LAVA_TYPE.value())) && this.isAffectedByFluids() && !this.canStandOnFluid(fluid)) {
+                 d1 = this.getY();
+                 f = this.isSprinting() ? 0.9F : this.getWaterSlowDown();
+                 float f1 = 0.02F;
+diff --git a/src/main/java/net/minecraft/world/entity/Mob.java b/src/main/java/net/minecraft/world/entity/Mob.java
+index 1cb0029739a487d930e4f10371c82d3a03a46de4..129adde296b71c79cf66e8ba8c44c784371618eb 100644
+--- a/src/main/java/net/minecraft/world/entity/Mob.java
++++ b/src/main/java/net/minecraft/world/entity/Mob.java
+@@ -896,7 +896,7 @@ public abstract class Mob extends LivingEntity implements EquipmentUser, Leashab
+     @Override
+     public void checkDespawn() {
+         if (this.level().getDifficulty() == Difficulty.PEACEFUL && this.shouldDespawnInPeaceful()) {
+-            this.discard(EntityRemoveEvent.Cause.DESPAWN); // CraftBukkit - add Bukkit remove cause
++            this.discard(); // Eturlia: letmedespawn @Redirect on discard()V (was discard(DESPAWN))
+         } else if (!this.isPersistenceRequired() && !this.requiresCustomPersistence()) {
+             Player entityhuman = this.level().findNearbyPlayer(this, -1.0D, EntitySelector.PLAYER_AFFECTS_SPAWNING); // Paper - Affects Spawning API
+ 
+@@ -911,11 +911,11 @@ public abstract class Mob extends LivingEntity implements EquipmentUser, Leashab
+                 final double distanceSquared = dxSqr + dzSqr + dySqr;
+                 // Despawn if hard/soft limit is exceeded
+                 if (despawnRangePair.hard().shouldDespawn(shape, dxSqr, dySqr, dzSqr, dy) && this.removeWhenFarAway(distanceSquared)) {
+-                    this.discard(EntityRemoveEvent.Cause.DESPAWN); // CraftBukkit - add Bukkit remove cause
++                    this.discard(); // Eturlia: letmedespawn @Redirect on discard()V (was discard(DESPAWN))
+                 }
+                 if (despawnRangePair.soft().shouldDespawn(shape, dxSqr, dySqr, dzSqr, dy)) {
+                     if (this.noActionTime > 600 && this.random.nextInt(800) == 0 && this.removeWhenFarAway(distanceSquared)) {
+-                        this.discard(EntityRemoveEvent.Cause.DESPAWN); // CraftBukkit - add Bukkit remove cause
++                        this.discard(); // Eturlia: letmedespawn @Redirect on discard()V (was discard(DESPAWN))
+                     }
+                 } else {
+                 // Paper end - Configurable despawn distances
+diff --git a/src/main/java/net/minecraft/world/entity/animal/Fox.java b/src/main/java/net/minecraft/world/entity/animal/Fox.java
+index 9a0adf65d4d54852301a91b6fe444e4c5a139f5d..02d1d6eafdaae71d1b6fc42d8bbe3e0205d521da 100644
+--- a/src/main/java/net/minecraft/world/entity/animal/Fox.java
++++ b/src/main/java/net/minecraft/world/entity/animal/Fox.java
+@@ -719,7 +719,7 @@ public class Fox extends Animal implements VariantHolder<Fox.Type> {
+ 
+     @Override
+     // Paper start - Cancellable death event
+-    protected org.bukkit.event.entity.EntityDeathEvent dropAllDeathLoot(ServerLevel world, DamageSource damageSource) {
++    protected org.bukkit.event.entity.EntityDeathEvent paperDropAllDeathLoot(ServerLevel world, DamageSource damageSource) {
+         ItemStack itemstack = this.getItemBySlot(EquipmentSlot.MAINHAND);
+ 
+         boolean releaseMouth = false;
+@@ -728,7 +728,7 @@ public class Fox extends Animal implements VariantHolder<Fox.Type> {
+             releaseMouth = true;
+         }
+ 
+-        org.bukkit.event.entity.EntityDeathEvent deathEvent = super.dropAllDeathLoot(world, damageSource);
++        org.bukkit.event.entity.EntityDeathEvent deathEvent = super.paperDropAllDeathLoot(world, damageSource);
+ 
+         // Below is code to drop
+ 
+diff --git a/src/main/java/net/minecraft/world/entity/decoration/ArmorStand.java b/src/main/java/net/minecraft/world/entity/decoration/ArmorStand.java
+index c292f58ba4b29395484dbbf8591e455f449581d8..f9ce32c74c6f223e331fce0eebfffc5cfd103842 100644
+--- a/src/main/java/net/minecraft/world/entity/decoration/ArmorStand.java
++++ b/src/main/java/net/minecraft/world/entity/decoration/ArmorStand.java
+@@ -647,7 +647,7 @@ public class ArmorStand extends LivingEntity {
+                 this.armorItems.set(i, ItemStack.EMPTY);
+             }
+         }
+-        return this.dropAllDeathLoot(world, damageSource); // CraftBukkit - moved from above // Paper
++        return this.paperDropAllDeathLoot(world, damageSource); // CraftBukkit - moved from above // Paper // Eturlia
+ 
+     }
+ 
+diff --git a/src/main/java/net/minecraft/world/entity/vehicle/Boat.java b/src/main/java/net/minecraft/world/entity/vehicle/Boat.java
+index f1955afc8e367f80ead85bd5ad3b8d66c255565a..961046c6b47e8e07f00afb32cddfb5d236b20302 100644
+--- a/src/main/java/net/minecraft/world/entity/vehicle/Boat.java
++++ b/src/main/java/net/minecraft/world/entity/vehicle/Boat.java
+@@ -181,7 +181,7 @@ public class Boat extends VehicleEntity implements Leashable, VariantHolder<Boat
+             }
+         }
+ 
+-        return (new Vec3(0.0D, this.getVariant() == Boat.Type.BAMBOO ? (double) (dimensions.height() * 0.8888889F) : (double) (dimensions.height() / 3.0F), (double) f1)).yRot(-this.getYRot() * 0.017453292F);
++        return (new Vec3(0.0D, this.getVariant().isRaft() ? (double) (dimensions.height() * 0.8888889F) : (double) (dimensions.height() / 3.0F), (double) f1)).yRot(-this.getYRot() * 0.017453292F);
+     }
+ 
+     @Override
+@@ -264,8 +264,12 @@ public class Boat extends VehicleEntity implements Leashable, VariantHolder<Boat
+             case 8:
+                 item = Items.BAMBOO_RAFT;
+                 break;
+-            default:
++            case 0:
+                 item = Items.OAK_BOAT;
++                break;
++            default:
++                // Eturlia/NeoForge: modded boat types (Twilight Forest etc.)
++                item = this.getVariant().boatItem.get();
+         }
+ 
+         return item;
+@@ -933,7 +937,8 @@ public class Boat extends VehicleEntity implements Leashable, VariantHolder<Boat
+                             }
+ 
+                             for (i = 0; i < 2; ++i) {
+-                                this.spawnAtLocation((ItemLike) Items.STICK);
++                                // Eturlia/NeoForge: material-specific sticks for modded boats
++                                this.spawnAtLocation((ItemLike) this.getVariant().getSticks());
+                             }
+                         }
+                     }
+@@ -1019,18 +1024,67 @@ public class Boat extends VehicleEntity implements Leashable, VariantHolder<Boat
+         return new ItemStack(this.getDropItem());
+     }
+ 
+-    public static enum Type implements StringRepresentable {
++    @net.neoforged.fml.common.asm.enumextension.NamedEnum(1)
++    @net.neoforged.fml.common.asm.enumextension.NetworkedEnum(net.neoforged.fml.common.asm.enumextension.NetworkedEnum.NetworkCheck.CLIENTBOUND)
++    public static enum Type implements StringRepresentable, net.neoforged.fml.common.asm.enumextension.IExtensibleEnum {
+ 
+-        OAK(Blocks.OAK_PLANKS, "oak"), SPRUCE(Blocks.SPRUCE_PLANKS, "spruce"), BIRCH(Blocks.BIRCH_PLANKS, "birch"), JUNGLE(Blocks.JUNGLE_PLANKS, "jungle"), ACACIA(Blocks.ACACIA_PLANKS, "acacia"), CHERRY(Blocks.CHERRY_PLANKS, "cherry"), DARK_OAK(Blocks.DARK_OAK_PLANKS, "dark_oak"), MANGROVE(Blocks.MANGROVE_PLANKS, "mangrove"), BAMBOO(Blocks.BAMBOO_PLANKS, "bamboo");
++        OAK(Blocks.OAK_PLANKS, "oak"),
++        SPRUCE(Blocks.SPRUCE_PLANKS, "spruce"),
++        BIRCH(Blocks.BIRCH_PLANKS, "birch"),
++        JUNGLE(Blocks.JUNGLE_PLANKS, "jungle"),
++        ACACIA(Blocks.ACACIA_PLANKS, "acacia"),
++        CHERRY(Blocks.CHERRY_PLANKS, "cherry"),
++        DARK_OAK(Blocks.DARK_OAK_PLANKS, "dark_oak"),
++        MANGROVE(Blocks.MANGROVE_PLANKS, "mangrove"),
++        BAMBOO(Blocks.BAMBOO_PLANKS, "bamboo", true);
+ 
+         private final String name;
++        /** @deprecated Neo: Will be {@link Blocks#AIR} for modded boat types, use {@link #planksSupplier} instead */
++        @Deprecated
+         private final Block planks;
++        private final java.util.function.Supplier<Block> planksSupplier;
++        final java.util.function.Supplier<Item> boatItem;
++        final java.util.function.Supplier<Item> chestBoatItem;
++        private final java.util.function.Supplier<Item> stickItem;
++        private final boolean raft;
+         public static final StringRepresentable.EnumCodec<Boat.Type> CODEC = StringRepresentable.fromEnum(Boat.Type::values);
+         private static final IntFunction<Boat.Type> BY_ID = ByIdMap.continuous(Enum::ordinal, values(), ByIdMap.OutOfBoundsStrategy.ZERO);
+ 
++        @net.neoforged.fml.common.asm.enumextension.ReservedConstructor
+         private Type(final Block block, final String s) {
++            this(block, s, false);
++        }
++
++        @net.neoforged.fml.common.asm.enumextension.ReservedConstructor
++        private Type(final Block block, final String s, boolean raft) {
+             this.name = s;
+             this.planks = block;
++            this.planksSupplier = () -> block;
++            this.boatItem = () -> Items.AIR;
++            this.chestBoatItem = () -> Items.AIR;
++            this.stickItem = () -> Items.STICK;
++            this.raft = raft;
++        }
++
++        /**
++         * NeoForge/Twilight Forest extensible ctor:
++         * (Supplier planks, String name, Supplier boatItem, Supplier chestBoatItem, Supplier stickItem, boolean raft)
++         */
++        private Type(
++                java.util.function.Supplier<Block> planks,
++                String name,
++                java.util.function.Supplier<Item> boatItem,
++                java.util.function.Supplier<Item> chestBoatItem,
++                java.util.function.Supplier<Item> stickItem,
++                boolean raft
++        ) {
++            this.name = name;
++            this.planks = Blocks.AIR;
++            this.planksSupplier = planks;
++            this.boatItem = boatItem;
++            this.chestBoatItem = chestBoatItem;
++            this.stickItem = stickItem;
++            this.raft = raft;
+         }
+ 
+         @Override
+@@ -1043,7 +1097,15 @@ public class Boat extends VehicleEntity implements Leashable, VariantHolder<Boat
+         }
+ 
+         public Block getPlanks() {
+-            return this.planks;
++            return this.planksSupplier.get();
++        }
++
++        public Item getSticks() {
++            return this.stickItem.get();
++        }
++
++        public boolean isRaft() {
++            return this.raft;
+         }
+ 
+         public String toString() {
+@@ -1057,6 +1119,10 @@ public class Boat extends VehicleEntity implements Leashable, VariantHolder<Boat
+         public static Boat.Type byName(String name) {
+             return (Boat.Type) Boat.Type.CODEC.byName(name, Boat.Type.OAK);
+         }
++
++        public static net.neoforged.fml.common.asm.enumextension.ExtensionInfo getExtensionInfo() {
++            return net.neoforged.fml.common.asm.enumextension.ExtensionInfo.nonExtended(Boat.Type.class);
++        }
+     }
+ 
+     public static enum Status {
+diff --git a/src/main/java/net/minecraft/world/item/BlockItem.java b/src/main/java/net/minecraft/world/item/BlockItem.java
+index 96fb69ec6db2e7c8c728435f0c537b076259b2fb..3d8561996b674f84b83da1403dff3b42019436c5 100644
+--- a/src/main/java/net/minecraft/world/item/BlockItem.java
++++ b/src/main/java/net/minecraft/world/item/BlockItem.java
+@@ -128,7 +128,7 @@ public class BlockItem extends Item {
+ 
+                     SoundType soundeffecttype = iblockdata1.getSoundType();
+ 
+-                    if (entityhuman == null) world.playSound(entityhuman, blockposition, this.getPlaceSound(iblockdata1), net.minecraft.sounds.SoundSource.BLOCKS, (soundeffecttype.getVolume() + 1.0F) / 2.0F, soundeffecttype.getPitch() * 0.8F); // Paper - Fix block place logic; reintroduce this for the dispenser (i.e the shulker)
++                    if (entityhuman == null) world.playSound(entityhuman, blockposition, this.getPlaceSound(iblockdata1, world, blockposition, entityhuman), net.minecraft.sounds.SoundSource.BLOCKS, (soundeffecttype.getVolume() + 1.0F) / 2.0F, soundeffecttype.getPitch() * 0.8F); // Paper - Fix block place logic; reintroduce this for the dispenser (i.e the shulker) // Eturlia: 4-arg for lodestone
+                     world.gameEvent((Holder) GameEvent.BLOCK_PLACE, blockposition, GameEvent.Context.of(entityhuman, iblockdata1));
+                     itemstack.consume(1, entityhuman);
+                     return InteractionResult.sidedSuccess(world.isClientSide);
+@@ -137,10 +137,16 @@ public class BlockItem extends Item {
+         }
+     }
+ 
++    /** @deprecated NeoForge: use {@link #getPlaceSound(BlockState, Level, BlockPos, Player)} */
+     protected SoundEvent getPlaceSound(BlockState state) {
+         return state.getSoundType().getPlaceSound();
+     }
+ 
++    // Eturlia/NeoForge: sensitive place sound — lodestone BlockItemMixin @ModifyVariable/@Inject
++    protected SoundEvent getPlaceSound(BlockState state, Level world, BlockPos pos, Player entity) {
++        return this.getPlaceSound(state);
++    }
++
+     @Nullable
+     public BlockPlaceContext updatePlacementContext(BlockPlaceContext context) {
+         return context;
+diff --git a/src/main/java/net/minecraft/world/item/Item.java b/src/main/java/net/minecraft/world/item/Item.java
+index 7ea84e400353e3d13fd78f9701c7247b63c99336..4b16843cc6e17d26a22873cd87901d779faf3694 100644
+--- a/src/main/java/net/minecraft/world/item/Item.java
++++ b/src/main/java/net/minecraft/world/item/Item.java
+@@ -262,6 +262,18 @@ public class Item implements FeatureElement, ItemLike {
+         return this.craftingRemainingItem != null;
+     }
+ 
++    // Eturlia/NeoForge: IItemExtension stack-aware crafting remainder (FD / recipes)
++    public ItemStack getCraftingRemainingItem(ItemStack stack) {
++        if (!this.hasCraftingRemainingItem(stack)) {
++            return ItemStack.EMPTY;
++        }
++        return new ItemStack(this.getCraftingRemainingItem());
++    }
++
++    public boolean hasCraftingRemainingItem(ItemStack stack) {
++        return this.hasCraftingRemainingItem();
++    }
++
+     // Eturlia/NeoForge: IItemExtension.canPerformAction — loot CanItemPerformAbility etc.
+     public boolean canPerformAction(ItemStack stack, net.neoforged.neoforge.common.ItemAbility itemAbility) {
+         return false;
+diff --git a/src/main/java/net/minecraft/world/item/ItemDisplayContext.java b/src/main/java/net/minecraft/world/item/ItemDisplayContext.java
+index 90325472a908eeba1dbb2c3fc3b251cd2a36cd4c..dc8b65cae63ea216a16966a4f586127081c5e1b6 100644
+--- a/src/main/java/net/minecraft/world/item/ItemDisplayContext.java
++++ b/src/main/java/net/minecraft/world/item/ItemDisplayContext.java
+@@ -5,7 +5,10 @@ import java.util.function.IntFunction;
+ import net.minecraft.util.ByIdMap;
+ import net.minecraft.util.StringRepresentable;
+ 
+-public enum ItemDisplayContext implements StringRepresentable {
++@net.neoforged.fml.common.asm.enumextension.IndexedEnum
++@net.neoforged.fml.common.asm.enumextension.NamedEnum(1)
++@net.neoforged.fml.common.asm.enumextension.NetworkedEnum(net.neoforged.fml.common.asm.enumextension.NetworkedEnum.NetworkCheck.CLIENTBOUND)
++public enum ItemDisplayContext implements StringRepresentable, net.neoforged.fml.common.asm.enumextension.IExtensibleEnum {
+     NONE(0, "none"),
+     THIRD_PERSON_LEFT_HAND(1, "thirdperson_lefthand"),
+     THIRD_PERSON_RIGHT_HAND(2, "thirdperson_righthand"),
+@@ -20,10 +23,22 @@ public enum ItemDisplayContext implements StringRepresentable {
+     public static final IntFunction<ItemDisplayContext> BY_ID = ByIdMap.continuous(ItemDisplayContext::getId, values(), ByIdMap.OutOfBoundsStrategy.ZERO);
+     private final byte id;
+     private final String name;
++    private final boolean isModded;
++    private final java.util.function.Supplier<ItemDisplayContext> fallback;
+ 
++    @net.neoforged.fml.common.asm.enumextension.ReservedConstructor
+     private ItemDisplayContext(final int index, final String name) {
+         this.name = name;
+         this.id = (byte)index;
++        this.isModded = false;
++        this.fallback = () -> null;
++    }
++
++    private ItemDisplayContext(int id, String name, @org.jetbrains.annotations.Nullable String fallbackName) {
++        this.id = (byte)id;
++        this.name = name;
++        this.isModded = true;
++        this.fallback = fallbackName == null ? () -> null : com.google.common.base.Suppliers.memoize(() -> ItemDisplayContext.valueOf(fallbackName));
+     }
+ 
+     @Override
+@@ -38,4 +53,17 @@ public enum ItemDisplayContext implements StringRepresentable {
+     public boolean firstPerson() {
+         return this == FIRST_PERSON_LEFT_HAND || this == FIRST_PERSON_RIGHT_HAND;
+     }
++
++    public boolean isModded() {
++        return this.isModded;
++    }
++
++    @org.jetbrains.annotations.Nullable
++    public ItemDisplayContext fallback() {
++        return this.fallback.get();
++    }
++
++    public static net.neoforged.fml.common.asm.enumextension.ExtensionInfo getExtensionInfo() {
++        return net.neoforged.fml.common.asm.enumextension.ExtensionInfo.nonExtended(ItemDisplayContext.class);
++    }
+ }
+diff --git a/src/main/java/net/minecraft/world/item/ItemStack.java b/src/main/java/net/minecraft/world/item/ItemStack.java
+index 0b503d72d0d7fe1e4db628a6bfc4b9444fa6b02f..a08909654d6fbe57ff38926cf474dcd639b90bc8 100644
+--- a/src/main/java/net/minecraft/world/item/ItemStack.java
++++ b/src/main/java/net/minecraft/world/item/ItemStack.java
+@@ -1400,4 +1400,13 @@ public final class ItemStack implements DataComponentHolder {
+     public boolean canPerformAction(net.neoforged.neoforge.common.ItemAbility itemAbility) {
+         return this.getItem().canPerformAction(this, itemAbility);
+     }
++
++    // Eturlia/NeoForge: IItemStackExtension.getCraftingRemainingItem — Farmers Delight / CookingPot
++    public ItemStack getCraftingRemainingItem() {
++        return this.getItem().getCraftingRemainingItem(this);
++    }
++
++    public boolean hasCraftingRemainingItem() {
++        return this.getItem().hasCraftingRemainingItem(this);
++    }
+ }
+diff --git a/src/main/java/net/minecraft/world/level/biome/BiomeSpecialEffects.java b/src/main/java/net/minecraft/world/level/biome/BiomeSpecialEffects.java
+index ffe922537bad4c47da329d5e9640bd70b0ce3a3f..e18e6070f30e3aea148edafc771abbabbce65ae7 100644
+--- a/src/main/java/net/minecraft/world/level/biome/BiomeSpecialEffects.java
++++ b/src/main/java/net/minecraft/world/level/biome/BiomeSpecialEffects.java
+@@ -211,7 +211,9 @@ public class BiomeSpecialEffects {
+         }
+     }
+ 
+-    public static enum GrassColorModifier implements StringRepresentable {
++    @net.neoforged.fml.common.asm.enumextension.NamedEnum
++    @net.neoforged.fml.common.asm.enumextension.NetworkedEnum(net.neoforged.fml.common.asm.enumextension.NetworkedEnum.NetworkCheck.CLIENTBOUND)
++    public static enum GrassColorModifier implements StringRepresentable, net.neoforged.fml.common.asm.enumextension.IExtensibleEnum {
+         NONE("none") {
+             @Override
+             public int modifyColor(double x, double z, int color) {
+@@ -233,12 +235,22 @@ public class BiomeSpecialEffects {
+         };
+ 
+         private final String name;
++        private final ColorModifier delegate;
+         public static final Codec<BiomeSpecialEffects.GrassColorModifier> CODEC = StringRepresentable.fromEnum(BiomeSpecialEffects.GrassColorModifier::values);
+ 
+-        public abstract int modifyColor(double x, double z, int color);
++        public int modifyColor(double x, double z, int color) {
++            return this.delegate.modifyGrassColor(x, z, color);
++        }
+ 
++        @net.neoforged.fml.common.asm.enumextension.ReservedConstructor
+         GrassColorModifier(final String name) {
+             this.name = name;
++            this.delegate = null;
++        }
++
++        GrassColorModifier(String name, ColorModifier delegate) {
++            this.name = name;
++            this.delegate = delegate;
+         }
+ 
+         public String getName() {
+@@ -249,5 +261,14 @@ public class BiomeSpecialEffects {
+         public String getSerializedName() {
+             return this.name;
+         }
++
++        public static net.neoforged.fml.common.asm.enumextension.ExtensionInfo getExtensionInfo() {
++            return net.neoforged.fml.common.asm.enumextension.ExtensionInfo.nonExtended(BiomeSpecialEffects.GrassColorModifier.class);
++        }
++
++        @FunctionalInterface
++        public interface ColorModifier {
++            int modifyGrassColor(double x, double z, int color);
++        }
+     }
+ }
