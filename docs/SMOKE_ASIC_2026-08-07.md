@@ -1,6 +1,6 @@
-# ASIC smoke results (2026-08-07) — updated after main patch repair + 0084–0093
+# ASIC smoke results (2026-08-07) — updated after main patch repair + 0084–0094
 
-Jar: `eturlia-1.21.1-neoforge-21.1.248` with patches through **0093**.
+Jar: `eturlia-1.21.1-neoforge-21.1.248` with patches through **0094**.
 
 **Legend:** boot = FML OK + `Done (...)!` + worlds tick without hard stop. Not full gameplay / region-safe proof.
 
@@ -27,6 +27,17 @@ SHA256 (this build): `9c8fab2156e5525e11b1ebf587eb578a159221437d6fc882e6a29c1e5b
 | **0090–0091** | DefaultAttributes NeoForge view; Mojang ServerLevel 12-arg body (Moonlight) |
 | **0092** | `getFoodProperties`; timings ServerLevelData cast |
 | **0093** | `HolderLookup.Provider.holder` (TF TravellersModifiers) |
+| **0094** | `Main.main(String[])` + `LevelStorageSource.validateAndCreateAccess(String)` for **libjf/respackopts** and **WorldWeaver/BetterEnd** |
+
+## Pack hygiene (auto, not “delete mods”)
+
+| Item | Eturlia behavior |
+|------|------------------|
+| `spark-*-neoforge.jar` | Soft-skip → `*.jar.eturlia-skipped` (bundled Folia spark keeps `/spark`) |
+| `arclight_sable_patch` (Arclight original) | Soft-skip; use `*-eturlia-shim.jar` if a placeholder modId is needed |
+| `lithostitched-1.7.10+beta4` | Hard gate — **update jar to ≥1.7.13** (same mod; beta crashes TemplateLists) |
+| `easy_npc` version `0.0NONE` | Broken jar on disk — re-download; not a kernel gap |
+| `.jar1` / `.bak*` | Not loaded by NeoForge (wrong extension) |
 
 ## Known WARN / residual (non-fatal in this smoke)
 
@@ -36,14 +47,13 @@ SHA256 (this build): `9c8fab2156e5525e11b1ebf587eb578a159221437d6fc882e6a29c1e5b
 | Bukkit `CraftEntityType` for some mod entities | IllegalArgument when wrapping unknown EntityType — noise on TF/nether entities |
 | Datapack/recipe JSON noise | FD item_ability / neoforge:difference parse warnings |
 
-## Still BLOCK / document-only
+## RISK (boot may pass after 0094; gameplay not certified)
 
-| Mod | Why |
-|-----|-----|
-| BetterEnd / BCLib (Fabric) | Wrong loader |
-| easy_npc_bundle | Empty JiJ — use `easy_npc` + `easy_npc_config_ui` |
-| spark-neoforge / Arclight sable original | Conflicts — use bundled spark / eturlia-shim |
+| Mod | Notes |
+|-----|-------|
+| BetterEnd / BCLib / WorldWeaver / Wunderlib | NeoForge ports; Main mixin fixed by 0094; heavy worldgen RISK on Folia |
+| Create / Alex / EasyNPC / Sable / TF regions | Boot OK\* possible; region physics RISK |
 
 ## Not claimed
 
-Full concurrent ~60+ ASIC pack still **not** certified green. Create/Alex/EasyNPC/TF gameplay on Folia regions remains **RISK**.
+Full concurrent ~60+ ASIC pack still **not** certified green until post-0094 full-pack smoke.
