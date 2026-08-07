@@ -14,8 +14,10 @@ import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Properties;
 import java.util.stream.Collectors;
 
@@ -57,8 +59,9 @@ public final class Main {
             if (!outputFile.startsWith(outputDir)) {
                 throw new IllegalStateException("Invalid embedded library path: " + entry.name());
             }
-            if (!Files.isRegularFile(outputFile) || !entry.sha256().equalsIgnoreCase(sha256(outputFile))) {
+            if (needsExtraction(entry, outputFile)) {
                 extract(entry, outputFile);
+                Files.writeString(stateFile(outputFile), entry.sha256() + "\n", StandardCharsets.UTF_8);
             }
             allLibs.add(outputFile);
         }
@@ -133,6 +136,10 @@ public final class Main {
 
         List<String> command = new ArrayList<>();
         command.add(javaExecutable().toString());
+        // Forward the operator's JVM options to the child JVM — the child is the actual
+        // server, so without this `java -Xmx16G -jar eturlia.jar` silently ran the server
+        // on the default heap and every -Deturlia.* flag from the docs was dropped.
+        command.addAll(inheritedJvmArgs());
         command.add("-p");
         command.add(modulePath.stream().map(Path::toString).collect(Collectors.joining(File.pathSeparator)));
         command.add("--add-modules");
@@ -209,12 +216,105 @@ public final class Main {
         command.addAll(Arrays.asList(args));
 
         System.out.println("Starting Eturlia via ModLauncher (launchTarget=eturliaserver)");
-        int exitCode = new ProcessBuilder(command)
+        Process child = new ProcessBuilder(command)
                 .inheritIO()
                 .directory(Path.of(".").toAbsolutePath().normalize().toFile())
-                .start()
-                .waitFor();
+                .start();
+
+        // Without this the server keeps running after the wrapper is killed
+        // (systemd stop, CI `timeout`, Ctrl+C on Windows): orphaned JVM, held world
+        // lock and a port that never frees up.
+        Thread shutdown = new Thread(() -> terminateChild(child), "Eturlia-shutdown");
+        Runtime.getRuntime().addShutdownHook(shutdown);
+
+        int exitCode = child.waitFor();
+        try {
+            Runtime.getRuntime().removeShutdownHook(shutdown);
+        } catch (IllegalStateException ignored) {
+            // Already shutting down.
+        }
         System.exit(exitCode);
+    }
+
+    /** Asks the server JVM to stop, then forces it if it does not exit in time. */
+    private static void terminateChild(Process child) {
+        if (!child.isAlive()) {
+            return;
+        }
+        System.out.println("Eturlia launcher shutting down — stopping server process "
+                + child.pid());
+        child.descendants().forEach(ProcessHandle::destroy);
+        child.destroy();
+        try {
+            if (!child.waitFor(30, java.util.concurrent.TimeUnit.SECONDS)) {
+                child.descendants().forEach(ProcessHandle::destroyForcibly);
+                child.destroyForcibly();
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            child.destroyForcibly();
+        }
+    }
+
+    /**
+     * JVM options of this (wrapper) process that should be re-applied to the server JVM.
+     *
+     * <p>Options the launcher sets itself are filtered out so they are not specified twice.</p>
+     */
+    private static List<String> inheritedJvmArgs() {
+        List<String> inherited = new ArrayList<>();
+        List<String> managed = List.of(
+                "-DignoreList=", "-DlegacyClassPath=", "-DlibraryDirectory=",
+                "-Dfml.pluginLayerLibraries=", "-Dfml.gameLayerLibraries=",
+                "-Deturlia.serverJar=", "-Deturlia.neoforgeJar=", "-Deturlia.apiJar=",
+                "-Deturlia.commonsLang2Jar=", "-Deturlia.brigadierJar=", "-Deturlia.sparkJars=",
+                "-Dlog4j2.configurationFile=", "-Dlog4j.configurationFile=",
+                "-Dmixin.env.compatLevel=");
+        try {
+            for (String arg : java.lang.management.ManagementFactory.getRuntimeMXBean()
+                    .getInputArguments()) {
+                if (arg.startsWith("-agentlib:jdwp") || arg.startsWith("-javaagent:")) {
+                    continue; // debugger/agent attached to the wrapper, not the server
+                }
+                if (managed.stream().anyMatch(arg::startsWith)) {
+                    continue;
+                }
+                inherited.add(arg);
+            }
+        } catch (RuntimeException | LinkageError e) {
+            System.out.println("Could not read wrapper JVM arguments (" + e
+                    + ") — starting the server with default JVM options");
+        }
+        if (!inherited.isEmpty()) {
+            System.out.println("Forwarding JVM options to the server process: " + inherited);
+        }
+        return inherited;
+    }
+
+    /**
+     * Sidecar file recording which embedded library revision an extracted jar came from.
+     *
+     * <p>Some jars are patched in place after extraction (LogUtils / PaperBrigadier overlay),
+     * which permanently changes their SHA-256. Comparing the file hash against the index
+     * therefore re-extracted — and re-patched — every single library on every boot. The
+     * sidecar records the <em>source</em> hash instead, so the work happens exactly once.</p>
+     */
+    private static Path stateFile(Path lib) {
+        return lib.resolveSibling(lib.getFileName() + ".eturlia-state");
+    }
+
+    private static boolean needsExtraction(Entry entry, Path outputFile) throws Exception {
+        if (!Files.isRegularFile(outputFile)) {
+            return true;
+        }
+        Path state = stateFile(outputFile);
+        if (Files.isRegularFile(state)) {
+            String recorded = Files.readString(state, StandardCharsets.UTF_8).trim();
+            if (entry.sha256().equalsIgnoreCase(recorded)) {
+                return false;
+            }
+        }
+        return !entry.sha256().equalsIgnoreCase(sha256(outputFile));
     }
 
     private static String prop(String key, String fallback) {
@@ -293,19 +393,69 @@ public final class Main {
      */
     private static Path preferNewestLib(List<Path> libs, String needle) {
         Path best = null;
-        String bestName = "";
+        String bestName = null;
         String needleLower = needle.toLowerCase(Locale.ROOT);
         for (Path p : libs) {
             String name = p.getFileName().toString();
             String lower = name.toLowerCase(Locale.ROOT);
-            if (lower.contains(needleLower)
-                    && lower.endsWith(".jar")
-                    && name.compareTo(bestName) > 0) {
+            if (!lower.contains(needleLower) || !lower.endsWith(".jar")) {
+                continue;
+            }
+            if (bestName == null || compareVersions(name, bestName) > 0) {
                 best = p;
                 bestName = name;
             }
         }
         return best;
+    }
+
+    /**
+     * Compares two jar file names by their numeric version segments.
+     *
+     * <p>A plain {@code String.compareTo} ranked {@code commons-lang-2.6} above
+     * {@code commons-lang-2.10} and was also skewed by the {@code NNN-} prefix that
+     * embedded libraries used to carry.</p>
+     */
+    static int compareVersions(String leftName, String rightName) {
+        int[] left = versionNumbers(leftName);
+        int[] right = versionNumbers(rightName);
+        for (int i = 0; i < Math.max(left.length, right.length); i++) {
+            int l = i < left.length ? left[i] : 0;
+            int r = i < right.length ? right[i] : 0;
+            if (l != r) {
+                return Integer.compare(l, r);
+            }
+        }
+        return leftName.compareTo(rightName);
+    }
+
+    private static int[] versionNumbers(String fileName) {
+        String name = fileName.toLowerCase(Locale.ROOT);
+        if (name.endsWith(".jar")) {
+            name = name.substring(0, name.length() - 4);
+        }
+        // First digit group that follows a '-' starts the version (skips the artifact name
+        // and any NNN- ordering prefix used by older builds).
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("-(\\d+(?:\\.\\d+)*)")
+                .matcher(name);
+        String version = null;
+        while (m.find()) {
+            version = m.group(1); // last match wins: artifact-1.2 vs 072-artifact-1.2
+        }
+        if (version == null) {
+            return new int[0];
+        }
+        String[] parts = version.split("\\.");
+        int[] numbers = new int[parts.length];
+        for (int i = 0; i < parts.length; i++) {
+            try {
+                numbers[i] = Integer.parseInt(parts[i]);
+            } catch (NumberFormatException e) {
+                numbers[i] = 0;
+            }
+        }
+        return numbers;
     }
 
     /**
@@ -323,7 +473,14 @@ public final class Main {
             }
             Files.deleteIfExists(clientExtra);
         } else if (Files.isRegularFile(clientExtra)) {
-            // Replace stale copies with a symlink when possible
+            // Windows without developer mode cannot create symlinks, so this is a full copy
+            // of a multi-hundred-megabyte jar. Keep an up-to-date copy instead of deleting
+            // and re-copying it on every single boot.
+            if (Files.size(clientExtra) == Files.size(target)
+                    && !Files.getLastModifiedTime(clientExtra).toInstant()
+                            .isBefore(Files.getLastModifiedTime(target).toInstant())) {
+                return;
+            }
             Files.deleteIfExists(clientExtra);
         }
         try {
@@ -389,66 +546,71 @@ public final class Main {
         ), "LogUtils");
     }
 
-    private static void injectClassesFromFolia(
-            Path foliaAtJar, Path targetJar, List<String> entries, String label
-    ) throws IOException {
-        injectClassesFromJar(foliaAtJar, targetJar, entries, label);
-    }
-
+    /**
+     * Copies {@code entries} from {@code sourceJar} into {@code targetJar}, rewriting the
+     * target archive in place.
+     *
+     * <p>Implemented with {@code java.util.zip} rather than by shelling out to the {@code jar}
+     * tool: {@code java.home/bin/jar} does not exist on a JRE, which made this step fail on
+     * any non-JDK runtime. A marker file records the work so it is not redone on every boot.</p>
+     */
     private static void injectClassesFromJar(
             Path sourceJar, Path targetJar, List<String> entries, String label
     ) throws IOException {
-        Path work = Files.createTempDirectory("eturlia-" + label);
+        Path marker = targetJar.resolveSibling(targetJar.getFileName() + ".eturlia-" + label);
+        String fingerprint;
         try {
-            try (java.util.jar.JarFile jf = new java.util.jar.JarFile(sourceJar.toFile())) {
-                for (String entry : entries) {
-                    java.util.jar.JarEntry je = jf.getJarEntry(entry);
-                    if (je == null) {
-                        System.out.println("Missing " + entry + " in " + sourceJar.getFileName());
-                        continue;
-                    }
-                    Path dest = work.resolve(entry);
-                    Files.createDirectories(dest.getParent());
-                    try (InputStream in = jf.getInputStream(je)) {
-                        Files.copy(in, dest, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                    }
+            fingerprint = sha256(sourceJar) + ":" + String.join(",", entries);
+        } catch (Exception e) {
+            throw new IOException("Failed to fingerprint " + sourceJar, e);
+        }
+        if (Files.isRegularFile(marker)
+                && fingerprint.equals(Files.readString(marker, StandardCharsets.UTF_8).trim())) {
+            return; // already injected from this exact source
+        }
+
+        Map<String, byte[]> payload = new LinkedHashMap<>();
+        try (java.util.jar.JarFile jf = new java.util.jar.JarFile(sourceJar.toFile())) {
+            for (String entry : entries) {
+                java.util.jar.JarEntry je = jf.getJarEntry(entry);
+                if (je == null) {
+                    System.out.println("Missing " + entry + " in " + sourceJar.getFileName());
+                    continue;
+                }
+                try (InputStream in = jf.getInputStream(je)) {
+                    payload.put(entry, in.readAllBytes());
                 }
             }
-            String jarBin = Path.of(System.getProperty("java.home"), "bin",
-                    File.separatorChar == '\\' ? "jar.exe" : "jar").toString();
-            // Detect top-level package dir to update
-            String root;
-            if (Files.isDirectory(work.resolve("com"))) {
-                root = "com";
-            } else if (Files.isDirectory(work.resolve("io"))) {
-                root = "io";
-            } else {
-                throw new IOException("No class roots extracted for " + label);
+        }
+        if (payload.isEmpty()) {
+            throw new IOException("No entries extracted for " + label + " from " + sourceJar);
+        }
+
+        Path tmp = targetJar.resolveSibling(targetJar.getFileName() + ".inject.tmp");
+        try (java.util.zip.ZipInputStream in =
+                     new java.util.zip.ZipInputStream(Files.newInputStream(targetJar));
+             java.util.zip.ZipOutputStream out =
+                     new java.util.zip.ZipOutputStream(Files.newOutputStream(tmp))) {
+            java.util.zip.ZipEntry entry;
+            while ((entry = in.getNextEntry()) != null) {
+                if (payload.containsKey(entry.getName())) {
+                    continue; // replaced below
+                }
+                java.util.zip.ZipEntry copy = new java.util.zip.ZipEntry(entry.getName());
+                copy.setTime(entry.getTime());
+                out.putNextEntry(copy);
+                in.transferTo(out);
+                out.closeEntry();
             }
-            ProcessBuilder pb = new ProcessBuilder(
-                    jarBin, "uf", targetJar.toAbsolutePath().toString(),
-                    "-C", work.toString(), root);
-            pb.redirectErrorStream(true);
-            Process proc = pb.start();
-            String out = new String(proc.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-            int code = proc.waitFor();
-            if (code != 0) {
-                throw new IOException("jar uf " + label + " failed (" + code + "): " + out);
-            }
-            System.out.println("Injected " + label + " into " + targetJar.getFileName());
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IOException("Interrupted patching " + label + " jar", e);
-        } finally {
-            try (var walk = Files.walk(work)) {
-                walk.sorted(java.util.Comparator.reverseOrder()).forEach(path -> {
-                    try {
-                        Files.deleteIfExists(path);
-                    } catch (IOException ignored) {
-                    }
-                });
+            for (Map.Entry<String, byte[]> injected : payload.entrySet()) {
+                out.putNextEntry(new java.util.zip.ZipEntry(injected.getKey()));
+                out.write(injected.getValue());
+                out.closeEntry();
             }
         }
+        Files.move(tmp, targetJar, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        Files.writeString(marker, fingerprint + "\n", StandardCharsets.UTF_8);
+        System.out.println("Injected " + label + " into " + targetJar.getFileName());
     }
 
     private static List<Path> materializeBootstrapModules(Path bootstrapDir) throws IOException {
@@ -477,7 +639,11 @@ public final class Main {
 
     private static boolean hasAgreedToEula(Path eula) throws IOException {
         if (!Files.isRegularFile(eula)) {
-            Files.writeString(eula, "eula=false\n", StandardCharsets.UTF_8);
+            Files.writeString(eula, """
+                    #By changing the setting below to TRUE you are indicating your agreement to our EULA (https://aka.ms/MinecraftEULA).
+                    #Eturlia is an unofficial Folia/NeoForge hybrid and is not affiliated with Mojang or Microsoft.
+                    eula=false
+                    """, StandardCharsets.UTF_8);
             System.err.println("You need to agree to the EULA in order to run the server. Go to eula.txt for more info.");
             return false;
         }
