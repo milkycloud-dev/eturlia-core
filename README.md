@@ -135,6 +135,7 @@ Eturlia закрывает Folia↔NeoForge gaps **патчами ядра**. Н
 | Поставить jar **v0.2.5+** (патчи через **0094**) | libjf / respackopts / WorldWeaver больше не FATAL на `Main` |
 | **Обновить** Lithostitched до **≥ 1.7.13** | Бета `1.7.10+beta4` — тот же мод, битый jar; гейт останавливает boot |
 | Оставить `spark-neoforge` / Arclight sable patch | Ядро **soft-skip** → `*.jar.eturlia-skipped` (не удаляет файл; bundled `/spark` работает). Для Sable предпочтителен `arclight_sable_patch-*-eturlia-shim.jar` |
+| **WorldEdit / FAWE как NeoForge-мод** в `mods/` | Soft-skip — ставьте WorldEdit/FAWE **Folia-плагином** в `plugins/` |
 | Перекачать `easy_npc`, убрать `.jar1` / `.bak*` | Битые/мусорные файлы на диске, не пробел ядра |
 | BetterEnd + BCLib + WorldWeaver | Нужен **wunderlib**; тяжёлый worldgen = RISK на Folia |
 | Оптимизаторы (FerriteCore и т.п.) | **Не обязательны** для boot |
