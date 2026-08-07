@@ -38,6 +38,7 @@ public final class EturliaCoreSelfTest {
         manifestParsingSkipsEntriesWithoutModId();
         yamlSubsetReadsNestedKeys();
         yamlSubsetIgnoresSequencesAndTabs();
+        crashReportJsonStaysParseable();
 
         System.out.println();
         System.out.println(failures == 0
@@ -167,6 +168,34 @@ public final class EturliaCoreSelfTest {
         } finally {
             deleteRecursively(root);
         }
+    }
+
+    // -------------------------------------------------------- Crash report
+
+    private static void crashReportJsonStaysParseable() {
+        // Control characters reach the report through exception messages (native code,
+        // ANSI-coloured strings). Raw control characters are invalid JSON.
+        String nul = String.valueOf((char) 0);
+        String esc = String.valueOf((char) 27);
+        Throwable cause = new IllegalStateException(
+                "quote \" backslash \\ newline \n tab \t nul " + nul + " esc " + esc);
+        String json = eturlia.core.logging.RegionContextCrashReport
+                .enrich(Thread.currentThread(), cause)
+                .toJsonString();
+        check("crash report JSON parses", Boolean.TRUE,
+                EturliaModLoadingPlugin.Json.parse(json) instanceof Map);
+        check("no raw control characters in JSON", Boolean.TRUE, noRawControlChars(json));
+    }
+
+    private static boolean noRawControlChars(String json) {
+        for (int i = 0; i < json.length(); i++) {
+            char c = json.charAt(i);
+            // Pretty-printing newlines between members are fine; anything else is not.
+            if (c < 0x20 && c != '\n' && c != '\r') {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static Path writeConfig(String prefix, String yaml) throws IOException {
