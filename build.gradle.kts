@@ -285,6 +285,12 @@ gradle.projectsEvaluated {
     val eturliaCoreJar = server.tasks.register("eturliaCoreJar", Jar::class.java) {
         from(server.layout.buildDirectory.dir("eturlia/core-classes"))
         from(eturliaCoreResources)
+        // The compatibility manifest has to live in *this* jar, not just the outer launcher
+        // jar: EturliaModLoadingPlugin loads it with getResourceAsStream, and at runtime it
+        // runs from the extracted eturlia-core.jar. The launcher jar is not on the server
+        // JVM's classpath, so a copy only there is unreachable — the smoke log said exactly
+        // that: "Manifest resource not found: /eturlia-supported.json".
+        from(rootProject.file("build-data/eturlia-supported.json"))
         archiveFileName.set("eturlia-core.jar")
         destinationDirectory.set(server.layout.buildDirectory.dir("eturlia/intermediate-jars"))
         dependsOn(compileEturliaCore)
