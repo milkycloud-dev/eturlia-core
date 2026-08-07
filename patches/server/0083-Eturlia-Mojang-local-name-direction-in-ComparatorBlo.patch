@@ -1,0 +1,35 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Fri, 7 Aug 2026 07:23:27 +0000
+Subject: [PATCH] Eturlia: Mojang local name direction in
+ ComparatorBlock.getInputSignal
+
+Create Simulated ComparatorBlockMixin uses MixinExtras @Local(name="direction").
+CraftBukkit renamed the local to enumdirection, which breaks Aeronautics/Simulated boot.
+
+diff --git a/src/main/java/net/minecraft/world/level/block/ComparatorBlock.java b/src/main/java/net/minecraft/world/level/block/ComparatorBlock.java
+index bc78a86260ec368ce882ac9c8f48354c06c586dd..b62b2267efceff9544bda37a62a1ab5161a43052 100644
+--- a/src/main/java/net/minecraft/world/level/block/ComparatorBlock.java
++++ b/src/main/java/net/minecraft/world/level/block/ComparatorBlock.java
+@@ -88,16 +88,17 @@ public class ComparatorBlock extends DiodeBlock implements EntityBlock {
+     @Override
+     protected int getInputSignal(Level world, BlockPos pos, BlockState state) {
+         int i = super.getInputSignal(world, pos, state);
+-        Direction enumdirection = (Direction) state.getValue(ComparatorBlock.FACING);
+-        BlockPos blockposition1 = pos.relative(enumdirection);
++        // Eturlia: Mojang local name "direction" required by Create Simulated ComparatorBlockMixin @Local
++        Direction direction = (Direction) state.getValue(ComparatorBlock.FACING);
++        BlockPos blockposition1 = pos.relative(direction);
+         BlockState iblockdata1 = world.getBlockState(blockposition1);
+ 
+         if (iblockdata1.hasAnalogOutputSignal()) {
+             i = iblockdata1.getAnalogOutputSignal(world, blockposition1);
+         } else if (i < 15 && iblockdata1.isRedstoneConductor(world, blockposition1)) {
+-            blockposition1 = blockposition1.relative(enumdirection);
++            blockposition1 = blockposition1.relative(direction);
+             iblockdata1 = world.getBlockState(blockposition1);
+-            ItemFrame entityitemframe = this.getItemFrame(world, enumdirection, blockposition1);
++            ItemFrame entityitemframe = this.getItemFrame(world, direction, blockposition1);
+             int j = Math.max(entityitemframe == null ? Integer.MIN_VALUE : entityitemframe.getAnalogOutput(), iblockdata1.hasAnalogOutputSignal() ? iblockdata1.getAnalogOutputSignal(world, blockposition1) : Integer.MIN_VALUE);
+ 
+             if (j != Integer.MIN_VALUE) {

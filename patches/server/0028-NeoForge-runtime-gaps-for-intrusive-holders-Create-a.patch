@@ -9,7 +9,7 @@ Rarity, FoodProperties.effect(Supplier), Item.modifyDefaultComponentsFrom,
 RegistryOps copy ctor, and related FD block/loot APIs.
 
 diff --git a/src/main/java/net/minecraft/core/MappedRegistry.java b/src/main/java/net/minecraft/core/MappedRegistry.java
-index 545ee62ebb9ce9bfc28428f98ae116c415f373c1..a140189f9d90c39fc03fdd91c6dfc4238328af6d 100644
+index 545ee62ebb9ce9bfc28428f98ae116c415f373c1..f830120d3c3be8f8715dd9a6c9afeee503b7144a 100644
 --- a/src/main/java/net/minecraft/core/MappedRegistry.java
 +++ b/src/main/java/net/minecraft/core/MappedRegistry.java
 @@ -45,6 +45,8 @@ public class MappedRegistry<T> extends net.neoforged.neoforge.registries.BaseMap
@@ -146,7 +146,7 @@ index 545ee62ebb9ce9bfc28428f98ae116c415f373c1..a140189f9d90c39fc03fdd91c6dfc423
 +            if (!this.intrusiveHolders) {
 +                throw new IllegalStateException("This registry can't create intrusive holders");
 +            }
-+            // Neo/Crelia: map may have been cleared on full clear(); recreate for RegisterEvent after unfreeze
++            // Neo/Eturlia: map may have been cleared on full clear(); recreate for RegisterEvent after unfreeze
 +            this.unregisteredIntrusiveHolders = new IdentityHashMap<>();
          }
 +        this.validateWrite();

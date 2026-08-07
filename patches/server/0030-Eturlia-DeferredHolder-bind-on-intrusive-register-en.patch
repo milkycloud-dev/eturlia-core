@@ -9,30 +9,8 @@ Create DeferredHolders resolve in RegisterEvent. Reintroduce
 PersistentEntitySectionManager construction in ServerLevel.<init> as a
 Moonlight FakeServerLevel mixin target (Folia still ticks via moonrise).
 
-diff --git a/src/main/java/io/papermc/paper/SparksFly.java b/src/main/java/io/papermc/paper/SparksFly.java
-index 9a86c86be13c671a99b8582247aee56a2f31a04b..9825ba84d1592459cd401b7d4f9accba49366248 100644
---- a/src/main/java/io/papermc/paper/SparksFly.java
-+++ b/src/main/java/io/papermc/paper/SparksFly.java
-@@ -109,7 +109,7 @@ public final class SparksFly {
- 
-     private void enable() {
-         if (!this.enabled) {
--            // Crelia: keep Paper's bundled spark available (Folia 0018 had forced it off).
-+            // Eturlia: keep Paper's bundled spark available (Folia 0018 had forced it off).
-             // Spark jars stay on the fat classpath; respect paper-global.yml spark.enabled.
-             if (GlobalConfiguration.get().spark.enabled) {
-                 this.enabled = true;
-@@ -163,7 +163,7 @@ public final class SparksFly {
-     }
- 
-     public static boolean isPluginPreferred() {
--        // Crelia: restore Paper preference flag (Folia 0018 forced plugin-only / disabled bundled spark).
-+        // Eturlia: restore Paper preference flag (Folia 0018 forced plugin-only / disabled bundled spark).
-         return Boolean.getBoolean(PREFER_SPARK_PLUGIN_PROPERTY);
-     }
- 
 diff --git a/src/main/java/net/minecraft/core/MappedRegistry.java b/src/main/java/net/minecraft/core/MappedRegistry.java
-index a140189f9d90c39fc03fdd91c6dfc4238328af6d..6ad4330c521f429d165043da4a58544313d281f5 100644
+index f830120d3c3be8f8715dd9a6c9afeee503b7144a..6ad4330c521f429d165043da4a58544313d281f5 100644
 --- a/src/main/java/net/minecraft/core/MappedRegistry.java
 +++ b/src/main/java/net/minecraft/core/MappedRegistry.java
 @@ -146,9 +146,11 @@ public class MappedRegistry<T> extends net.neoforged.neoforge.registries.BaseMap
@@ -48,35 +26,6 @@ index a140189f9d90c39fc03fdd91c6dfc4238328af6d..6ad4330c521f429d165043da4a585443
              reference.bindValue(value);
          }
  
-@@ -377,7 +379,7 @@ public class MappedRegistry<T> extends net.neoforged.neoforge.registries.BaseMap
-             if (!this.intrusiveHolders) {
-                 throw new IllegalStateException("This registry can't create intrusive holders");
-             }
--            // Neo/Crelia: map may have been cleared on full clear(); recreate for RegisterEvent after unfreeze
-+            // Neo/Eturlia: map may have been cleared on full clear(); recreate for RegisterEvent after unfreeze
-             this.unregisteredIntrusiveHolders = new IdentityHashMap<>();
-         }
-         this.validateWrite();
-diff --git a/src/main/java/net/minecraft/core/Vec3i.java b/src/main/java/net/minecraft/core/Vec3i.java
-index 4dff7aec5e11836a45f9c095e8766ef6647a67be..0be4624e6ac2b508008004d01077828e20cc0e72 100644
---- a/src/main/java/net/minecraft/core/Vec3i.java
-+++ b/src/main/java/net/minecraft/core/Vec3i.java
-@@ -41,13 +41,13 @@ public class Vec3i implements Comparable<Vec3i> {
-     }
- 
-     @Override
--    // Crelia/NeoForge: Create TrackNodeLocation overrides equals — cannot be final (Paper inlined it)
-+    // Eturlia/NeoForge: Create TrackNodeLocation overrides equals — cannot be final (Paper inlined it)
-     public boolean equals(Object object) {
-         return this == object || object instanceof Vec3i vec3i && this.getX() == vec3i.getX() && this.getY() == vec3i.getY() && this.getZ() == vec3i.getZ();
-     }
- 
-     @Override
--    // Crelia/NeoForge: keep hashCode overridable with equals
-+    // Eturlia/NeoForge: keep hashCode overridable with equals
-     public int hashCode() {
-         return (this.getY() + this.getZ() * 31) * 31 + this.getX();
-     }
 diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
 index 102400c478b813258809e28c5629fcd3928b44e6..ed2c93bc2947fddae222c9599a45494ef3bcc2c7 100644
 --- a/src/main/java/net/minecraft/server/level/ServerLevel.java
