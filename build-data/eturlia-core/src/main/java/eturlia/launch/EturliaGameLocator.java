@@ -138,7 +138,11 @@ final class EturliaGameLocator implements IModFileCandidateLocator {
 
     private static boolean includeFoliaEntry(String relativePath, Path basePath) {
         String path = relativePath.startsWith("/") ? relativePath.substring(1) : relativePath;
-        String baseName = basePath == null ? "" : basePath.getFileName().toString().toLowerCase();
+        // Locale.ROOT: a default-locale toLowerCase() maps 'I' to a dotless 'ı' under tr_TR,
+        // which would silently break these jar-name checks and therefore the classpath filter.
+        String baseName = basePath == null
+                ? ""
+                : basePath.getFileName().toString().toLowerCase(java.util.Locale.ROOT);
         // Never let secondary jars overwrite Folia's MANIFEST (CraftBukkit parses
         // Implementation-Vendor as a build date). commons-lang 2.x also ships a
         // reserved JPMS package segment "enum" — drop it.

@@ -114,7 +114,7 @@ public final class RegionAwareEventBus {
          * @return the resolved validation mode
          */
         public static ValidationMode fromSystemProperty() {
-            String value = System.getProperty(PROPERTY, "WARN").toUpperCase().trim();
+            String value = System.getProperty(PROPERTY, "WARN").toUpperCase(java.util.Locale.ROOT).trim();
             try {
                 return valueOf(value);
             } catch (IllegalArgumentException e) {
