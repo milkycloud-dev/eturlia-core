@@ -15,7 +15,20 @@ Mods together: Moonlight, Farmers Delight, CreativeCore, Farm & Charm, Almanac, 
 | Worlds incl. Twilight Forest | PASS |
 | Alive after ~35–40s ticks | PASS |
 
-SHA256 (this build): `9c8fab2156e5525e11b1ebf587eb578a159221437d6fc882e6a29c1e5b9d777a`
+SHA256 (core stack earlier): `9c8fab2156e5525e11b1ebf587eb578a159221437d6fc882e6a29c1e5b9d777a`
+
+SHA256 (**0094** jar): `1336124481ade2d9d6c2e5c310f236f4cb4a52e53a12061da7d5e3f008a7694e`
+
+### 0094 smoke PASS (libjf / respackopts)
+
+Mods: libjf + respackopts + lithostitched **1.7.13** + Terralith + Incendium.
+
+| Check | Result |
+|-------|--------|
+| `libjf_base` MainMixin apply | PASS (no Critical injection) |
+| `Done (...)` | PASS (~1.9s) |
+
+Previously FATAL: `@Inject main([Ljava/lang/String;)V` missing on Folia.
 
 ### Kernel bridges that unblocked this stack
 
