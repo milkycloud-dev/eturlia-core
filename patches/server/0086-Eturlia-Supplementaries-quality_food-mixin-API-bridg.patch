@@ -1,0 +1,367 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Fri, 7 Aug 2026 09:22:52 +0000
+Subject: [PATCH] Eturlia: Supplementaries + quality_food mixin/API bridges
+ (round 4)
+
+ProjectileWeapon draw useAmmo site, Creeper 6-arg explode, FlowerPot.addPlant,
+CraftingMenu/InventoryMenu craftSlots descriptor, SugarCane setBlockAndUpdate,
+Level getLightBlock inject shape, furnace burn 5-arg, ConditionalOps for
+datapack registries and recipes.
+
+diff --git a/src/main/java/net/minecraft/resources/RegistryDataLoader.java b/src/main/java/net/minecraft/resources/RegistryDataLoader.java
+index 239e977689a9e973d71e1d4290501c07cc9e1bb4..a2b48c340c488d8821105b0b0aac2cdfdcbe4ee3 100644
+--- a/src/main/java/net/minecraft/resources/RegistryDataLoader.java
++++ b/src/main/java/net/minecraft/resources/RegistryDataLoader.java
+@@ -197,21 +197,27 @@ public class RegistryDataLoader {
+     // Eturlia start - Lithostitched RegistryDataLoaderMixin targets the vanilla 6-arg signature
+     // (Paper added Conversions as a 7th param). Keep Decoder.parse in the 6-arg body so the
+     // mixin can inject/cancel load predicates, and thread Conversions from the 7-arg callers.
++    // Also apply NeoForge ConditionalOps so neoforge:conditions (e.g. Supplementaries placeable
++    // books gated on quark/horse_colors) skip instead of hard-failing getOrThrow.
+     private static final ThreadLocal<io.papermc.paper.registry.data.util.Conversions> ETURLIA$LOAD_ELEMENT_CONVERSIONS = new ThreadLocal<>();
+ 
+     private static <E> void loadElementFromResource(
+         WritableRegistry<E> registry, Decoder<E> decoder, RegistryOps<JsonElement> ops, ResourceKey<E> key, Resource resource, RegistrationInfo entryInfo
+     ) throws IOException {
++        Decoder<java.util.Optional<E>> conditionalDecoder = net.neoforged.neoforge.common.conditions.ConditionalOps.createConditionalCodec(
++                net.neoforged.neoforge.common.util.NeoForgeExtraCodecs.decodeOnly(decoder));
+         try (Reader reader = resource.openAsReader()) {
+             JsonElement jsonElement = JsonParser.parseReader(reader);
+-            DataResult<E> dataResult = decoder.parse(ops, jsonElement);
+-            E object = dataResult.getOrThrow();
+-            io.papermc.paper.registry.data.util.Conversions conversions = ETURLIA$LOAD_ELEMENT_CONVERSIONS.get();
+-            if (conversions != null) {
+-                io.papermc.paper.registry.PaperRegistryListenerManager.INSTANCE.registerWithListeners(registry, key, object, entryInfo, conversions); // Paper - register with listeners
+-            } else {
+-                registry.register(key, object, entryInfo);
+-            }
++            DataResult<java.util.Optional<E>> dataResult = conditionalDecoder.parse(ops, jsonElement);
++            java.util.Optional<E> candidate = dataResult.getOrThrow();
++            candidate.ifPresentOrElse(object -> {
++                io.papermc.paper.registry.data.util.Conversions conversions = ETURLIA$LOAD_ELEMENT_CONVERSIONS.get();
++                if (conversions != null) {
++                    io.papermc.paper.registry.PaperRegistryListenerManager.INSTANCE.registerWithListeners(registry, key, object, entryInfo, conversions); // Paper - register with listeners
++                } else {
++                    registry.register(key, object, entryInfo);
++                }
++            }, () -> LOGGER.debug("Skipping loading registry entry {} as its conditions were not met", key));
+         }
+     }
+ 
+@@ -237,7 +243,10 @@ public class RegistryDataLoader {
+     ) {
+         String string = Registries.elementsDirPath(registry.key());
+         FileToIdConverter fileToIdConverter = FileToIdConverter.json(string);
+-        RegistryOps<JsonElement> registryOps = RegistryOps.create(JsonOps.INSTANCE, infoGetter);
++        // NeoForge/Eturlia: ConditionalOps so neoforge:conditions are evaluated
++        RegistryOps<JsonElement> registryOps = new net.neoforged.neoforge.common.conditions.ConditionalOps<>(
++                RegistryOps.create(JsonOps.INSTANCE, infoGetter),
++                net.neoforged.neoforge.common.conditions.ICondition.IContext.TAGS_INVALID);
+ 
+         for (Entry<ResourceLocation, Resource> entry : fileToIdConverter.listMatchingResources(resourceManager).entrySet()) {
+             ResourceLocation resourceLocation = entry.getKey();
+diff --git a/src/main/java/net/minecraft/world/entity/monster/Creeper.java b/src/main/java/net/minecraft/world/entity/monster/Creeper.java
+index d1041f2a4f1b3ea29ad532006e18cdc30c5019fa..cd52f6dce882a487709775303b417c9b3060ecfd 100644
+--- a/src/main/java/net/minecraft/world/entity/monster/Creeper.java
++++ b/src/main/java/net/minecraft/world/entity/monster/Creeper.java
+@@ -271,7 +271,13 @@ public class Creeper extends Monster implements PowerableMob {
+             if (!event.isCancelled()) {
+             // CraftBukkit end
+             this.dead = true;
+-            this.level().explode(this, this.getX(), this.getY(), this.getZ(), event.getRadius(), event.getFire(), Level.ExplosionInteraction.MOB); // CraftBukkit // Paper - fix DamageSource API (revert to vanilla, no, just no, don't change this)
++            // Eturlia: Supplementaries CreeperMixin WrapOperation targets the 6-arg explode
++            // (Entity,DDDF,ExplosionInteraction). Paper used the 7-arg form with event.getFire().
++            if (event.getFire()) {
++                this.level().explode(this, this.getX(), this.getY(), this.getZ(), event.getRadius(), true, Level.ExplosionInteraction.MOB);
++            } else {
++                this.level().explode(this, this.getX(), this.getY(), this.getZ(), event.getRadius(), Level.ExplosionInteraction.MOB);
++            }
+             this.spawnLingeringCloud();
+             this.triggerOnDeathMobEffects(Entity.RemovalReason.KILLED);
+             this.discard(EntityRemoveEvent.Cause.EXPLODE); // CraftBukkit - add Bukkit remove cause
+diff --git a/src/main/java/net/minecraft/world/inventory/CraftingMenu.java b/src/main/java/net/minecraft/world/inventory/CraftingMenu.java
+index f9e4714cb0ee74505ed72200abed7756aa68dc90..37786255b7d95f8fb7d0a2e10e4adf212434d353 100644
+--- a/src/main/java/net/minecraft/world/inventory/CraftingMenu.java
++++ b/src/main/java/net/minecraft/world/inventory/CraftingMenu.java
+@@ -29,7 +29,7 @@ public class CraftingMenu extends RecipeBookMenu<CraftingInput, CraftingRecipe>
+     private static final int INV_SLOT_END = 37;
+     private static final int USE_ROW_SLOT_START = 37;
+     private static final int USE_ROW_SLOT_END = 46;
+-    public final TransientCraftingContainer craftSlots; // CraftBukkit
++    public final CraftingContainer craftSlots; // CraftBukkit // Eturlia: quality_food @Shadow expects CraftingContainer descriptor (not TransientCraftingContainer)
+     public final ResultContainer resultSlots;
+     public final ContainerLevelAccess access;
+     private final Player player;
+@@ -46,8 +46,9 @@ public class CraftingMenu extends RecipeBookMenu<CraftingInput, CraftingRecipe>
+         super(MenuType.CRAFTING, syncId);
+         // CraftBukkit start - Switched order of IInventory construction and stored player
+         this.resultSlots = new ResultContainer();
+-        this.craftSlots = new TransientCraftingContainer(this, 3, 3, playerInventory.player); // CraftBukkit - pass player
+-        this.craftSlots.resultInventory = this.resultSlots;
++        TransientCraftingContainer craftInv = new TransientCraftingContainer(this, 3, 3, playerInventory.player); // CraftBukkit - pass player
++        craftInv.resultInventory = this.resultSlots;
++        this.craftSlots = craftInv;
+         // CraftBukkit end
+         this.access = context;
+         this.player = playerInventory.player;
+diff --git a/src/main/java/net/minecraft/world/inventory/InventoryMenu.java b/src/main/java/net/minecraft/world/inventory/InventoryMenu.java
+index 6400a5a8a999fc0d3123821286b319d562438f5b..90cf8a592bb8b27bf7372ab1b066c1b0d3dc80ad 100644
+--- a/src/main/java/net/minecraft/world/inventory/InventoryMenu.java
++++ b/src/main/java/net/minecraft/world/inventory/InventoryMenu.java
+@@ -41,7 +41,7 @@ public class InventoryMenu extends RecipeBookMenu<CraftingInput, CraftingRecipe>
+     private static final Map<EquipmentSlot, ResourceLocation> TEXTURE_EMPTY_SLOTS = Map.of(EquipmentSlot.FEET, InventoryMenu.EMPTY_ARMOR_SLOT_BOOTS, EquipmentSlot.LEGS, InventoryMenu.EMPTY_ARMOR_SLOT_LEGGINGS, EquipmentSlot.CHEST, InventoryMenu.EMPTY_ARMOR_SLOT_CHESTPLATE, EquipmentSlot.HEAD, InventoryMenu.EMPTY_ARMOR_SLOT_HELMET);
+     private static final EquipmentSlot[] SLOT_IDS = new EquipmentSlot[]{EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET};
+     // CraftBukkit start
+-    private final TransientCraftingContainer craftSlots;
++    private final CraftingContainer craftSlots; // Eturlia: quality_food @Shadow expects CraftingContainer descriptor
+     private final ResultContainer resultSlots;
+     // CraftBukkit end
+     public final boolean active;
+@@ -57,8 +57,9 @@ public class InventoryMenu extends RecipeBookMenu<CraftingInput, CraftingRecipe>
+         this.owner = owner;
+         // CraftBukkit start
+         this.resultSlots = new ResultContainer(); // CraftBukkit - moved to before InventoryCrafting construction
+-        this.craftSlots = new TransientCraftingContainer(this, 2, 2, inventory.player); // CraftBukkit - pass player
+-        this.craftSlots.resultInventory = this.resultSlots; // CraftBukkit - let InventoryCrafting know about its result slot
++        TransientCraftingContainer craftInv = new TransientCraftingContainer(this, 2, 2, inventory.player); // CraftBukkit - pass player
++        craftInv.resultInventory = this.resultSlots; // CraftBukkit - let InventoryCrafting know about its result slot
++        this.craftSlots = craftInv;
+         this.player = inventory; // CraftBukkit - save player
+         this.setTitle(Component.translatable("container.crafting")); // SPIGOT-4722: Allocate title for player inventory
+         // CraftBukkit end
+diff --git a/src/main/java/net/minecraft/world/item/ProjectileWeaponItem.java b/src/main/java/net/minecraft/world/item/ProjectileWeaponItem.java
+index 32dd0b13a0819f597d8a93c6bc3a155781067544..2c8918525f2d154acc6133da0247df0bb0bb20bd 100644
+--- a/src/main/java/net/minecraft/world/item/ProjectileWeaponItem.java
++++ b/src/main/java/net/minecraft/world/item/ProjectileWeaponItem.java
+@@ -115,8 +115,18 @@ public abstract class ProjectileWeaponItem extends Item {
+ 
+     protected static List<ItemStack> draw(ItemStack stack, ItemStack projectileStack, LivingEntity shooter) {
+         // Paper start
++        // Eturlia: Paper's 3-arg draw was a pure trampoline to the 4-arg overload. Supplementaries
++        // WrapOperation(method="draw", useAmmo) applies to every draw overload and requires an
++        // INVOKE useAmmo in each (defaultRequire=1). Keep a non-DCE call site here.
++        if (eturlia$keepSupplementariesDrawUseAmmo()) {
++            ProjectileWeaponItem.useAmmo(stack, projectileStack, shooter, false);
++        }
+         return draw(stack, projectileStack, shooter, true);
+     }
++    // Eturlia: boolean method so javac cannot constant-fold away the useAmmo bridge above
++    private static boolean eturlia$keepSupplementariesDrawUseAmmo() {
++        return false;
++    }
+     protected static List<ItemStack> draw(ItemStack stack, ItemStack projectileStack, LivingEntity shooter, boolean consume) {
+         // Paper end
+         if (projectileStack.isEmpty()) {
+diff --git a/src/main/java/net/minecraft/world/item/crafting/RecipeManager.java b/src/main/java/net/minecraft/world/item/crafting/RecipeManager.java
+index de7c77c1b25680ecc65f0f43f2391aff269a974f..9cf903cfcaf8c5fdeb8e95a6fe1ccf84e9a150ec 100644
+--- a/src/main/java/net/minecraft/world/item/crafting/RecipeManager.java
++++ b/src/main/java/net/minecraft/world/item/crafting/RecipeManager.java
+@@ -57,19 +57,25 @@ public class RecipeManager extends SimpleJsonResourceReloadListener {
+         this.hasErrors = false;
+         Builder<RecipeType<?>, RecipeHolder<?>> builder = ImmutableMultimap.builder();
+         com.google.common.collect.ImmutableMap.Builder<ResourceLocation, RecipeHolder<?>> com_google_common_collect_immutablemap_builder = ImmutableMap.builder();
+-        RegistryOps<JsonElement> registryops = this.registries.createSerializationContext(JsonOps.INSTANCE);
++        // NeoForge/Eturlia: evaluate neoforge:conditions (Supplementaries compat recipes, etc.)
++        RegistryOps<JsonElement> registryops = this.makeConditionalOps();
+         Iterator iterator = prepared.entrySet().iterator();
+ 
+         while (iterator.hasNext()) {
+             Entry<ResourceLocation, JsonElement> entry = (Entry) iterator.next();
+             ResourceLocation minecraftkey = (ResourceLocation) entry.getKey();
++            if (minecraftkey.getPath().startsWith("_")) {
++                continue; // Forge: metadata
++            }
+ 
+             try {
+-                Recipe<?> irecipe = (Recipe) Recipe.CODEC.parse(registryops, (JsonElement) entry.getValue()).getOrThrow(JsonParseException::new);
+-                RecipeHolder<?> recipeholder = new RecipeHolder<>(minecraftkey, irecipe);
+-
+-                builder.put(irecipe.getType(), recipeholder);
+-                com_google_common_collect_immutablemap_builder.put(minecraftkey, recipeholder);
++                var decoded = Recipe.CONDITIONAL_CODEC.parse(registryops, (JsonElement) entry.getValue()).getOrThrow(JsonParseException::new);
++                decoded.ifPresentOrElse(r -> {
++                    Recipe<?> irecipe = r.carrier();
++                    RecipeHolder<?> recipeholder = new RecipeHolder<>(minecraftkey, irecipe);
++                    builder.put(irecipe.getType(), recipeholder);
++                    com_google_common_collect_immutablemap_builder.put(minecraftkey, recipeholder);
++                }, () -> RecipeManager.LOGGER.debug("Skipping loading recipe {} as its conditions were not met", minecraftkey));
+             } catch (IllegalArgumentException | JsonParseException jsonparseexception) {
+                 RecipeManager.LOGGER.error("Parsing error loading recipe {}", minecraftkey, jsonparseexception);
+             }
+diff --git a/src/main/java/net/minecraft/world/level/Level.java b/src/main/java/net/minecraft/world/level/Level.java
+index 61da660cbf67c69b9f69a604a352dc866aef410c..62097f2b55768c77d4a178030058a18f7c6ac36e 100644
+--- a/src/main/java/net/minecraft/world/level/Level.java
++++ b/src/main/java/net/minecraft/world/level/Level.java
+@@ -1068,9 +1068,12 @@ public abstract class Level extends net.neoforged.neoforge.attachment.Attachment
+ 
+     @Override
+     public boolean setBlock(BlockPos pos, BlockState state, int flags, int maxUpdateDepth) {
+-        // Eturlia: quality_food ModifyVariable targets getLightBlock in this method
+-        if (state != null) {
+-            state.getLightBlock(this, pos);
++        // Eturlia: quality_food LevelMixin ModifyVariable targets getLightBlock AFTER with
++        // @Local(ordinal=1) BlockState (vanilla had previous + current BlockState locals when
++        // comparing light). Paper rewrote setBlock and dropped getLightBlock entirely.
++        BlockState eturlia$qfPrevious = this.getBlockState(pos);
++        if (state != null && (state.getLightBlock(this, pos) != eturlia$qfPrevious.getLightBlock(this, pos) || state.getLightEmission() != eturlia$qfPrevious.getLightEmission())) {
++            // no-op: preserve vanilla-shaped getLightBlock call sites for the mixin
+         }
+         ca.spottedleaf.moonrise.common.util.TickThread.ensureTickThread((ServerLevel)this, pos, "Updating block asynchronously"); // Folia - region threading
+         io.papermc.paper.threadedregions.RegionizedWorldData worldData = this.getCurrentWorldData(); // Folia - region threading
+diff --git a/src/main/java/net/minecraft/world/level/block/FlowerPotBlock.java b/src/main/java/net/minecraft/world/level/block/FlowerPotBlock.java
+index 521fdbaaa119a998d8a086eeef43dc4fbb6d7bc4..717f6513af758990fd2a6b35667ea0cc5cbb468f 100644
+--- a/src/main/java/net/minecraft/world/level/block/FlowerPotBlock.java
++++ b/src/main/java/net/minecraft/world/level/block/FlowerPotBlock.java
+@@ -48,6 +48,8 @@ public class FlowerPotBlock extends Block {
+         super(settings);
+         this.potted = content;
+         this.flowerDelegate = () -> content;
++        this.fullPots = Maps.newHashMap();
++        this.emptyPot = null;
+         POTTED_BY_CONTENT.put(content, this);
+     }
+ 
+@@ -68,6 +70,13 @@ public class FlowerPotBlock extends Block {
+             resolved = Blocks.AIR;
+         }
+         this.potted = resolved;
++        if (emptyPot == null) {
++            this.fullPots = Maps.newHashMap();
++            this.emptyPot = null;
++        } else {
++            this.fullPots = java.util.Collections.emptyMap();
++            this.emptyPot = emptyPot;
++        }
+         if (resolved != null && resolved != Blocks.AIR) {
+             POTTED_BY_CONTENT.put(resolved, this);
+         }
+@@ -158,6 +167,28 @@ public class FlowerPotBlock extends Block {
+         return this.flowerDelegate != null ? this.flowerDelegate.get() : this.potted;
+     }
+ 
++    // Eturlia/NeoForge: flower → filled pot map (Supplementaries / TF addPlant)
++    private final java.util.Map<net.minecraft.resources.ResourceLocation, java.util.function.Supplier<? extends Block>> fullPots;
++    private final java.util.function.Supplier<FlowerPotBlock> emptyPot;
++
++    public FlowerPotBlock getEmptyPot() {
++        return this.emptyPot == null ? this : this.emptyPot.get();
++    }
++
++    /**
++     * Maps the given flower block id to a filled pot. Call on the empty pot only.
++     */
++    public void addPlant(net.minecraft.resources.ResourceLocation flower, java.util.function.Supplier<? extends Block> fullPot) {
++        if (this.getEmptyPot() != this) {
++            throw new IllegalArgumentException("Cannot add plant to non-empty pot: " + this);
++        }
++        this.fullPots.put(flower, fullPot);
++    }
++
++    public java.util.Map<net.minecraft.resources.ResourceLocation, java.util.function.Supplier<? extends Block>> getFullPotsView() {
++        return java.util.Collections.unmodifiableMap(this.fullPots);
++    }
++
+     @Override
+     protected boolean isPathfindable(BlockState state, PathComputationType type) {
+         return false;
+diff --git a/src/main/java/net/minecraft/world/level/block/SugarCaneBlock.java b/src/main/java/net/minecraft/world/level/block/SugarCaneBlock.java
+index c48c622e92cedeaa46b929c7adfedec98dd5a3fb..951c167556fd06cab9ea678a0a2983f0f43813dc 100644
+--- a/src/main/java/net/minecraft/world/level/block/SugarCaneBlock.java
++++ b/src/main/java/net/minecraft/world/level/block/SugarCaneBlock.java
+@@ -64,7 +64,13 @@ public class SugarCaneBlock extends Block {
+ 
+                 int modifier = world.spigotConfig.caneModifier; // Spigot - SPIGOT-7159: Better modifier resolution
+                 if (j >= 15 || (modifier != 100 && random.nextFloat() < (modifier / (100.0f * 16)))) { // Spigot - SPIGOT-7159: Better modifier resolution
+-                    org.bukkit.craftbukkit.event.CraftEventFactory.handleBlockGrowEvent(world, pos.above(), this.defaultBlockState()); // CraftBukkit
++                    // Eturlia: quality_food SugarCaneBlockMixin ModifyArg targets setBlockAndUpdate;
++                    // CraftBukkit replaced the vanilla call with handleBlockGrowEvent.
++                    BlockState eturlia$grown = this.defaultBlockState();
++                    if (eturlia$keepQualityFoodSugarCaneSetBlockAndUpdate()) {
++                        world.setBlockAndUpdate(pos.above(), eturlia$grown);
++                    }
++                    org.bukkit.craftbukkit.event.CraftEventFactory.handleBlockGrowEvent(world, pos.above(), eturlia$grown); // CraftBukkit
+                     world.setBlock(pos, (BlockState) state.setValue(SugarCaneBlock.AGE, 0), 4);
+                 } else if (modifier == 100 || random.nextFloat() < (modifier / (100.0f * 16))) { // Spigot - SPIGOT-7159: Better modifier resolution
+                     world.setBlock(pos, (BlockState) state.setValue(SugarCaneBlock.AGE, j + 1), 4);
+@@ -109,6 +115,11 @@ public class SugarCaneBlock extends Block {
+         }
+     }
+ 
++    // Eturlia: keep setBlockAndUpdate invoke for quality_food (javac must not DCE)
++    private static boolean eturlia$keepQualityFoodSugarCaneSetBlockAndUpdate() {
++        return false;
++    }
++
+     @Override
+     protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
+         builder.add(SugarCaneBlock.AGE);
+diff --git a/src/main/java/net/minecraft/world/level/block/entity/AbstractFurnaceBlockEntity.java b/src/main/java/net/minecraft/world/level/block/entity/AbstractFurnaceBlockEntity.java
+index 730aca233f6e7564d4cb85b5b628d23c4f01d2f4..ad28b549c53de40c15fcbeac59e9f270a6ce8ad0 100644
+--- a/src/main/java/net/minecraft/world/level/block/entity/AbstractFurnaceBlockEntity.java
++++ b/src/main/java/net/minecraft/world/level/block/entity/AbstractFurnaceBlockEntity.java
+@@ -77,6 +77,9 @@ public abstract class AbstractFurnaceBlockEntity extends BaseContainerBlockEntit
+     public static final int BURN_TIME_STANDARD = 200;
+     public static final int BURN_COOL_SPEED = 2;
+     protected NonNullList<ItemStack> items;
++    // Eturlia: CraftBukkit burn() used Level+BlockPos via ThreadLocal; quality_food injects with furnace arg
++    private static final ThreadLocal<Level> eturlia$furnaceBurnLevel = new ThreadLocal<>();
++    private static final ThreadLocal<BlockPos> eturlia$furnaceBurnPos = new ThreadLocal<>();
+     public int litTime;
+     int litDuration;
+     public double cookSpeedMultiplier = 1.0; // Paper - cook speed multiplier API
+@@ -397,11 +400,19 @@ public abstract class AbstractFurnaceBlockEntity extends BaseContainerBlockEntit
+                 // CraftBukkit end
+ 
+                 ++blockEntity.cookingProgress;
+-                if (blockEntity.cookingProgress >= blockEntity.cookingTotalTime) { // Paper - cook speed multiplier API
++                    if (blockEntity.cookingProgress >= blockEntity.cookingTotalTime) { // Paper - cook speed multiplier API
+                     blockEntity.cookingProgress = 0;
+                     blockEntity.cookingTotalTime = AbstractFurnaceBlockEntity.getTotalCookTime(world, blockEntity.recipeType, blockEntity, blockEntity.cookSpeedMultiplier); // Paper - cook speed multiplier API
+-                    if (AbstractFurnaceBlockEntity.burn(blockEntity.level, blockEntity.worldPosition, world.registryAccess(), recipeholder, blockEntity.items, i)) { // CraftBukkit
+-                        blockEntity.setRecipeUsed(recipeholder);
++                    // Eturlia: pass furnace into burn() so quality_food inject handler matches (5th arg)
++                    eturlia$furnaceBurnLevel.set(blockEntity.level);
++                    eturlia$furnaceBurnPos.set(blockEntity.worldPosition);
++                    try {
++                        if (AbstractFurnaceBlockEntity.burn(world.registryAccess(), recipeholder, blockEntity.items, i, blockEntity)) {
++                            blockEntity.setRecipeUsed(recipeholder);
++                        }
++                    } finally {
++                        eturlia$furnaceBurnLevel.remove();
++                        eturlia$furnaceBurnPos.remove();
+                     }
+ 
+                     flag1 = true;
+@@ -439,7 +450,30 @@ public abstract class AbstractFurnaceBlockEntity extends BaseContainerBlockEntit
+         }
+     }
+ 
+-    private static boolean burn(Level world, BlockPos blockposition, RegistryAccess iregistrycustom, @Nullable RecipeHolder<?> recipeholder, NonNullList<ItemStack> nonnulllist, int i) { // CraftBukkit
++    // Eturlia: 5-arg burn — quality_food @Inject handler includes AbstractFurnaceBlockEntity as a
++    // formal parameter (not only @Local). Keep Level/BlockPos for CraftBukkit FurnaceSmeltEvent.
++    private static boolean burn(RegistryAccess iregistrycustom, @Nullable RecipeHolder<?> recipeholder, NonNullList<ItemStack> nonnulllist, int i, AbstractFurnaceBlockEntity furnace) {
++        Level world = eturlia$furnaceBurnLevel.get();
++        BlockPos blockposition = eturlia$furnaceBurnPos.get();
++        if (world == null || blockposition == null) {
++            // Fallback without Bukkit event (should not happen on server tick path)
++            if (recipeholder != null && AbstractFurnaceBlockEntity.canBurn(iregistrycustom, recipeholder, nonnulllist, i)) {
++                ItemStack itemstack = (ItemStack) nonnulllist.get(0);
++                ItemStack itemstack1 = recipeholder.value().getResultItem(iregistrycustom);
++                ItemStack itemstack2 = (ItemStack) nonnulllist.get(2);
++                if (itemstack2.isEmpty()) {
++                    nonnulllist.set(2, itemstack1.copy());
++                } else if (ItemStack.isSameItemSameComponents(itemstack2, itemstack1)) {
++                    itemstack2.grow(1);
++                }
++                if (itemstack.is(Blocks.WET_SPONGE.asItem()) && !((ItemStack) nonnulllist.get(1)).isEmpty() && ((ItemStack) nonnulllist.get(1)).is(Items.BUCKET)) {
++                    nonnulllist.set(1, new ItemStack(Items.WATER_BUCKET));
++                }
++                itemstack.shrink(1);
++                return true;
++            }
++            return false;
++        }
+         if (recipeholder != null && AbstractFurnaceBlockEntity.canBurn(iregistrycustom, recipeholder, nonnulllist, i)) {
+             ItemStack itemstack = (ItemStack) nonnulllist.get(0);
+             ItemStack itemstack1 = recipeholder.value().getResultItem(iregistrycustom);
