@@ -1,0 +1,27 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Fri, 7 Aug 2026 12:48:38 +0000
+Subject: [PATCH] Eturlia: HolderLookup.Provider.holder for Twilight Forest
+
+
+diff --git a/src/main/java/net/minecraft/core/HolderLookup.java b/src/main/java/net/minecraft/core/HolderLookup.java
+index f28903938d54f0e9f9e76249be1a53ffc50e0175..77c4aa4da8000aa2a2fe8bb68c9062239f8556f3 100644
+--- a/src/main/java/net/minecraft/core/HolderLookup.java
++++ b/src/main/java/net/minecraft/core/HolderLookup.java
+@@ -35,6 +35,16 @@ public interface HolderLookup<T> extends HolderGetter<T> {
+             return this.lookup(registryRef).orElseThrow(() -> new IllegalStateException("Registry " + registryRef.location() + " not found"));
+         }
+ 
++        // Eturlia/NeoForge: IHolderLookupProviderExtension shortcuts (Twilight Forest TravellersModifiers)
++        default <T> Holder.Reference<T> holderOrThrow(ResourceKey<T> key) {
++            return this.lookupOrThrow(key.registryKey()).getOrThrow(key);
++        }
++
++        default <T> Optional<Holder.Reference<T>> holder(ResourceKey<T> key) {
++            Optional<HolderLookup.RegistryLookup<T>> registry = this.lookup(key.registryKey());
++            return registry.flatMap(tRegistryLookup -> tRegistryLookup.get(key));
++        }
++
+         default <V> RegistryOps<V> createSerializationContext(DynamicOps<V> delegate) {
+             return RegistryOps.create(delegate, this);
+         }

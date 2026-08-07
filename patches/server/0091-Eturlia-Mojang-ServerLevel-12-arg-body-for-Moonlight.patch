@@ -1,0 +1,106 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Fri, 7 Aug 2026 12:42:16 +0000
+Subject: [PATCH] Eturlia: Mojang ServerLevel 12-arg body for Moonlight mixin
+
+Put full constructor body in Mojang 12-arg signature so Moonlight
+WrapOperation finds ServerChunkCache. Bukkit extras via ThreadLocal.
+DefaultAttributes NeoForge attribute view retained.
+
+diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
+index 8f49231f4cb1230df4c5d450335d28e2e314e989..53f5f54a413150474799dca6f1e14dcf94bd9e59 100644
+--- a/src/main/java/net/minecraft/server/MinecraftServer.java
++++ b/src/main/java/net/minecraft/server/MinecraftServer.java
+@@ -722,7 +722,11 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+ 
+                 ChunkProgressListener worldloadlistener = this.progressListenerFactory.create(this.worldData.getGameRules().getInt(GameRules.RULE_SPAWN_CHUNK_RADIUS));
+ 
+-                world = new ServerLevel(this, this.executor, worldSession, iworlddataserver, worldKey, worlddimension, worldloadlistener, flag, j, list, true, (RandomSequences) null, org.bukkit.World.Environment.getEnvironment(dimension), gen, biomeProvider);
++                final ResourceKey<Level> eturliaWorldKey = worldKey;
++                final PrimaryLevelData eturliaWorldData = iworlddataserver;
++                final LevelStorageSource.LevelStorageAccess eturliaWorldSession = worldSession;
++                Level.ETURLIA$LEVEL_CTOR_EXTRAS.set(new Level.EturliaLevelCtorExtras(gen, biomeProvider, org.bukkit.World.Environment.getEnvironment(dimension), spigotConfig -> this.paperConfigurations.createWorldConfig(io.papermc.paper.configuration.PaperConfigurations.createWorldContextMap(eturliaWorldSession.levelDirectory.path(), eturliaWorldData.getLevelName(), eturliaWorldKey.location(), spigotConfig, this.registryAccess(), eturliaWorldData.getGameRules())), this.executor));
++                world = new ServerLevel(this, this.executor, worldSession, iworlddataserver, worldKey, worlddimension, worldloadlistener, flag, j, list, true, (RandomSequences) null);
+                 DimensionDataStorage worldpersistentdata = world.getDataStorage();
+                 this.readScoreboard(worldpersistentdata);
+                 this.server.scoreboardManager = new org.bukkit.craftbukkit.scoreboard.CraftScoreboardManager(this, world.getScoreboard());
+@@ -736,7 +740,11 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+                 } else {
+                     spawners = Collections.emptyList();
+                 }
+-                world = new ServerLevel(this, this.executor, worldSession, iworlddataserver, worldKey, worlddimension, worldloadlistener, flag, j, spawners, true, this.overworld().getRandomSequences(), org.bukkit.World.Environment.getEnvironment(dimension), gen, biomeProvider);
++                final ResourceKey<Level> eturliaWorldKey2 = worldKey;
++                final PrimaryLevelData eturliaWorldData2 = iworlddataserver;
++                final LevelStorageSource.LevelStorageAccess eturliaWorldSession2 = worldSession;
++                Level.ETURLIA$LEVEL_CTOR_EXTRAS.set(new Level.EturliaLevelCtorExtras(gen, biomeProvider, org.bukkit.World.Environment.getEnvironment(dimension), spigotConfig -> this.paperConfigurations.createWorldConfig(io.papermc.paper.configuration.PaperConfigurations.createWorldContextMap(eturliaWorldSession2.levelDirectory.path(), eturliaWorldData2.getLevelName(), eturliaWorldKey2.location(), spigotConfig, this.registryAccess(), eturliaWorldData2.getGameRules())), this.executor));
++                world = new ServerLevel(this, this.executor, worldSession, iworlddataserver, worldKey, worlddimension, worldloadlistener, flag, j, spawners, true, this.overworld().getRandomSequences());
+                 // Paper end - option to use the dimension_type to check if spawners should be added
+             }
+ 
+diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
+index e4784773a673765cc6891753a3e2c236c30dbc22..dafe1da4d2ab4d1b23aa33e7ba9608863efc0bf6 100644
+--- a/src/main/java/net/minecraft/server/level/ServerLevel.java
++++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
+@@ -639,19 +639,23 @@ public class ServerLevel extends Level implements WorldGenLevel, ca.spottedleaf.
+         throw new IllegalArgumentException("Eturlia: cannot unwrap PrimaryLevelData from " + data.getClass().getName());
+     }
+ 
+-    // Eturlia: Mojang-shaped ctor for Moonlight FakeServerLevel (ServerLevelData + no Bukkit extras)
+-    public ServerLevel(MinecraftServer minecraftserver, Executor executor, LevelStorageSource.LevelStorageAccess convertable_conversionsession, ServerLevelData iworlddataserver, ResourceKey<Level> resourcekey, LevelStem worlddimension, ChunkProgressListener worldloadlistener, boolean flag, long i, List<CustomSpawner> list, boolean flag1, @Nullable RandomSequences randomsequences) {
+-        this(minecraftserver, executor, convertable_conversionsession, iworlddataserver, resourcekey, worlddimension, worldloadlistener, flag, i, list, flag1, randomsequences, org.bukkit.World.Environment.NORMAL, null, null);
++    private static Level.EturliaLevelCtorExtras eturliaResolveCtorExtras(MinecraftServer minecraftserver, Executor executor, LevelStorageSource.LevelStorageAccess access, ServerLevelData data, ResourceKey<Level> resourcekey) {
++        Level.EturliaLevelCtorExtras existing = Level.ETURLIA$LEVEL_CTOR_EXTRAS.get();
++        if (existing != null) {
++            return existing;
++        }
++        // FakeServerLevel / Mojang callers: defaults
++        return new Level.EturliaLevelCtorExtras(null, null, org.bukkit.World.Environment.NORMAL, spigotConfig -> minecraftserver.paperConfigurations.createWorldConfig(io.papermc.paper.configuration.PaperConfigurations.createWorldContextMap(access.levelDirectory.path(), data.getLevelName(), resourcekey.location(), spigotConfig, minecraftserver.registryAccess(), eturliaUnwrapPrimary(data).getGameRules())), executor);
+     }
+ 
+-    // CraftBukkit: env/gen extras. Eturlia: ServerLevelData (not PrimaryLevelData) so FakeServerLevel ReadOly wrapper works.
+-    public ServerLevel(MinecraftServer minecraftserver, Executor executor, LevelStorageSource.LevelStorageAccess convertable_conversionsession, ServerLevelData iworlddataserver, ResourceKey<Level> resourcekey, LevelStem worlddimension, ChunkProgressListener worldloadlistener, boolean flag, long i, List<CustomSpawner> list, boolean flag1, @Nullable RandomSequences randomsequences, org.bukkit.World.Environment env, org.bukkit.generator.ChunkGenerator gen, org.bukkit.generator.BiomeProvider biomeProvider) {
+-        // IRegistryCustom.Dimension iregistrycustom_dimension = minecraftserver.registryAccess(); // CraftBukkit - decompile error
+-        // Holder holder = worlddimension.type(); // CraftBukkit - decompile error
+-
+-        // Objects.requireNonNull(minecraftserver); // CraftBukkit - decompile error
+-        // Eturlia: ThreadLocal extras must be set in an expression evaluated before super() (super must be first stmt).
+-        super(Level.eturliaPushLevelCtorExtras(iworlddataserver, new Level.EturliaLevelCtorExtras(gen, biomeProvider, env, spigotConfig -> minecraftserver.paperConfigurations.createWorldConfig(io.papermc.paper.configuration.PaperConfigurations.createWorldContextMap(convertable_conversionsession.levelDirectory.path(), iworlddataserver.getLevelName(), resourcekey.location(), spigotConfig, minecraftserver.registryAccess(), eturliaUnwrapPrimary(iworlddataserver).getGameRules())), executor)), resourcekey, minecraftserver.registryAccess(), worlddimension.type(), minecraftserver::getProfiler, false, flag, i, minecraftserver.getMaxChainedNeighborUpdates());
++    // Eturlia: Mojang 12-arg ctor is the real body (Moonlight FakeServerLevel WrapOperation targets it).
++    // Bukkit env/gen/biomeProvider are passed via Level.ETURLIA$LEVEL_CTOR_EXTRAS (set by call sites).
++    public ServerLevel(MinecraftServer minecraftserver, Executor executor, LevelStorageSource.LevelStorageAccess convertable_conversionsession, ServerLevelData iworlddataserver, ResourceKey<Level> resourcekey, LevelStem worlddimension, ChunkProgressListener worldloadlistener, boolean flag, long i, List<CustomSpawner> list, boolean flag1, @Nullable RandomSequences randomsequences) {
++        super(Level.eturliaPushLevelCtorExtras(iworlddataserver, eturliaResolveCtorExtras(minecraftserver, executor, convertable_conversionsession, iworlddataserver, resourcekey)), resourcekey, minecraftserver.registryAccess(), worlddimension.type(), minecraftserver::getProfiler, false, flag, i, minecraftserver.getMaxChainedNeighborUpdates());
++        Level.EturliaLevelCtorExtras eturliaCtorExtras = Level.ETURLIA$LEVEL_CTOR_EXTRAS.get();
++        final org.bukkit.generator.ChunkGenerator gen = eturliaCtorExtras.gen;
++        final org.bukkit.generator.BiomeProvider biomeProvider = eturliaCtorExtras.biomeProvider;
++        final org.bukkit.World.Environment env = eturliaCtorExtras.env;
+         Level.ETURLIA$LEVEL_CTOR_EXTRAS.remove();
+         this.pvpMode = minecraftserver.isPvpAllowed();
+         this.convertable = convertable_conversionsession;
+diff --git a/src/main/java/net/minecraft/world/level/Level.java b/src/main/java/net/minecraft/world/level/Level.java
+index 62097f2b55768c77d4a178030058a18f7c6ac36e..3b014ecb43d9c55ea3b2a3e4b26c098762540253 100644
+--- a/src/main/java/net/minecraft/world/level/Level.java
++++ b/src/main/java/net/minecraft/world/level/Level.java
+@@ -736,7 +736,7 @@ public abstract class Level extends net.neoforged.neoforge.attachment.Attachment
+         org.bukkit.World.Environment env = eturliaExtras.env;
+         java.util.function.Function<org.spigotmc.SpigotWorldConfig, io.papermc.paper.configuration.WorldConfiguration> paperWorldConfigCreator = eturliaExtras.paperWorldConfigCreator;
+         java.util.concurrent.Executor executor = eturliaExtras.executor;
+-        this.spigotConfig = new org.spigotmc.SpigotWorldConfig(((net.minecraft.world.level.storage.PrimaryLevelData) worlddatamutable).getLevelName()); // Spigot
++        this.spigotConfig = new org.spigotmc.SpigotWorldConfig(((net.minecraft.world.level.storage.ServerLevelData) worlddatamutable).getLevelName()); // Spigot // Eturlia: ServerLevelData (FakeServerLevel ReadOly)
+         this.paperConfig = paperWorldConfigCreator.apply(this.spigotConfig); // Paper - create paper world config
+         this.generator = gen;
+         this.world = new CraftWorld((ServerLevel) this, gen, biomeProvider, env);
+diff --git a/src/main/java/org/bukkit/craftbukkit/CraftServer.java b/src/main/java/org/bukkit/craftbukkit/CraftServer.java
+index dee23b4b96b7f2c6af54a6affe385b183479f8cc..7ba0402717c7186af32b0ad08d0120a31c1b86c8 100644
+--- a/src/main/java/org/bukkit/craftbukkit/CraftServer.java
++++ b/src/main/java/org/bukkit/craftbukkit/CraftServer.java
+@@ -1464,8 +1464,9 @@ public final class CraftServer implements Server {
+         if (creator.keepSpawnLoaded() == net.kyori.adventure.util.TriState.FALSE) { // Paper
+             worlddata.getGameRules().getRule(GameRules.RULE_SPAWN_CHUNK_RADIUS).set(0, null);
+         }
++        net.minecraft.world.level.Level.ETURLIA$LEVEL_CTOR_EXTRAS.set(new net.minecraft.world.level.Level.EturliaLevelCtorExtras(generator, biomeProvider, creator.environment(), spigotConfig -> this.console.paperConfigurations.createWorldConfig(io.papermc.paper.configuration.PaperConfigurations.createWorldContextMap(worldSession.levelDirectory.path(), worlddata.getLevelName(), worldKey.location(), spigotConfig, this.console.registryAccess(), worlddata.getGameRules())), this.console.executor));
+         ServerLevel internal = (ServerLevel) new ServerLevel(this.console, this.console.executor, worldSession, worlddata, worldKey, worlddimension, this.getServer().progressListenerFactory.create(worlddata.getGameRules().getInt(GameRules.RULE_SPAWN_CHUNK_RADIUS)),
+-                worlddata.isDebugWorld(), j, creator.environment() == Environment.NORMAL ? list : ImmutableList.of(), true, this.console.overworld().getRandomSequences(), creator.environment(), generator, biomeProvider);
++                worlddata.isDebugWorld(), j, creator.environment() == Environment.NORMAL ? list : ImmutableList.of(), true, this.console.overworld().getRandomSequences());
+ 
+         if (!(this.worlds.containsKey(name.toLowerCase(Locale.ROOT)))) {
+             return null;

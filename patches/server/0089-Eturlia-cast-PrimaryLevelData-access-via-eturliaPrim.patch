@@ -1,0 +1,150 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Fri, 7 Aug 2026 12:31:11 +0000
+Subject: [PATCH] Eturlia: cast PrimaryLevelData access via
+ eturliaPrimaryLevelData()
+
+Update MinecraftServer, CraftWorld, CraftDataPackManager,
+ScheduleCommand, ChunkStatusTasks after Mojang-typed serverLevelData.
+
+diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
+index 3ddbf6ab14941919237f562a4bad2a039ab576c0..8f49231f4cb1230df4c5d450335d28e2e314e989 100644
+--- a/src/main/java/net/minecraft/server/MinecraftServer.java
++++ b/src/main/java/net/minecraft/server/MinecraftServer.java
+@@ -1744,7 +1744,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+                 synchronized (region.world.checkInitialised) {
+                     if (region.world.checkInitialised.compareAndSet(ServerLevel.WORLD_INIT_NOT_CHECKED, ServerLevel.WORLD_INIT_CHECKING)) {
+                         LOGGER.info("Initialising world '" + region.world.getWorld().getName() + "' before it can be ticked...");
+-                        this.initWorld(region.world, region.world.serverLevelData, worldData, region.world.serverLevelData.worldGenOptions()); // Folia - delayed until first tick of world
++                        this.initWorld(region.world, region.world.serverLevelData, worldData, region.world.eturliaPrimaryLevelData().worldGenOptions()); // Folia - delayed until first tick of world
+                         region.world.checkInitialised.set(ServerLevel.WORLD_INIT_CHECKED);
+                         LOGGER.info("Initialised world '" + region.world.getWorld().getName() + "'");
+                     } // else: must be checked
+@@ -2209,7 +2209,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+ 
+     // Paper start - per level difficulty
+     public void setDifficulty(ServerLevel level, Difficulty difficulty, boolean forceUpdate) {
+-        PrimaryLevelData worldData = level.serverLevelData;
++        PrimaryLevelData worldData = level.eturliaPrimaryLevelData();
+         if (forceUpdate || !worldData.isDifficultyLocked()) {
+             worldData.setDifficulty(worldData.isHardcore() ? Difficulty.HARD : difficulty);
+             level.setSpawnSettings(worldData.getDifficulty() != Difficulty.PEACEFUL && ((DedicatedServer) this).settings.getProperties().spawnMonsters, this.isSpawningAnimals());
+diff --git a/src/main/java/net/minecraft/server/commands/ScheduleCommand.java b/src/main/java/net/minecraft/server/commands/ScheduleCommand.java
+index d090f94a9a8a314df01e83a031dd18d5c6f1caf9..88047970e057781875f17c24776691fd82eed5b6 100644
+--- a/src/main/java/net/minecraft/server/commands/ScheduleCommand.java
++++ b/src/main/java/net/minecraft/server/commands/ScheduleCommand.java
+@@ -55,7 +55,7 @@ public class ScheduleCommand {
+         } else {
+             long j = source.getLevel().getGameTime() + (long) time;
+             ResourceLocation minecraftkey = (ResourceLocation) function.getFirst();
+-            TimerQueue<MinecraftServer> customfunctioncallbacktimerqueue = source.getLevel().serverLevelData.overworldData().getScheduledEvents(); // CraftBukkit - SPIGOT-6667: Use world specific function timer
++            TimerQueue<MinecraftServer> customfunctioncallbacktimerqueue = source.getLevel().eturliaPrimaryLevelData().overworldData().getScheduledEvents(); // CraftBukkit - SPIGOT-6667: Use world specific function timer
+ 
+             ((Either) function.getSecond()).ifLeft((net_minecraft_commands_functions_commandfunction) -> {
+                 String s = minecraftkey.toString();
+diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
+index ae1cc7907954478a4ca7468cfd24cf53c34f8664..e60f7f1c47144ac433c808d7acac91c757c9a697 100644
+--- a/src/main/java/net/minecraft/server/level/ServerLevel.java
++++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
+@@ -202,7 +202,7 @@ public class ServerLevel extends Level implements WorldGenLevel, ca.spottedleaf.
+     // Eturlia: Mojang ServerLevelData field descriptor for Moonlight FakeServerLevel getfield
+     // (CraftBukkit had PrimaryLevelData which breaks NeoForge mods' binary field access)
+     public final net.minecraft.world.level.storage.ServerLevelData serverLevelData;
+-    private PrimaryLevelData eturliaPrimaryLevelData() {
++    public PrimaryLevelData eturliaPrimaryLevelData() {
+         return (PrimaryLevelData) this.serverLevelData;
+     }
+     private int lastSpawnChunkRadius;
+@@ -1566,7 +1566,7 @@ public class ServerLevel extends Level implements WorldGenLevel, ca.spottedleaf.
+ 
+                 this.serverLevelData.setWorldBorder(worldserver1.getWorldBorder().createSettings());
+                 this.eturliaPrimaryLevelData().setCustomBossEvents(this.server.getCustomBossEvents().save(this.registryAccess()));
+-                this.convertable.saveDataTag(this.server.registryAccess(), this.serverLevelData, this.server.getPlayerList().getSingleplayerData());
++                this.convertable.saveDataTag(this.server.registryAccess(), this.eturliaPrimaryLevelData(), this.server.getPlayerList().getSingleplayerData());
+             }
+             // CraftBukkit end
+         }
+@@ -1644,7 +1644,7 @@ public class ServerLevel extends Level implements WorldGenLevel, ca.spottedleaf.
+ 
+         this.serverLevelData.setWorldBorder(worldserver1.getWorldBorder().createSettings());
+         this.eturliaPrimaryLevelData().setCustomBossEvents(this.server.getCustomBossEvents().save(this.registryAccess()));
+-        this.convertable.saveDataTag(this.server.registryAccess(), this.serverLevelData, this.server.getPlayerList().getSingleplayerData());
++        this.convertable.saveDataTag(this.server.registryAccess(), this.eturliaPrimaryLevelData(), this.server.getPlayerList().getSingleplayerData());
+         // Folia end - moved into saveLevelData
+ 
+         this.getChunkSource().getDataStorage().save(async); // Paper - Write SavedData IO async
+diff --git a/src/main/java/net/minecraft/world/level/chunk/status/ChunkStatusTasks.java b/src/main/java/net/minecraft/world/level/chunk/status/ChunkStatusTasks.java
+index b993c4b2595e2879b25753c2e34530f3622c18fa..0b302bc153444ead90cf3ebe06b426bcc6900e4c 100644
+--- a/src/main/java/net/minecraft/world/level/chunk/status/ChunkStatusTasks.java
++++ b/src/main/java/net/minecraft/world/level/chunk/status/ChunkStatusTasks.java
+@@ -38,7 +38,7 @@ public class ChunkStatusTasks {
+     static CompletableFuture<ChunkAccess> generateStructureStarts(WorldGenContext context, ChunkStep step, StaticCache2D<GenerationChunkHolder> chunks, ChunkAccess chunk) {
+         ServerLevel worldserver = context.level();
+ 
+-        if (worldserver.serverLevelData.worldGenOptions().generateStructures()) { // CraftBukkit
++        if (worldserver.eturliaPrimaryLevelData().worldGenOptions().generateStructures()) { // CraftBukkit
+             context.generator().createStructures(worldserver.registryAccess(), worldserver.getChunkSource().getGeneratorState(), worldserver.structureManager(), chunk, context.structureManager());
+         }
+ 
+diff --git a/src/main/java/org/bukkit/craftbukkit/CraftWorld.java b/src/main/java/org/bukkit/craftbukkit/CraftWorld.java
+index 44943f3e3f2919257802ffdceb62160ad7de564d..5a9716aa8dac97afdb665d83db1da1729765072b 100644
+--- a/src/main/java/org/bukkit/craftbukkit/CraftWorld.java
++++ b/src/main/java/org/bukkit/craftbukkit/CraftWorld.java
+@@ -1401,7 +1401,7 @@ public class CraftWorld extends CraftRegionAccessor implements World {
+     @Override
+     public void setStorm(boolean hasStorm) {
+         io.papermc.paper.threadedregions.RegionizedServer.ensureGlobalTickThread("Cannot modify weather off of the global region"); // Folia - region threading
+-        this.world.serverLevelData.setRaining(hasStorm, org.bukkit.event.weather.WeatherChangeEvent.Cause.PLUGIN); // Paper - Add cause to Weather/ThunderChangeEvents
++        this.world.eturliaPrimaryLevelData().setRaining(hasStorm, org.bukkit.event.weather.WeatherChangeEvent.Cause.PLUGIN); // Paper - Add cause to Weather/ThunderChangeEvents
+         this.setWeatherDuration(0); // Reset weather duration (legacy behaviour)
+         this.setClearWeatherDuration(0); // Reset clear weather duration (reset "/weather clear" commands)
+     }
+@@ -1425,7 +1425,7 @@ public class CraftWorld extends CraftRegionAccessor implements World {
+     @Override
+     public void setThundering(boolean thundering) {
+         io.papermc.paper.threadedregions.RegionizedServer.ensureGlobalTickThread("Cannot modify weather off of the global region"); // Folia - region threading
+-        this.world.serverLevelData.setThundering(thundering, org.bukkit.event.weather.ThunderChangeEvent.Cause.PLUGIN); // Paper - Add cause to Weather/ThunderChangeEvents
++        this.world.eturliaPrimaryLevelData().setThundering(thundering, org.bukkit.event.weather.ThunderChangeEvent.Cause.PLUGIN); // Paper - Add cause to Weather/ThunderChangeEvents
+         this.setThunderDuration(0); // Reset weather duration (legacy behaviour)
+         this.setClearWeatherDuration(0); // Reset clear weather duration (reset "/weather clear" commands)
+     }
+@@ -1702,7 +1702,7 @@ public class CraftWorld extends CraftRegionAccessor implements World {
+ 
+     @Override
+     public boolean canGenerateStructures() {
+-        return this.world.serverLevelData.worldGenOptions().generateStructures();
++        return this.world.eturliaPrimaryLevelData().worldGenOptions().generateStructures();
+     }
+ 
+     @Override
+@@ -1713,7 +1713,7 @@ public class CraftWorld extends CraftRegionAccessor implements World {
+     @Override
+     public void setHardcore(boolean hardcore) {
+         io.papermc.paper.threadedregions.RegionizedServer.ensureGlobalTickThread("Cannot modify server settings off of the global region"); // Folia - region threading
+-        this.world.serverLevelData.settings.hardcore = hardcore;
++        this.world.eturliaPrimaryLevelData().settings.hardcore = hardcore;
+     }
+ 
+     @Override
+diff --git a/src/main/java/org/bukkit/craftbukkit/packs/CraftDataPackManager.java b/src/main/java/org/bukkit/craftbukkit/packs/CraftDataPackManager.java
+index c1800ad648bdc2de53736f80da8c3cd95801dbfd..0fc44c06b4241abc443879374a571c7658a06390 100644
+--- a/src/main/java/org/bukkit/craftbukkit/packs/CraftDataPackManager.java
++++ b/src/main/java/org/bukkit/craftbukkit/packs/CraftDataPackManager.java
+@@ -52,7 +52,7 @@ public class CraftDataPackManager implements DataPackManager {
+         Preconditions.checkArgument(world != null, "world cannot be null");
+ 
+         CraftWorld craftWorld = ((CraftWorld) world);
+-        return craftWorld.getHandle().serverLevelData.getDataConfiguration().dataPacks().getEnabled().stream().map(packName -> {
++        return craftWorld.getHandle().eturliaPrimaryLevelData().getDataConfiguration().dataPacks().getEnabled().stream().map(packName -> {
+             Pack resourcePackLoader = this.getHandle().getPack(packName);
+             if (resourcePackLoader != null) {
+                 return new CraftDataPack(resourcePackLoader);
+@@ -66,7 +66,7 @@ public class CraftDataPackManager implements DataPackManager {
+         Preconditions.checkArgument(world != null, "world cannot be null");
+ 
+         CraftWorld craftWorld = ((CraftWorld) world);
+-        return craftWorld.getHandle().serverLevelData.getDataConfiguration().dataPacks().getDisabled().stream().map(packName -> {
++        return craftWorld.getHandle().eturliaPrimaryLevelData().getDataConfiguration().dataPacks().getDisabled().stream().map(packName -> {
+             Pack resourcePackLoader = this.getHandle().getPack(packName);
+             if (resourcePackLoader != null) {
+                 return new CraftDataPack(resourcePackLoader);

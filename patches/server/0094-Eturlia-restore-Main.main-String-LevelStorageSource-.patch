@@ -1,0 +1,73 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: EturliaAgent <agent@eturlia.local>
+Date: Fri, 7 Aug 2026 15:39:38 +0000
+Subject: [PATCH] Eturlia: restore Main.main(String[]) + LevelStorageSource
+ 1-arg for libjf/WorldWeaver
+
+Paper boots via OptionSet; NeoForge mods inject into Mojang main(String[]) and
+validateAndCreateAccess(String). Bridge OptionSet through ThreadLocal and keep
+MinecraftServer.spin inside the String[] body for libjf INVOKE_ASSIGN.
+
+diff --git a/src/main/java/net/minecraft/server/Main.java b/src/main/java/net/minecraft/server/Main.java
+index bb183cc65ca18937dd56a6dd00bd48385d901219..6879d3717ba10cd965e83cfa81123922ed757c47 100644
+--- a/src/main/java/net/minecraft/server/Main.java
++++ b/src/main/java/net/minecraft/server/Main.java
+@@ -73,10 +73,31 @@ public class Main {
+ 
+     private static final Logger LOGGER = LogUtils.getLogger();
+ 
++    /**
++     * Eturlia: Paper boots via {@link #main(OptionSet)}, but NeoForge mods (libjf, WorldWeaver/BetterEnd)
++     * inject into Mojang {@code main([Ljava/lang/String;)V}. Stash the OptionSet so the String[] entry
++     * can run the real body (must still contain {@code MinecraftServer.spin} for libjf INVOKE_ASSIGN).
++     */
++    private static final ThreadLocal<OptionSet> ETURLIA$OPTION_SET = new ThreadLocal<>();
++
+     public Main() {}
+ 
+     @DontObfuscate
+-    public static void main(final OptionSet optionset) { // CraftBukkit - replaces main(String[] astring)
++    public static void main(final OptionSet optionset) { // CraftBukkit / Paper entry
++        ETURLIA$OPTION_SET.set(optionset);
++        try {
++            main(new String[0]); // Eturlia: Mojang-shaped entry for mod mixins
++        } finally {
++            ETURLIA$OPTION_SET.remove();
++        }
++    }
++
++    @DontObfuscate
++    public static void main(final String[] astring) { // Eturlia: restore Mojang signature for libjf/WorldWeaver
++        OptionSet optionset = ETURLIA$OPTION_SET.get();
++        if (optionset == null) {
++            throw new IllegalStateException("Eturlia: Main.main(String[]) requires OptionSet from PaperBootstrap");
++        }
+         io.papermc.paper.util.LogManagerShutdownThread.hook(); // Paper
+         SharedConstants.tryDetectVersion();
+         /* CraftBukkit start - Replace everything
+@@ -209,7 +230,8 @@ public class Main {
+             // CraftBukkit start
+             String s = (String) Optional.ofNullable((String) optionset.valueOf("world")).orElse(dedicatedserversettings.getProperties().levelName);
+             LevelStorageSource convertable = LevelStorageSource.createDefault(file.toPath());
+-            LevelStorageSource.LevelStorageAccess convertable_conversionsession = convertable.validateAndCreateAccess(s, LevelStem.OVERWORLD);
++            // Eturlia: Mojang 1-arg call site for WorldWeaver/BetterEnd @ModifyExpressionValue
++            LevelStorageSource.LevelStorageAccess convertable_conversionsession = convertable.validateAndCreateAccess(s);
+             // CraftBukkit end
+             Dynamic dynamic;
+ 
+diff --git a/src/main/java/net/minecraft/world/level/storage/LevelStorageSource.java b/src/main/java/net/minecraft/world/level/storage/LevelStorageSource.java
+index 85ba843ce7e1f62971e736fa2cc028c47b274ce4..dacd43ccc91038f3547207eb683395ce40ec3392 100644
+--- a/src/main/java/net/minecraft/world/level/storage/LevelStorageSource.java
++++ b/src/main/java/net/minecraft/world/level/storage/LevelStorageSource.java
+@@ -418,6 +418,11 @@ public class LevelStorageSource {
+         return this.backupDir;
+     }
+ 
++    // Eturlia: Mojang 1-arg overload for WorldWeaver/BetterEnd mixin anchors
++    public LevelStorageSource.LevelStorageAccess validateAndCreateAccess(String s) throws IOException, ContentValidationException {
++        return this.validateAndCreateAccess(s, LevelStem.OVERWORLD);
++    }
++
+     public LevelStorageSource.LevelStorageAccess validateAndCreateAccess(String s, ResourceKey<LevelStem> dimensionType) throws IOException, ContentValidationException { // CraftBukkit
+         Path path = this.getLevelPath(s);
+         List<ForbiddenSymlinkInfo> list = Boolean.getBoolean("paper.disableWorldSymlinkValidation") ? List.of() : this.worldDirValidator.validateDirectory(path, true); // Paper - add skipping of symlinks scan
