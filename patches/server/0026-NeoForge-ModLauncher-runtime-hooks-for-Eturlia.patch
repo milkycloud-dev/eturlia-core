@@ -279,6 +279,7 @@ index 581bd217304e0f9e0b2113c335694805dfb4e2a1..bb183cc65ca18937dd56a6dd00bd4838
              Path path1 = Paths.get("server.properties");
              DedicatedServerSettings dedicatedserversettings = new DedicatedServerSettings(optionset); // CraftBukkit - CLI argument support
 diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
+index 4b35c256ea3e6cf5405b950886ef621b4185dffb..659c6e45ae42199365d05334c6a7c2d0953c8a21 100644
 --- a/src/main/java/net/minecraft/server/MinecraftServer.java
 +++ b/src/main/java/net/minecraft/server/MinecraftServer.java
 @@ -1068,7 +1068,12 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa

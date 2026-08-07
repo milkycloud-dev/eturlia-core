@@ -9,39 +9,16 @@ of vanilla tickServer(BooleanSupplier). Add empty overload and call it
 at the end of the Folia tick.
 
 diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
+index afb282b4f6b7445a3412915d1d73762699d4ba4c..473345532990c507996a81ac7629be4bd89b98d7 100644
 --- a/src/main/java/net/minecraft/server/MinecraftServer.java
 +++ b/src/main/java/net/minecraft/server/MinecraftServer.java
-@@ -1714,6 +1714,35 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -1714,6 +1714,11 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
      }
  
      // Folia start - region threading
 +    // Eturlia: vanilla-shaped tickServer(BooleanSupplier) for Sable UDP @Inject TAIL.
 +    // Folia region ticking uses the 4-arg overload below and calls this at the end.
 +    public void tickServer(BooleanSupplier shouldKeepTicking) {
-+    }
-+
-+    // Eturlia: NeoForge's ServerTickEvent is a *server* event, but Folia runs the tick body
-+    // once per region, so firing it there hands every listener N concurrent invocations per
-+    // tick. This gate lets only the first region to reach a given tick number fire it, which
-+    // restores the once-per-tick contract. It is still delivered on a region thread — mods
-+    // must not assume the global thread — but they are no longer called N times in parallel.
-+    private static final java.util.concurrent.atomic.AtomicLong ETURLIA$TICK_PRE =
-+            new java.util.concurrent.atomic.AtomicLong(Long.MIN_VALUE);
-+    private static final java.util.concurrent.atomic.AtomicLong ETURLIA$TICK_POST =
-+            new java.util.concurrent.atomic.AtomicLong(Long.MIN_VALUE);
-+
-+    /** @return true exactly once per tick number, for the first region to open that tick */
-+    public static boolean eturlia$firstTickPre(long tick) {
-+        return ETURLIA$TICK_PRE.getAndSet(tick) != tick;
-+    }
-+
-+    /**
-+     * @return true exactly once per tick number, for the first region to close that tick.
-+     *         Pre and Post are gated independently, so they may run on different region
-+     *         threads within one tick — they are still one Pre and one Post per tick.
-+     */
-+    public static boolean eturlia$firstTickPost(long tick) {
-+        return ETURLIA$TICK_POST.getAndSet(tick) != tick;
 +    }
 +
      public void tickServer(long startTime, long scheduledEnd, long targetBuffer,

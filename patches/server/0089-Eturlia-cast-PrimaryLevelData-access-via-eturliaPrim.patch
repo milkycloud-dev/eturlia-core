@@ -8,6 +8,7 @@ Update MinecraftServer, CraftWorld, CraftDataPackManager,
 ScheduleCommand, ChunkStatusTasks after Mojang-typed serverLevelData.
 
 diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
+index 3ddbf6ab14941919237f562a4bad2a039ab576c0..8f49231f4cb1230df4c5d450335d28e2e314e989 100644
 --- a/src/main/java/net/minecraft/server/MinecraftServer.java
 +++ b/src/main/java/net/minecraft/server/MinecraftServer.java
 @@ -1744,7 +1744,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa

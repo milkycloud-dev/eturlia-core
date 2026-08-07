@@ -41,6 +41,7 @@ index 442a5b557e5867038fcddf597951584faeedda80..119d9b366597fbc1e97e0537ba260071
                          // Paper start - tell clients to ask server for suggestions for EntityArguments
                          registeredAskServerSuggestionsForTree = requiredargumentbuilder.getSuggestionsProvider() == net.minecraft.commands.synchronization.SuggestionProviders.ASK_SERVER;
 diff --git a/src/main/java/net/minecraft/commands/synchronization/ArgumentTypeInfos.java b/src/main/java/net/minecraft/commands/synchronization/ArgumentTypeInfos.java
+index f96e0ce808bf532bed6e1644bc6911abbf983865..5db89a2477000ed4161e066b2669d30fd6228829 100644
 --- a/src/main/java/net/minecraft/commands/synchronization/ArgumentTypeInfos.java
 +++ b/src/main/java/net/minecraft/commands/synchronization/ArgumentTypeInfos.java
 @@ -164,6 +164,28 @@ public class ArgumentTypeInfos {

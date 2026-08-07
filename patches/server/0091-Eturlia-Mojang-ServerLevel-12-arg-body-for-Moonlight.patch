@@ -8,6 +8,7 @@ WrapOperation finds ServerChunkCache. Bukkit extras via ThreadLocal.
 DefaultAttributes NeoForge attribute view retained.
 
 diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
+index 8f49231f4cb1230df4c5d450335d28e2e314e989..53f5f54a413150474799dca6f1e14dcf94bd9e59 100644
 --- a/src/main/java/net/minecraft/server/MinecraftServer.java
 +++ b/src/main/java/net/minecraft/server/MinecraftServer.java
 @@ -722,7 +722,15 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
