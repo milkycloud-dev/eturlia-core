@@ -22,6 +22,12 @@ jobs:
           distribution: temurin
           java-version: "21"
 
+      # paperweight ApplyGitPatches commits into Folia-Server/API worktrees
+      - name: Configure git identity for paperweight
+        run: |
+          git config --global user.email "eturlia-ci@users.noreply.github.com"
+          git config --global user.name "Eturlia CI"
+
       - name: Apply patches
         run: ./gradlew applyPatches --stacktrace
 

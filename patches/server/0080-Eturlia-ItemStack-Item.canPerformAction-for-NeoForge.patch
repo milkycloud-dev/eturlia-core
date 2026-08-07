@@ -1,0 +1,38 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Fri, 7 Aug 2026 06:47:01 +0000
+Subject: [PATCH] Eturlia: ItemStack/Item.canPerformAction for NeoForge loot
+
+NeoForge CanItemPerformAbility calls ItemStack.canPerformAction via
+invokevirtual; without the method, water fluid ticks crash the region.
+
+diff --git a/src/main/java/net/minecraft/world/item/Item.java b/src/main/java/net/minecraft/world/item/Item.java
+index a8d97662db9bb77f160a43d69e3f121b4f054aec..7ea84e400353e3d13fd78f9701c7247b63c99336 100644
+--- a/src/main/java/net/minecraft/world/item/Item.java
++++ b/src/main/java/net/minecraft/world/item/Item.java
+@@ -262,6 +262,11 @@ public class Item implements FeatureElement, ItemLike {
+         return this.craftingRemainingItem != null;
+     }
+ 
++    // Eturlia/NeoForge: IItemExtension.canPerformAction — loot CanItemPerformAbility etc.
++    public boolean canPerformAction(ItemStack stack, net.neoforged.neoforge.common.ItemAbility itemAbility) {
++        return false;
++    }
++
+     public void inventoryTick(ItemStack stack, Level world, Entity entity, int slot, boolean selected) {
+     }
+ 
+diff --git a/src/main/java/net/minecraft/world/item/ItemStack.java b/src/main/java/net/minecraft/world/item/ItemStack.java
+index 37bfbf585aef7662629154c545e0d25eec8e3981..0b503d72d0d7fe1e4db628a6bfc4b9444fa6b02f 100644
+--- a/src/main/java/net/minecraft/world/item/ItemStack.java
++++ b/src/main/java/net/minecraft/world/item/ItemStack.java
+@@ -1395,4 +1395,9 @@ public final class ItemStack implements DataComponentHolder {
+     public boolean canBeHurtBy(DamageSource source) {
+         return !this.has(DataComponents.FIRE_RESISTANT) || !source.is(DamageTypeTags.IS_FIRE);
+     }
++
++    // Eturlia/NeoForge: IItemStackExtension.canPerformAction (invokevirtual from NeoForge loot)
++    public boolean canPerformAction(net.neoforged.neoforge.common.ItemAbility itemAbility) {
++        return this.getItem().canPerformAction(this, itemAbility);
++    }
+ }

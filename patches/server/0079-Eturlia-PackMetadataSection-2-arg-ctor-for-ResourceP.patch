@@ -1,0 +1,41 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Fri, 7 Aug 2026 06:33:15 +0000
+Subject: [PATCH] Eturlia: PackMetadataSection 2-arg ctor for
+ ResourcePackLoader
+
+NeoForge ResourcePackLoader.makePack calls new PackMetadataSection(desc, ver).
+
+diff --git a/src/main/java/net/minecraft/server/packs/metadata/pack/PackMetadataSection.java b/src/main/java/net/minecraft/server/packs/metadata/pack/PackMetadataSection.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..25a748c081dc91b28bddd5d5052f200202c3409f
+--- /dev/null
++++ b/src/main/java/net/minecraft/server/packs/metadata/pack/PackMetadataSection.java
+@@ -0,0 +1,27 @@
++package net.minecraft.server.packs.metadata.pack;
++
++import com.mojang.serialization.Codec;
++import com.mojang.serialization.codecs.RecordCodecBuilder;
++import java.util.Optional;
++import net.minecraft.network.chat.Component;
++import net.minecraft.network.chat.ComponentSerialization;
++import net.minecraft.server.packs.metadata.MetadataSectionType;
++import net.minecraft.util.InclusiveRange;
++
++public record PackMetadataSection(Component description, int packFormat, Optional<InclusiveRange<Integer>> supportedFormats) {
++    public static final Codec<PackMetadataSection> CODEC = RecordCodecBuilder.create(
++        instance -> instance.group(
++                    ComponentSerialization.CODEC.fieldOf("description").forGetter(PackMetadataSection::description),
++                    Codec.INT.fieldOf("pack_format").forGetter(PackMetadataSection::packFormat),
++                    InclusiveRange.codec(Codec.INT).lenientOptionalFieldOf("supported_formats").forGetter(PackMetadataSection::supportedFormats)
++                )
++                .apply(instance, PackMetadataSection::new)
++    );
++    public static final MetadataSectionType<PackMetadataSection> TYPE = MetadataSectionType.fromCodec("pack", CODEC);
++
++    // NeoForge: ResourcePackLoader.makePack uses 2-arg ctor
++    public PackMetadataSection(Component description, int packVersion) {
++        this(description, packVersion, Optional.empty());
++    }
++}
++

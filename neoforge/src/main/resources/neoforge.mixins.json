@@ -1,6 +1,7 @@
 {
   "required": true,
   "package": "net.neoforged.neoforge.mixins",
+  "compatibilityLevel": "JAVA_21",
   "mixins": [
     "BlockEntityTypeAccessor",
     "MappedRegistryAccessor"
