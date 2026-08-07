@@ -57,14 +57,7 @@ index 4ed79a51c89d54a7b2ab65a99b5b09cc807f4d4e..4b35c256ea3e6cf5405b950886ef621b
          this.resources.close();
  
          try {
-@@ -1206,6 +1213,6 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
-         // Paper end
-         this.running = false;
-         this.stopServer(); // Folia - region threading
-         if (waitForShutdown) {
-             try {
-                 this.serverThread.join();
-@@ -1288,11 +1295,14 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -1288,11 +1288,14 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
              // Folia start - region threading
              if (true) {
 +                ServerLifecycleHooks.handleServerAboutToStart(this); // NeoForge - fire ServerAboutToStartEvent (before region init)
