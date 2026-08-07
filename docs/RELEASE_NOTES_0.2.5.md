@@ -8,7 +8,7 @@
 ## Артефакт
 
 `eturlia-1.21.1-neoforge-21.1.248.jar`  
-Launch target: `eturliaserver` · Entry: `eturlia.EturliaServer`
+Launch target: `eturliaserver` · Entry: `org.bukkit.craftbukkit.Main` (через `EturliaServerLaunchHandler`)
 
 ```bash
 java -jar eturlia-1.21.1-neoforge-21.1.248.jar --nogui
