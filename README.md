@@ -167,7 +167,7 @@ java -jar build/libs/eturlia-1.21.1-neoforge-21.1.248.jar --nogui
 
 ## Статус патчей
 
-Активные server-патчи: Folia `0001`–`0019`, NeoForge/Eturlia `0020`–`0083` (interaction, Moonlight, spark global-tick, datapack bridge, plugin remap и последующие runtime-fixes).  
+Активные server-патчи: Folia `0001`–`0019`, NeoForge/Eturlia `0020`–`0093` (ASIC BLOCK bridges 0084–0086, amendments/TF/Moonlight/quality_food 0087–0093, datapack/Create/Sable и др.).  
 Черновики остальных WIP — в `patches/server-wip/`.
 
 ---
@@ -332,7 +332,7 @@ Tags `vMAJOR.MINOR.PATCH` (currently **v0.2.2**). The `0.x` line is experimental
 
 ## Patch status
 
-Active server patches: Folia `0001`–`0019`, NeoForge/Eturlia `0020`–`0083` (interaction, Moonlight, spark global-tick, datapack bridge, plugin remap, and follow-up runtime fixes).  
+Active server patches: Folia `0001`–`0019`, NeoForge/Eturlia `0020`–`0093` (ASIC BLOCK bridges 0084–0086, amendments/TF/Moonlight/quality_food 0087–0093, datapack/Create/Sable, and more).  
 Remaining WIP drafts: `patches/server-wip/`.
 
 </details>
