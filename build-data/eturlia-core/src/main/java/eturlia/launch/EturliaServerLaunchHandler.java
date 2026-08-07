@@ -80,8 +80,10 @@ public final class EturliaServerLaunchHandler extends CommonDevLaunchHandler {
             if (p != null) {
                 return p.toAbsolutePath().normalize();
             }
-        } catch (ReflectiveOperationException ignored) {
-            // FMLPaths may not be ready yet
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            // FMLPaths may not be ready yet, or GAMEDIR may not hold a Path on this build.
+            // ClassCastException/NPE are not ReflectiveOperationException, and letting them
+            // escape would abort mod-file discovery over a directory lookup.
         }
         return Path.of(System.getProperty("user.dir", ".")).toAbsolutePath().normalize();
     }
