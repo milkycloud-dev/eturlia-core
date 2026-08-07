@@ -90,6 +90,12 @@ public class EturliaModLoadingPlugin {
     /** Classpath resource path for the compatibility manifest. */
     private static final String MANIFEST_RESOURCE = "/eturlia-supported.json";
 
+    /**
+     * Fallback location — {@code eturliaStandaloneJar} packages the manifest under
+     * {@code META-INF/}, so looking only at the root always missed it.
+     */
+    private static final String MANIFEST_RESOURCE_ALT = "/META-INF/eturlia-supported.json";
+
     // =========================================================================
     // Manifest Model
     // =========================================================================
@@ -391,10 +397,11 @@ public class EturliaModLoadingPlugin {
      * @return the parsed manifest, or {@code null} if loading failed
      */
     private Manifest loadManifest() {
-        try (InputStream input = getClass().getResourceAsStream(MANIFEST_RESOURCE)) {
+        try (InputStream input = openManifestStream()) {
             if (input == null) {
                 LOGGER.warning("[Eturlia] Manifest resource not found: "
-                        + MANIFEST_RESOURCE + " — falling back to permissive mode");
+                        + MANIFEST_RESOURCE + " (also tried " + MANIFEST_RESOURCE_ALT
+                        + ") — falling back to permissive mode");
                 return null;
             }
             String json = new BufferedReader(
@@ -405,6 +412,11 @@ public class EturliaModLoadingPlugin {
         } catch (IOException e) {
             LOGGER.log(Level.WARNING,
                     "[Eturlia] Failed to read manifest: " + MANIFEST_RESOURCE, e);
+            return null;
+        } catch (RuntimeException e) {
+            LOGGER.log(Level.SEVERE,
+                    "[Eturlia] Malformed manifest " + MANIFEST_RESOURCE
+                            + " — falling back to permissive mode", e);
             return null;
         }
     }
@@ -421,24 +433,18 @@ public class EturliaModLoadingPlugin {
      * @throws IllegalArgumentException if the JSON is malformed
      */
     private Manifest parseManifest(String json) {
-        // Phase 1: Simple JSON parsing for the known flat structure.
-        // In a production build, use Gson (available on NeoForge classpath).
-        //
-        // TODO(Phase 1): Replace with Gson deserialization:
-        //   return new Gson().fromJson(json, Manifest.class);
         Manifest manifest = new Manifest();
 
-        // Extract schemaVersion
-        manifest.schemaVersion = extractIntField(json, "schemaVersion", 1);
+        Object parsed = Json.parse(json);
+        if (!(parsed instanceof Map<?, ?> rootMap)) {
+            throw new IllegalArgumentException(
+                    "eturlia-supported.json must contain a JSON object at the top level");
+        }
 
-        // Extract strictMode
-        manifest.strictMode = extractBooleanField(json, "strictMode", false);
-
-        // Extract supportedMods array
-        manifest.supportedMods = parseModEntries(json, "supportedMods");
-
-        // Extract excludedMods array
-        manifest.excludedMods = parseExcludedMods(json, "excludedMods");
+        manifest.schemaVersion = intValue(rootMap.get("schemaVersion"), 1);
+        manifest.strictMode = boolValue(rootMap.get("strictMode"), false);
+        manifest.supportedMods = parseModEntries(rootMap.get("supportedMods"));
+        manifest.excludedMods = parseExcludedMods(rootMap.get("excludedMods"));
 
         LOGGER.fine("[Eturlia] Manifest parsed: schemaVersion="
                 + manifest.schemaVersion + ", strictMode=" + manifest.strictMode
@@ -448,86 +454,265 @@ public class EturliaModLoadingPlugin {
         return manifest;
     }
 
-    /**
-     * Phase 1 stub: parses supported mod entries from JSON.
-     *
-     * <p>TODO(Phase 1): Replace with Gson.</p>
-     */
-    private List<ModEntry> parseModEntries(String json, String arrayName) {
+    /** Parses the {@code supportedMods} array. Entries without a modId are skipped. */
+    private List<ModEntry> parseModEntries(Object rawArray) {
         List<ModEntry> entries = new ArrayList<>();
-
-        // Simple regex-based extraction for Phase 1
-        // Looks for patterns like: "modId": "...", "required": true/false, "notes": "..."
-        // This is intentionally fragile and will be replaced by Gson.
-
-        // For now, return known entries from the hard-coded defaults
-        // that match eturlia-supported.json.
-        entries.add(createModEntry("eturlia_compat_create", false,
-                "Create + CBC cross-region kinetic/contraption/projectile handling"));
-        entries.add(createModEntry("eturlia_compat_sable", false,
-                "Sable sub-level cross-region + Create Aeronautics JNI audit"));
-        entries.add(createModEntry("neoforge", true,
-                "Core NeoForge runtime — region-aware event bus (Phase 1)"));
-        entries.add(createModEntry("minecraft", true,
-                "Vanilla — all server hooks patched through minecraft-patches"));
-
+        if (!(rawArray instanceof List<?> list)) {
+            return entries;
+        }
+        for (Object element : list) {
+            if (!(element instanceof Map<?, ?> obj)) {
+                continue;
+            }
+            String modId = stringValue(obj.get("modId"), null);
+            if (modId == null || modId.isBlank()) {
+                LOGGER.warning("[Eturlia] supportedMods entry without a modId — skipped");
+                continue;
+            }
+            ModEntry entry = new ModEntry();
+            entry.modId = modId;
+            entry.required = boolValue(obj.get("required"), false);
+            entry.notes = stringValue(obj.get("notes"), "");
+            entries.add(entry);
+        }
         return entries;
     }
 
-    /**
-     * Phase 1 stub: parses excluded mod entries from JSON.
-     *
-     * <p>TODO(Phase 1): Replace with Gson.</p>
-     */
-    private List<ExcludedMod> parseExcludedMods(String json, String arrayName) {
+    /** Parses the {@code excludedMods} array. Entries without a modId are skipped. */
+    private List<ExcludedMod> parseExcludedMods(Object rawArray) {
         List<ExcludedMod> entries = new ArrayList<>();
-
-        // Hard-coded defaults matching eturlia-supported.json
-        ExcludedMod c2me = new ExcludedMod();
-        // Using direct field assignment since these are simple POJOs
-        entries.add(c2me);
-
+        if (!(rawArray instanceof List<?> list)) {
+            return entries;
+        }
+        for (Object element : list) {
+            if (!(element instanceof Map<?, ?> obj)) {
+                continue;
+            }
+            String modId = stringValue(obj.get("modId"), null);
+            if (modId == null || modId.isBlank()) {
+                LOGGER.warning("[Eturlia] excludedMods entry without a modId — skipped");
+                continue;
+            }
+            ExcludedMod excluded = new ExcludedMod();
+            excluded.modId = modId;
+            excluded.reason = stringValue(obj.get("reason"), "no reason given");
+            excluded.severity = stringValue(obj.get("severity"), "WARNING");
+            entries.add(excluded);
+        }
         return entries;
     }
 
-    private ModEntry createModEntry(String modId, boolean required, String notes) {
-        ModEntry entry = new ModEntry();
-        entry.modId = modId;
-        entry.required = required;
-        entry.notes = notes;
-        return entry;
+    private InputStream openManifestStream() {
+        InputStream input = getClass().getResourceAsStream(MANIFEST_RESOURCE);
+        if (input != null) {
+            return input;
+        }
+        return getClass().getResourceAsStream(MANIFEST_RESOURCE_ALT);
     }
 
-    // Simple JSON field extraction helpers for Phase 1.
-    // These are deliberately simple and will be replaced by Gson.
-
-    private static int extractIntField(String json, String field, int defaultValue) {
-        String pattern = "\"" + field + "\":";
-        int idx = json.indexOf(pattern);
-        if (idx < 0) return defaultValue;
-        int valueStart = json.indexOf(':', idx) + 1;
-        StringBuilder sb = new StringBuilder();
-        for (int i = valueStart; i < json.length(); i++) {
-            char c = json.charAt(i);
-            if (Character.isDigit(c) || c == '-') {
-                sb.append(c);
-            } else if (!Character.isWhitespace(c)) {
-                break;
+    private static int intValue(Object value, int defaultValue) {
+        if (value instanceof Number n) {
+            return n.intValue();
+        }
+        if (value instanceof String s) {
+            try {
+                return Integer.parseInt(s.trim());
+            } catch (NumberFormatException ignored) {
+                // fall through
             }
         }
-        return sb.length() > 0 ? Integer.parseInt(sb.toString()) : defaultValue;
+        return defaultValue;
     }
 
-    private static boolean extractBooleanField(String json, String field,
-                                                 boolean defaultValue) {
-        String pattern = "\"" + field + "\":";
-        int idx = json.indexOf(pattern);
-        if (idx < 0) return defaultValue;
-        int valueStart = json.indexOf(':', idx) + 1;
-        String rest = json.substring(valueStart).trim();
-        if (rest.startsWith("true")) return true;
-        if (rest.startsWith("false")) return false;
+    private static boolean boolValue(Object value, boolean defaultValue) {
+        if (value instanceof Boolean b) {
+            return b;
+        }
+        if (value instanceof String s) {
+            return Boolean.parseBoolean(s.trim());
+        }
         return defaultValue;
+    }
+
+    private static String stringValue(Object value, String defaultValue) {
+        return value != null ? String.valueOf(value) : defaultValue;
+    }
+
+    // =========================================================================
+    // Minimal JSON reader
+    // =========================================================================
+
+    /**
+     * Tiny recursive-descent JSON reader.
+     *
+     * <p>Deliberately dependency-free: this class runs during FML bootstrap, before
+     * Gson is guaranteed to be reachable from this module layer. It supports the full
+     * JSON value grammar (objects, arrays, strings with escapes, numbers, booleans,
+     * null), which is everything {@code eturlia-supported.json} can contain.</p>
+     */
+    static final class Json {
+
+        private final String src;
+        private int pos;
+
+        private Json(String src) {
+            this.src = src;
+        }
+
+        static Object parse(String json) {
+            Json reader = new Json(json);
+            reader.skipWhitespace();
+            Object value = reader.readValue();
+            reader.skipWhitespace();
+            if (reader.pos < reader.src.length()) {
+                throw new IllegalArgumentException(
+                        "Trailing content at offset " + reader.pos + " in eturlia-supported.json");
+            }
+            return value;
+        }
+
+        private Object readValue() {
+            if (pos >= src.length()) {
+                throw new IllegalArgumentException("Unexpected end of JSON input");
+            }
+            char c = src.charAt(pos);
+            switch (c) {
+                case '{': return readObject();
+                case '[': return readArray();
+                case '"': return readString();
+                case 't': expect("true"); return Boolean.TRUE;
+                case 'f': expect("false"); return Boolean.FALSE;
+                case 'n': expect("null"); return null;
+                default:  return readNumber();
+            }
+        }
+
+        private Map<String, Object> readObject() {
+            Map<String, Object> map = new LinkedHashMap<>();
+            pos++; // '{'
+            skipWhitespace();
+            if (peek() == '}') {
+                pos++;
+                return map;
+            }
+            while (true) {
+                skipWhitespace();
+                String key = readString();
+                skipWhitespace();
+                if (peek() != ':') {
+                    throw new IllegalArgumentException("Expected ':' at offset " + pos);
+                }
+                pos++;
+                skipWhitespace();
+                map.put(key, readValue());
+                skipWhitespace();
+                char c = peek();
+                pos++;
+                if (c == '}') {
+                    return map;
+                }
+                if (c != ',') {
+                    throw new IllegalArgumentException("Expected ',' or '}' at offset " + (pos - 1));
+                }
+            }
+        }
+
+        private List<Object> readArray() {
+            List<Object> list = new ArrayList<>();
+            pos++; // '['
+            skipWhitespace();
+            if (peek() == ']') {
+                pos++;
+                return list;
+            }
+            while (true) {
+                skipWhitespace();
+                list.add(readValue());
+                skipWhitespace();
+                char c = peek();
+                pos++;
+                if (c == ']') {
+                    return list;
+                }
+                if (c != ',') {
+                    throw new IllegalArgumentException("Expected ',' or ']' at offset " + (pos - 1));
+                }
+            }
+        }
+
+        private String readString() {
+            if (peek() != '"') {
+                throw new IllegalArgumentException("Expected '\"' at offset " + pos);
+            }
+            pos++;
+            StringBuilder sb = new StringBuilder();
+            while (true) {
+                if (pos >= src.length()) {
+                    throw new IllegalArgumentException("Unterminated string in JSON input");
+                }
+                char c = src.charAt(pos++);
+                if (c == '"') {
+                    return sb.toString();
+                }
+                if (c != '\\') {
+                    sb.append(c);
+                    continue;
+                }
+                char esc = src.charAt(pos++);
+                switch (esc) {
+                    case '"':  sb.append('"');  break;
+                    case '\\': sb.append('\\'); break;
+                    case '/':  sb.append('/');  break;
+                    case 'b':  sb.append('\b'); break;
+                    case 'f':  sb.append('\f'); break;
+                    case 'n':  sb.append('\n'); break;
+                    case 'r':  sb.append('\r'); break;
+                    case 't':  sb.append('\t'); break;
+                    case 'u':
+                        sb.append((char) Integer.parseInt(src.substring(pos, pos + 4), 16));
+                        pos += 4;
+                        break;
+                    default:
+                        throw new IllegalArgumentException(
+                                "Invalid escape '\\" + esc + "' at offset " + (pos - 1));
+                }
+            }
+        }
+
+        private Object readNumber() {
+            int start = pos;
+            while (pos < src.length() && "+-0123456789.eE".indexOf(src.charAt(pos)) >= 0) {
+                pos++;
+            }
+            String text = src.substring(start, pos);
+            if (text.isEmpty()) {
+                throw new IllegalArgumentException("Unexpected character at offset " + start);
+            }
+            if (text.indexOf('.') >= 0 || text.indexOf('e') >= 0 || text.indexOf('E') >= 0) {
+                return Double.parseDouble(text);
+            }
+            return Long.parseLong(text);
+        }
+
+        private void expect(String literal) {
+            if (!src.startsWith(literal, pos)) {
+                throw new IllegalArgumentException("Expected '" + literal + "' at offset " + pos);
+            }
+            pos += literal.length();
+        }
+
+        private char peek() {
+            if (pos >= src.length()) {
+                throw new IllegalArgumentException("Unexpected end of JSON input");
+            }
+            return src.charAt(pos);
+        }
+
+        private void skipWhitespace() {
+            while (pos < src.length() && Character.isWhitespace(src.charAt(pos))) {
+                pos++;
+            }
+        }
     }
 
     // =========================================================================

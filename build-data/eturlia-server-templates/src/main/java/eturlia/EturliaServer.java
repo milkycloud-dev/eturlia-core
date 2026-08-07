@@ -66,6 +66,16 @@ import java.util.logging.Logger;
  *     └─ runServer(args)           → MinecraftServer.main / CraftBukkit
  * </pre>
  *
+ * <h2>Current wiring status</h2>
+ *
+ * <p><b>This entry point is not on the standalone launcher's boot path.</b>
+ * {@code EturliaServerLaunchHandler} hands off directly to
+ * {@code org.bukkit.craftbukkit.Main}, and the coremod redirect targets
+ * {@code MinecraftServer.main}, which does not exist in the patched tree. Everything below
+ * (crash handler, region-aware event bus) therefore only runs if something explicitly calls
+ * {@link #main(String[])}. Do not document these as active runtime features until the
+ * launch path actually goes through this class.</p>
+ *
  * @see RegionAwareEventBus
  * @see RegionContextCrashReport
  */
@@ -85,6 +95,10 @@ public final class EturliaServer {
     // =========================================================================
 
     private static volatile EturliaServer instance;
+
+    /** Re-entrancy guard for {@link #main(String[])}. */
+    private static final java.util.concurrent.atomic.AtomicBoolean ENTERED =
+            new java.util.concurrent.atomic.AtomicBoolean();
 
     /** The MinecraftServer instance — Object placeholder for net.minecraft.server.MinecraftServer. */
     private volatile Object server; // TODO: MinecraftServer
@@ -133,6 +147,15 @@ public final class EturliaServer {
      * @param args command-line arguments (including --fml.mcVersion, --fml.neoForgeVersion)
      */
     public static void main(String[] args) {
+        // The coremod rewrites MinecraftServer.main to call this method, and runServer()
+        // reflectively calls MinecraftServer.main. If both ever line up, that is an
+        // infinite recursion — refuse to re-enter instead of blowing the stack.
+        if (!ENTERED.compareAndSet(false, true)) {
+            throw new IllegalStateException(
+                    "EturliaServer.main re-entered — MinecraftServer.main is redirected back "
+                            + "into Eturlia. Fix the coremod redirect or the runServer() delegation.");
+        }
+
         // 1. Parse FML arguments
         Map<String, String> parsedArgs = parseArgs(args);
 
@@ -235,12 +258,13 @@ public final class EturliaServer {
     private void logBanner() {
         StringBuilder banner = new StringBuilder();
         banner.append('\n');
-        banner.append("  ██████╗ ██████╗ ███╗   ██╗████████╗███████╗██████╗ \n");
-        banner.append(" ██╔════╝██╔═══██╗████╗  ██║╚══██╔══╝██╔════╝██╔══██╗\n");
-        banner.append(" ██║     ██║   ██║██╔██╗ ██║   ██║   █████╗  ██║  ██║\n");
-        banner.append(" ██║     ██║   ██║██║╚██╗██║   ██║   ██╔══╝  ██║  ██║\n");
-        banner.append(" ╚██████╗╚██████╔╝██║ ╚████║   ██║   ███████╗██████╔╝\n");
-        banner.append("  ╚═════╝ ╚═════╝ ╚═╝  ╚═══╝   ╚═╝   ╚══════╝╚═════╝ \n");
+        // The previous ASCII art spelled "CONTED" — a leftover from an earlier project name.
+        banner.append("  ███████╗████████╗██╗   ██╗██████╗ ██╗     ██╗ █████╗ \n");
+        banner.append("  ██╔════╝╚══██╔══╝██║   ██║██╔══██╗██║     ██║██╔══██╗\n");
+        banner.append("  █████╗     ██║   ██║   ██║██████╔╝██║     ██║███████║\n");
+        banner.append("  ██╔══╝     ██║   ██║   ██║██╔══██╗██║     ██║██╔══██║\n");
+        banner.append("  ███████╗   ██║   ╚██████╔╝██║  ██║███████╗██║██║  ██║\n");
+        banner.append("  ╚══════╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝╚═╝  ╚═╝\n");
         banner.append('\n');
         banner.append("  Eturlia v").append(ETURLIA_VERSION).append(" — NeoForge FML on Folia\n");
         banner.append("  MC Version       : ").append(mcVersion).append('\n');
@@ -475,7 +499,7 @@ public final class EturliaServer {
     private void installCrashHandler() {
         Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
             LOGGER.log(Level.SEVERE, "Uncaught exception on thread '" + thread.getName()
-                    + "' (id=" + thread.getId() + ")", throwable);
+                    + "' (id=" + thread.threadId() + ")", throwable);
 
             RegionContextCrashReport report = RegionContextCrashReport.enrich(thread, throwable);
 
@@ -903,12 +927,15 @@ public final class EturliaServer {
         }
 
         // 2. Properties file in resources
-        try {
-            Properties props = new Properties();
-            props.load(EturliaServer.class.getResourceAsStream("/eturlia/version.properties"));
-            String fromFile = props.getProperty("eturlia.version");
-            if (fromFile != null && !fromFile.isEmpty()) {
-                return fromFile;
+        try (java.io.InputStream in =
+                     EturliaServer.class.getResourceAsStream("/eturlia/version.properties")) {
+            if (in != null) {
+                Properties props = new Properties();
+                props.load(in);
+                String fromFile = props.getProperty("eturlia.version");
+                if (fromFile != null && !fromFile.isEmpty()) {
+                    return fromFile;
+                }
             }
         } catch (Exception e) {
             // Properties file not found — use fallback
