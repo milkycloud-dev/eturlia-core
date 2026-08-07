@@ -32,7 +32,7 @@
 | **Артефакт** | `eturlia-1.21.1-neoforge-21.1.248.jar` |
 | **Launch target** | `eturliaserver` |
 | **Точка входа** | `eturlia.EturliaServer` |
-| **Релиз** | [v0.2.2](https://github.com/eturnercus/Core/releases/tag/v0.2.2) |
+| **Релиз** | [v0.2.5](https://github.com/eturnercus/Core/releases/tag/v0.2.5) |
 
 ## Как это работает
 
@@ -112,14 +112,29 @@ java -jar eturlia-1.21.1-neoforge-21.1.248.jar
 
 ```bash
 java -jar build/libs/eturlia-1.21.1-neoforge-21.1.248.jar --nogui
+# или jar с GitHub Releases (v0.2.5+)
 ```
 
 - Первый запуск: примите `eula.txt`.
 - Моды NeoForge → `mods/`.
 - Плагины Bukkit/Paper → только с `folia-supported: true`.
-- **Не кладите** отдельный `spark-neoforge` в `mods/` — bundled spark уже вшит (JPMS-конфликт). `/spark` работает; TPS семплится с global tick.
 - Консоль по умолчанию **calm** (INFO без зелёного). `-Deturlia.console.color=full|off` при необходимости.
 - Плагины с `libraries:` в `plugin.yml` могут не резолвить Maven под ModLauncher; без `libraries:` — ок.
+
+### Пак модов — текущий процесс (не «убери мод»)
+
+Eturlia закрывает Folia↔NeoForge gaps **патчами ядра**. Не надо выкидывать контент-моды из ASIC-списка ради boot.
+
+| Действие | Когда |
+|----------|--------|
+| Поставить jar **v0.2.5+** (патчи через **0094**) | libjf / respackopts / WorldWeaver больше не FATAL на `Main` |
+| **Обновить** Lithostitched до **≥ 1.7.13** | Бета `1.7.10+beta4` — тот же мод, битый jar; гейт останавливает boot |
+| Оставить `spark-neoforge` / Arclight sable patch | Ядро **soft-skip** → `*.jar.eturlia-skipped` (не удаляет файл; bundled `/spark` работает). Для Sable предпочтителен `arclight_sable_patch-*-eturlia-shim.jar` |
+| Перекачать `easy_npc`, убрать `.jar1` / `.bak*` | Битые/мусорные файлы на диске, не пробел ядра |
+| BetterEnd + BCLib + WorldWeaver | Нужен **wunderlib**; тяжёлый worldgen = RISK на Folia |
+| Оптимизаторы (FerriteCore и т.п.) | **Не обязательны** для boot |
+
+Аудит: [`docs/PACK_COMPAT_ASIC_2026-08.md`](./docs/PACK_COMPAT_ASIC_2026-08.md) · smoke: [`docs/SMOKE_ASIC_2026-08-07.md`](./docs/SMOKE_ASIC_2026-08-07.md) · релиз-ноты: [`docs/RELEASE_NOTES_0.2.5.md`](./docs/RELEASE_NOTES_0.2.5.md).
 
 ## Smoke-статус / whitelist matrix
 
@@ -128,13 +143,14 @@ java -jar build/libs/eturlia-1.21.1-neoforge-21.1.248.jar --nogui
 | Пустой / лёгкий стек (Cloth, Curios, GeckoLib, JEI, …) | SML + Folia `Done` | whitelist |
 | Farmers Delight (+ Cloth) | SML + `Done` | whitelist |
 | Create 6.0.10 | SML + `Done`; tick gaps под нагрузкой ещё ловятся | whitelist (best-effort) |
-| Moonlight Lib | SML + `Done` + worlds; SoftFluid/FluidType bridged; further Folia gaps under load | whitelist (best-effort) |
-| Bukkit/Paper плагины (`folia-supported`) | discovery + load (LibraryLoader/ProxyGenerator) | whitelist (без `libraries:`) |
+| Moonlight Lib | SML + `Done` + worlds; SoftFluid/FluidType bridged | whitelist (best-effort) |
+| ASIC core (FD, CreativeCore, Farm&Charm, amendments, TF, Supplementaries, …) | `Done` + worlds (0084–0093) | whitelist (best-effort) |
+| libjf + respackopts (+ litho ≥1.7.13) | MainMixin OK + `Done` (0094) | whitelist |
+| Bukkit/Paper плагины (`folia-supported`) | discovery + load | whitelist (без `libraries:`) |
 | Bundled spark | `spark tps` OK; TPS с Folia global tick | whitelist |
-| FerriteCore / прочие | не в матрице | **at your own risk** |
+| FerriteCore / полный ASIC gameplay | не certified | **at your own risk** |
 
-Политика моддеров и unsupported-модов: [`docs/MODDER_POLICY.md`](./docs/MODDER_POLICY.md).  
-Аудит типичного пака (mods + Folia-плагины): [`docs/PACK_COMPAT_ASIC_2026-08.md`](./docs/PACK_COMPAT_ASIC_2026-08.md).
+Политика моддеров: [`docs/MODDER_POLICY.md`](./docs/MODDER_POLICY.md).
 
 ### Crash-reports
 
@@ -143,20 +159,21 @@ java -jar build/libs/eturlia-1.21.1-neoforge-21.1.248.jar --nogui
 
 ### Semver
 
-Теги `vMAJOR.MINOR.PATCH` (сейчас **v0.2.2**). Линия `0.x` — экспериментальная; ломающие NMS-патчи между минорными ожидаемы. Артефакт: `eturlia-1.21.1-neoforge-21.1.248.jar`.
+Теги `vMAJOR.MINOR.PATCH` (сейчас **[v0.2.5](https://github.com/eturnercus/Core/releases/tag/v0.2.5)**). Линия `0.x` — экспериментальная; ломающие NMS-патчи между минорными ожидаемы. Артефакт: `eturlia-1.21.1-neoforge-21.1.248.jar`.
 
 ## Структура репозитория
 
 | Путь | Назначение |
 |------|------------|
 | `patches/server`, `patches/api` | Folia + NeoForge/Eturlia патчи |
-| `build-data/eturlia-core` | launch handler, region guard, mixins ядра |
+| `build-data/eturlia-core` | launch handler, region guard, mods hygiene, mixins ядра |
 | `build-data/eturlia-server-templates` | `EturliaServer` |
 | `build-data/eturlia-neoforge-shims` | compile-time stubs (документация) |
 | `neoforge/` | extras, resources, coremods |
 | `compat/` | опциональные compat-модули |
 | `docs/MODDER_POLICY.md` | whitelist / unsupported / region API |
 | `docs/PACK_COMPAT_ASIC_2026-08.md` | аудит списка модов + Folia-плагины |
+| `docs/RELEASE_NOTES_0.2.5.md` | релиз-ноты v0.2.5 |
 | `.github/workflows/eturlia-ci.yml` | applyPatches + jar + headless smoke |
 
 ## Апстрим и лицензии
@@ -199,7 +216,7 @@ The goal is Folia’s multi-core scaling without giving up the NeoForge ecosyste
 | **Artifact** | `eturlia-1.21.1-neoforge-21.1.248.jar` |
 | **Launch target** | `eturliaserver` |
 | **Entry point** | `eturlia.EturliaServer` |
-| **Release** | [v0.2.2](https://github.com/eturnercus/Core/releases/tag/v0.2.2) |
+| **Release** | [v0.2.5](https://github.com/eturnercus/Core/releases/tag/v0.2.5) |
 
 ## How it works
 
@@ -279,12 +296,27 @@ Output: `build/libs/eturlia-1.21.1-neoforge-21.1.248.jar`
 
 ```bash
 java -jar build/libs/eturlia-1.21.1-neoforge-21.1.248.jar --nogui
+# or the jar from GitHub Releases (v0.2.5+)
 ```
 
 Accept `eula.txt` on first boot. NeoForge mods go in `mods/`. Plugins need `folia-supported: true`.  
-**Do not** add `spark-neoforge` to `mods/` — bundled spark is already present (JPMS conflict). `/spark` works; TPS is sampled on the Folia global tick.
-Console defaults to **calm** (no green INFO). Override with `-Deturlia.console.color=full|off`.
+Console defaults to **calm** (no green INFO). Override with `-Deturlia.console.color=full|off`.  
 Plugins that declare `libraries:` in `plugin.yml` may fail Maven resolve under ModLauncher; plugins without `libraries:` load fine.
+
+### Mod pack — current process (not “delete the mod”)
+
+Eturlia closes Folia↔NeoForge gaps with **kernel patches**. Do not strip ASIC content mods just to boot.
+
+| Action | When |
+|--------|------|
+| Install jar **v0.2.5+** (patches through **0094**) | libjf / respackopts / WorldWeaver no longer FATAL on `Main` |
+| **Upgrade** Lithostitched to **≥ 1.7.13** | Beta `1.7.10+beta4` is the same mod, broken jar; gate aborts boot |
+| Leave `spark-neoforge` / Arclight sable patch | Kernel **soft-skips** → `*.jar.eturlia-skipped` (file kept; bundled `/spark` works). Prefer `arclight_sable_patch-*-eturlia-shim.jar` for Sable |
+| Re-download `easy_npc`; drop `.jar1` / `.bak*` | Corrupt/junk files, not a kernel gap |
+| BetterEnd + BCLib + WorldWeaver | Need **wunderlib**; heavy worldgen = RISK on Folia |
+| Optimizers (FerriteCore, etc.) | **Not required** for boot |
+
+Audit: [`docs/PACK_COMPAT_ASIC_2026-08.md`](./docs/PACK_COMPAT_ASIC_2026-08.md) · smoke: [`docs/SMOKE_ASIC_2026-08-07.md`](./docs/SMOKE_ASIC_2026-08-07.md) · notes: [`docs/RELEASE_NOTES_0.2.5.md`](./docs/RELEASE_NOTES_0.2.5.md).
 
 ## Smoke status / whitelist matrix
 
@@ -293,13 +325,14 @@ Plugins that declare `libraries:` in `plugin.yml` may fail Maven resolve under M
 | Empty / light stack (Cloth, Curios, GeckoLib, JEI, …) | SML + Folia `Done` | whitelist |
 | Farmers Delight (+ Cloth) | SML + `Done` | whitelist |
 | Create 6.0.10 | SML + `Done`; tick gaps under load still tracked | whitelist (best-effort) |
-| Moonlight Lib | SML + `Done` + worlds; SoftFluid/FluidType bridged; further Folia gaps under load | whitelist (best-effort) |
-| Bukkit/Paper plugins (`folia-supported`) | discovery + load (LibraryLoader/ProxyGenerator) | whitelist (no `libraries:`) |
+| Moonlight Lib | SML + `Done` + worlds; SoftFluid/FluidType bridged | whitelist (best-effort) |
+| ASIC core (FD, CreativeCore, Farm&Charm, amendments, TF, Supplementaries, …) | `Done` + worlds (0084–0093) | whitelist (best-effort) |
+| libjf + respackopts (+ litho ≥1.7.13) | MainMixin OK + `Done` (0094) | whitelist |
+| Bukkit/Paper plugins (`folia-supported`) | discovery + load | whitelist (no `libraries:`) |
 | Bundled spark | `spark tps` OK; TPS from Folia global tick | whitelist |
-| FerriteCore / others | not in matrix | **at your own risk** |
+| FerriteCore / full ASIC gameplay | not certified | **at your own risk** |
 
-Modder / unsupported-mod policy: [`docs/MODDER_POLICY.md`](./docs/MODDER_POLICY.md).  
-Pack audit (mods + Folia plugins): [`docs/PACK_COMPAT_ASIC_2026-08.md`](./docs/PACK_COMPAT_ASIC_2026-08.md).
+Modder policy: [`docs/MODDER_POLICY.md`](./docs/MODDER_POLICY.md).
 
 ### Crash reports
 
@@ -308,20 +341,21 @@ Pack audit (mods + Folia plugins): [`docs/PACK_COMPAT_ASIC_2026-08.md`](./docs/P
 
 ### Semver
 
-Tags `vMAJOR.MINOR.PATCH` (currently **v0.2.2**). The `0.x` line is experimental; breaking NMS patches between minors are expected. Artifact: `eturlia-1.21.1-neoforge-21.1.248.jar`.
+Tags `vMAJOR.MINOR.PATCH` (currently **[v0.2.5](https://github.com/eturnercus/Core/releases/tag/v0.2.5)**). The `0.x` line is experimental; breaking NMS patches between minors are expected. Artifact: `eturlia-1.21.1-neoforge-21.1.248.jar`.
 
 ## Repository layout
 
 | Path | Role |
 |------|------|
 | `patches/server`, `patches/api` | Folia + NeoForge/Eturlia patches |
-| `build-data/eturlia-core` | launch handler, region guard, core mixins |
+| `build-data/eturlia-core` | launch handler, region guard, mods hygiene, core mixins |
 | `build-data/eturlia-server-templates` | `EturliaServer` |
 | `build-data/eturlia-neoforge-shims` | compile-time stubs (docs) |
 | `neoforge/` | extras, resources, coremods |
 | `compat/` | optional compat modules |
 | `docs/MODDER_POLICY.md` | whitelist / unsupported / region API |
-| `docs/PACK_COMPAT_ASIC_2026-08.md` | аудит списка модов + Folia-плагины |
+| `docs/PACK_COMPAT_ASIC_2026-08.md` | pack audit (mods + Folia plugins) |
+| `docs/RELEASE_NOTES_0.2.5.md` | v0.2.5 release notes |
 | `.github/workflows/eturlia-ci.yml` | applyPatches + jar + headless smoke |
 
 ## Upstream & license
