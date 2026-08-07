@@ -320,7 +320,7 @@ public final class ClientLodConfig {
         this.voxySupport = getBoolean("eturlia.lod.voxy-support", false);
 
         // Parse LOD mode
-        String modeStr = getString("eturlia.lod.mode", "DISABLED").toUpperCase().replace('-', '_');
+        String modeStr = getString("eturlia.lod.mode", "DISABLED").toUpperCase(java.util.Locale.ROOT).replace('-', '_');
         try {
             this.lodMode = LodMode.valueOf(modeStr);
         } catch (IllegalArgumentException e) {
@@ -442,7 +442,7 @@ public final class ClientLodConfig {
             if (Files.isDirectory(modsDir)) {
                 try (var stream = Files.list(modsDir)) {
                     boolean found = stream.anyMatch(p -> {
-                        String name = p.getFileName().toString().toLowerCase();
+                        String name = p.getFileName().toString().toLowerCase(java.util.Locale.ROOT);
                         return name.contains("c2me") || name.contains("c2me-ff")
                                 || name.contains("c2me_ff");
                     });
@@ -596,7 +596,7 @@ public final class ClientLodConfig {
      */
     public static boolean isBlocked(String modId) {
         if (modId == null) return false;
-        String normalized = modId.toLowerCase();
+        String normalized = modId.toLowerCase(java.util.Locale.ROOT);
         return getBlockedMods().stream()
                 .anyMatch(entry -> entry.getModId().equalsIgnoreCase(normalized));
     }
@@ -609,7 +609,7 @@ public final class ClientLodConfig {
      */
     public static boolean isAllowed(String modId) {
         if (modId == null) return false;
-        String normalized = modId.toLowerCase();
+        String normalized = modId.toLowerCase(java.util.Locale.ROOT);
         return getAllowedMods().stream()
                 .anyMatch(entry -> entry.getModId().equalsIgnoreCase(normalized));
     }
