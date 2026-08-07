@@ -39,6 +39,9 @@ public final class EturliaServerLaunchHandler extends CommonDevLaunchHandler {
             VersionInfo versionInfo,
             Consumer<IModFileCandidateLocator> additionalLocators
     ) {
+        Path gameDir = resolveGameDir();
+        EturliaModsFolderHygiene.apply(gameDir);
+
         Path serverJar = requiredJarProperty("eturlia.serverJar");
         Path neoForgeJar = requiredJarProperty("eturlia.neoforgeJar");
         Path apiJar = optionalJarProperty("eturlia.apiJar");
@@ -63,6 +66,24 @@ public final class EturliaServerLaunchHandler extends CommonDevLaunchHandler {
                 serverJar, apiJar, neoForgeJar, commonsLang2, brigadier, sparkJars));
         Map<String, List<Path>> folders = getGroupedModFolders();
         additionalLocators.accept(new UserdevLocator(folders));
+    }
+
+    private static Path resolveGameDir() {
+        String prop = System.getProperty("eturlia.gameDir");
+        if (prop != null && !prop.isBlank()) {
+            return Path.of(prop).toAbsolutePath().normalize();
+        }
+        try {
+            Class<?> fmlPaths = Class.forName("net.neoforged.fml.loading.FMLPaths");
+            Object gamedir = fmlPaths.getField("GAMEDIR").get(null);
+            Path p = (Path) gamedir.getClass().getMethod("get").invoke(gamedir);
+            if (p != null) {
+                return p.toAbsolutePath().normalize();
+            }
+        } catch (ReflectiveOperationException ignored) {
+            // FMLPaths may not be ready yet
+        }
+        return Path.of(System.getProperty("user.dir", ".")).toAbsolutePath().normalize();
     }
 
     private static Path requiredJarProperty(String key) {

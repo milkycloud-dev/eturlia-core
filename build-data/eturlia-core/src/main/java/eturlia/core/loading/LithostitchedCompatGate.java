@@ -53,9 +53,9 @@ public final class LithostitchedCompatGate {
               (RuinedPortalStructure + Terralith/Incendium)
 
             Fix:
-              1) Remove mods/lithostitched-1.7.10+beta4-neoforge-21.1.jar
-              2) Install lithostitched ≥ 1.7.13 for NeoForge 1.21.1
-              3) Keep Terralith + Incendium as documented in PACK_COMPAT
+              1) Replace lithostitched-*-beta*.jar with lithostitched ≥ 1.7.13
+                 (same mod — update the jar, do not leave the pack without Lithostitched)
+              2) Keep Terralith + Incendium as documented in PACK_COMPAT
 
             Override (NOT recommended): -Deturlia.lithostitched.allow-unsafe=true
             ================================================================================
