@@ -1,7 +1,7 @@
 # Test Mod Manifest
 
-This directory contains pinned mod JARs for CI testing. **Do not manually place mod JARs
-here** — use the download script to ensure version consistency.
+This directory tracks pinned mod/version references for compat validation.
+It currently acts as a **manifest-first** source of truth.
 
 ## Required Mods (Content / Compat)
 
@@ -126,14 +126,13 @@ eturlia.lod.voxy-support=true
 
 ## Download
 
-```bash
-./scripts/download-test-mods.sh testpack/mods/
-```
+No in-repo download helper is currently shipped under `compat/scripts/`.
+Fetch jars with your own tooling and keep filenames/versions aligned with this manifest.
 
 ## Notes
 
-- JAR files in this directory are **not** committed to version control (they are
-  downloaded by CI).
+- This folder is currently documentation/manifest oriented; CI does not auto-download
+  artifacts from here in the current repository state.
 - The versions listed above are tested and known to work with the current compat
   module API surface.
 - Before upgrading any mod version, verify API compatibility by running the full
