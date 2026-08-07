@@ -10,7 +10,6 @@ Do not implement IEntityExtension on Entity (NeoForge compile classpath has
 extra abstract fluid APIs); add getPersistentData() as a concrete method.
 
 diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
-index 9d53444cedacfc0c76344437dfc04e024088657b..fc6321db6a31d247697d8efd98e87367f5d94f4c 100644
 --- a/src/main/java/net/minecraft/world/entity/Entity.java
 +++ b/src/main/java/net/minecraft/world/entity/Entity.java
 @@ -2508,6 +2508,11 @@ public abstract class Entity extends net.neoforged.neoforge.attachment.Attachmen
@@ -53,7 +52,6 @@ index 9d53444cedacfc0c76344437dfc04e024088657b..fc6321db6a31d247697d8efd98e87367
 +    }
  }
 diff --git a/src/main/java/net/minecraft/world/level/Level.java b/src/main/java/net/minecraft/world/level/Level.java
-index 6d8f3410f84259ee1f5517af606cb3506a80f29f..e13b95f95a16fd6f2ff9cd7ec0a9c86b094a4c4c 100644
 --- a/src/main/java/net/minecraft/world/level/Level.java
 +++ b/src/main/java/net/minecraft/world/level/Level.java
 @@ -458,7 +458,8 @@ public abstract class Level extends net.neoforged.neoforge.attachment.Attachment

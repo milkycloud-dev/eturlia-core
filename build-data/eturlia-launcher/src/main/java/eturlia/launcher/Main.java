@@ -140,6 +140,8 @@ public final class Main {
         // server, so without this `java -Xmx16G -jar eturlia.jar` silently ran the server
         // on the default heap and every -Deturlia.* flag from the docs was dropped.
         command.addAll(inheritedJvmArgs());
+        // Then the jvm: section of config/eturlia.yml, so it wins over the inherited flags.
+        command.addAll(configuredJvmArgs());
         command.add("-p");
         command.add(modulePath.stream().map(Path::toString).collect(Collectors.joining(File.pathSeparator)));
         command.add("--add-modules");
@@ -254,6 +256,127 @@ public final class Main {
             Thread.currentThread().interrupt();
             child.destroyForcibly();
         }
+    }
+
+    /**
+     * JVM options taken from the {@code jvm:} section of {@code config/eturlia.yml}.
+     *
+     * <p>Thread counts for the Moonrise chunk system are read once, very early in the server
+     * JVM's life, so they cannot be set from inside the server after the config is parsed —
+     * they have to be on the child's command line. Heap size has the same problem. The
+     * launcher therefore reads those few keys itself with a minimal scanner rather than
+     * pulling the whole config parser (and its module) onto the launcher's classpath.</p>
+     */
+    static List<String> configuredJvmArgs() {
+        Path config = Path.of("config", "eturlia.yml");
+        if (!Files.isRegularFile(config)) {
+            return List.of();
+        }
+        Map<String, String> jvm;
+        try {
+            jvm = readYamlSection(config, "jvm");
+        } catch (IOException e) {
+            System.out.println("Could not read " + config + " (" + e + ") — using JVM defaults");
+            return List.of();
+        }
+
+        List<String> args = new ArrayList<>();
+        String heapMax = jvm.getOrDefault("heap-max", "");
+        if (!heapMax.isBlank()) {
+            args.add("-Xmx" + heapMax.trim());
+        }
+        String heapMin = jvm.getOrDefault("heap-min", "");
+        if (!heapMin.isBlank()) {
+            args.add("-Xms" + heapMin.trim());
+        }
+        int workers = parsePositiveInt(jvm.get("worker-threads"));
+        if (workers > 0) {
+            args.add("-DPaper.WorkerThreadCount=" + workers);
+        }
+        int io = parsePositiveInt(jvm.get("io-threads"));
+        if (io > 0) {
+            args.add("-DPaper.IOThreadCount=" + io);
+        }
+        String extra = jvm.getOrDefault("extra-args", "");
+        if (!extra.isBlank()) {
+            for (String token : extra.trim().split("\\s+")) {
+                if (!token.isBlank()) {
+                    args.add(token);
+                }
+            }
+        }
+        if (!args.isEmpty()) {
+            System.out.println("Applying JVM options from " + config + ": " + args);
+        }
+        return args;
+    }
+
+    private static int parsePositiveInt(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return 0;
+        }
+        try {
+            return Integer.parseInt(raw.trim());
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    /**
+     * Reads {@code key: value} pairs nested one level under {@code section} from a YAML file.
+     *
+     * <p>Deliberately tiny: it understands the shape this config uses (two-space indentation,
+     * scalar values, {@code #} comments, optionally quoted strings) and nothing else. Anything
+     * more complex belongs to the real parser inside the server.</p>
+     */
+    static Map<String, String> readYamlSection(Path file, String section) throws IOException {
+        Map<String, String> values = new LinkedHashMap<>();
+        boolean inSection = false;
+        for (String raw : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+            String line = stripComment(raw);
+            if (line.isBlank()) {
+                continue;
+            }
+            boolean topLevel = !Character.isWhitespace(line.charAt(0));
+            String trimmed = line.trim();
+            if (topLevel) {
+                inSection = trimmed.equals(section + ":");
+                continue;
+            }
+            if (!inSection) {
+                continue;
+            }
+            int colon = trimmed.indexOf(':');
+            if (colon <= 0) {
+                continue;
+            }
+            String key = trimmed.substring(0, colon).trim();
+            String value = trimmed.substring(colon + 1).trim();
+            if (value.length() >= 2
+                    && ((value.startsWith("\"") && value.endsWith("\""))
+                        || (value.startsWith("'") && value.endsWith("'")))) {
+                value = value.substring(1, value.length() - 1);
+            }
+            values.put(key, value);
+        }
+        return values;
+    }
+
+    /** Strips a trailing {@code #} comment that is not inside quotes. */
+    private static String stripComment(String line) {
+        boolean inSingle = false;
+        boolean inDouble = false;
+        for (int i = 0; i < line.length(); i++) {
+            char c = line.charAt(i);
+            if (c == '\'' && !inDouble) {
+                inSingle = !inSingle;
+            } else if (c == '"' && !inSingle) {
+                inDouble = !inDouble;
+            } else if (c == '#' && !inSingle && !inDouble) {
+                return line.substring(0, i);
+            }
+        }
+        return line;
     }
 
     /**

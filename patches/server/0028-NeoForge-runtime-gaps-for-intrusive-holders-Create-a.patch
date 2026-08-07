@@ -9,7 +9,6 @@ Rarity, FoodProperties.effect(Supplier), Item.modifyDefaultComponentsFrom,
 RegistryOps copy ctor, and related FD block/loot APIs.
 
 diff --git a/src/main/java/net/minecraft/core/MappedRegistry.java b/src/main/java/net/minecraft/core/MappedRegistry.java
-index 545ee62ebb9ce9bfc28428f98ae116c415f373c1..f830120d3c3be8f8715dd9a6c9afeee503b7144a 100644
 --- a/src/main/java/net/minecraft/core/MappedRegistry.java
 +++ b/src/main/java/net/minecraft/core/MappedRegistry.java
 @@ -45,6 +45,8 @@ public class MappedRegistry<T> extends net.neoforged.neoforge.registries.BaseMap
@@ -184,7 +183,6 @@ index 545ee62ebb9ce9bfc28428f98ae116c415f373c1..f830120d3c3be8f8715dd9a6c9afeee5
      // used to clear intrusive holders from GameEvent, Item, Block, EntityType, and Fluid from unused instances of those types
      public void clearIntrusiveHolder(final T instance) {
 diff --git a/src/main/java/net/minecraft/resources/RegistryOps.java b/src/main/java/net/minecraft/resources/RegistryOps.java
-index 28985f4d3cd605481e567071b45d6cd3064f44d2..be5165a33ce55463df40e18cdd8250f1ba5da801 100644
 --- a/src/main/java/net/minecraft/resources/RegistryOps.java
 +++ b/src/main/java/net/minecraft/resources/RegistryOps.java
 @@ -35,6 +35,12 @@ public class RegistryOps<T> extends DelegatingOps<T> {
@@ -224,7 +222,6 @@ index 28985f4d3cd605481e567071b45d6cd3064f44d2..be5165a33ce55463df40e18cdd8250f1
          ResourceKey<? extends Registry<E>> resourceKey = ResourceKey.createRegistryKey(key.registry());
          return ExtraCodecs.retrieveContext(
 diff --git a/src/main/java/net/minecraft/server/ReloadableServerResources.java b/src/main/java/net/minecraft/server/ReloadableServerResources.java
-index 6de563b7adea957a7ead1c00c4900060fa5df277..f18908fc81307d2761957ded08a4903cdc1f1fec 100644
 --- a/src/main/java/net/minecraft/server/ReloadableServerResources.java
 +++ b/src/main/java/net/minecraft/server/ReloadableServerResources.java
 @@ -51,6 +51,8 @@ public class ReloadableServerResources {
@@ -304,7 +301,6 @@ index 6de563b7adea957a7ead1c00c4900060fa5df277..f18908fc81307d2761957ded08a4903c
  
      private static <T> void updateRegistryTags(RegistryAccess dynamicRegistryManager, TagManager.LoadResult<T> tags) {
 diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
-index b7283958d50d2d7a9007df0e1c69c652046084f1..c80208c1da49dcaf0bc51a4b2e06dae0dd2c52ba 100644
 --- a/src/main/java/net/minecraft/server/level/ServerLevel.java
 +++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
 @@ -201,7 +201,28 @@ public class ServerLevel extends Level implements WorldGenLevel, ca.spottedleaf.
@@ -338,7 +334,6 @@ index b7283958d50d2d7a9007df0e1c69c652046084f1..c80208c1da49dcaf0bc51a4b2e06dae0
      private final GameEventDispatcher gameEventDispatcher;
      public boolean noSave;
 diff --git a/src/main/java/net/minecraft/server/packs/resources/SimplePreparableReloadListener.java b/src/main/java/net/minecraft/server/packs/resources/SimplePreparableReloadListener.java
-index 298e3eddd600f0b2e48ce2d4080cf68adff59a3a..23e4df7222f3695656339da222ac32117bb492f8 100644
 --- a/src/main/java/net/minecraft/server/packs/resources/SimplePreparableReloadListener.java
 +++ b/src/main/java/net/minecraft/server/packs/resources/SimplePreparableReloadListener.java
 @@ -4,7 +4,7 @@ import java.util.concurrent.CompletableFuture;
@@ -351,7 +346,6 @@ index 298e3eddd600f0b2e48ce2d4080cf68adff59a3a..23e4df7222f3695656339da222ac3211
      public final CompletableFuture<Void> reload(
          PreparableReloadListener.PreparationBarrier synchronizer,
 diff --git a/src/main/java/net/minecraft/world/food/FoodProperties.java b/src/main/java/net/minecraft/world/food/FoodProperties.java
-index c60cdb3ef4cffacf02c35c53c198af1ee8d21b6f..3451dc035d2b631bc79340fc46f6a1e84afa6c2b 100644
 --- a/src/main/java/net/minecraft/world/food/FoodProperties.java
 +++ b/src/main/java/net/minecraft/world/food/FoodProperties.java
 @@ -76,11 +76,18 @@ public record FoodProperties(
@@ -398,7 +392,6 @@ index c60cdb3ef4cffacf02c35c53c198af1ee8d21b6f..3451dc035d2b631bc79340fc46f6a1e8
      }
  }
 diff --git a/src/main/java/net/minecraft/world/item/Item.java b/src/main/java/net/minecraft/world/item/Item.java
-index 8fd54bccb7af59da9113d8a289d12d8fad1fb467..a8d97662db9bb77f160a43d69e3f121b4f054aec 100644
 --- a/src/main/java/net/minecraft/world/item/Item.java
 +++ b/src/main/java/net/minecraft/world/item/Item.java
 @@ -14,6 +14,7 @@ import net.minecraft.core.BlockPos;
@@ -466,7 +459,6 @@ index 8fd54bccb7af59da9113d8a289d12d8fad1fb467..a8d97662db9bb77f160a43d69e3f121b
  
          private DataComponentMap buildComponents() {
 diff --git a/src/main/java/net/minecraft/world/item/ItemStack.java b/src/main/java/net/minecraft/world/item/ItemStack.java
-index 7027faae6dfd69ff39cc15e8802f5c9ab45b0d13..37bfbf585aef7662629154c545e0d25eec8e3981 100644
 --- a/src/main/java/net/minecraft/world/item/ItemStack.java
 +++ b/src/main/java/net/minecraft/world/item/ItemStack.java
 @@ -1053,7 +1053,7 @@ public final class ItemStack implements DataComponentHolder {
@@ -488,7 +480,6 @@ index 7027faae6dfd69ff39cc15e8802f5c9ab45b0d13..37bfbf585aef7662629154c545e0d25e
              });
          }
 diff --git a/src/main/java/net/minecraft/world/item/Rarity.java b/src/main/java/net/minecraft/world/item/Rarity.java
-index fc74e25def25629f0d33aa04e52f8b5da61e3f65..d7f9150e073f4d168505bccb8f336c4ddb04ffaa 100644
 --- a/src/main/java/net/minecraft/world/item/Rarity.java
 +++ b/src/main/java/net/minecraft/world/item/Rarity.java
 @@ -3,13 +3,18 @@ package net.minecraft.world.item;
@@ -551,7 +542,6 @@ index fc74e25def25629f0d33aa04e52f8b5da61e3f65..d7f9150e073f4d168505bccb8f336c4d
 +    }
  }
 diff --git a/src/main/java/net/minecraft/world/level/block/FenceGateBlock.java b/src/main/java/net/minecraft/world/level/block/FenceGateBlock.java
-index 26ed17e433cbafbbf788231f27f296f08048adfe..8807b54befb1f88605bd5869752194e59fe57a3f 100644
 --- a/src/main/java/net/minecraft/world/level/block/FenceGateBlock.java
 +++ b/src/main/java/net/minecraft/world/level/block/FenceGateBlock.java
 @@ -33,9 +33,12 @@ import net.minecraft.world.phys.shapes.VoxelShape;
@@ -630,7 +620,6 @@ index 26ed17e433cbafbbf788231f27f296f08048adfe..8807b54befb1f88605bd5869752194e5
                  }
              }
 diff --git a/src/main/java/net/minecraft/world/level/block/state/BlockBehaviour.java b/src/main/java/net/minecraft/world/level/block/state/BlockBehaviour.java
-index d0109633e8bdf109cfc9178963d7b6cf92f8b189..96054e3119b889754ee9b951d627bf2f9a7b8f01 100644
 --- a/src/main/java/net/minecraft/world/level/block/state/BlockBehaviour.java
 +++ b/src/main/java/net/minecraft/world/level/block/state/BlockBehaviour.java
 @@ -97,10 +97,10 @@ public abstract class BlockBehaviour implements FeatureElement {
@@ -709,7 +698,6 @@ index d0109633e8bdf109cfc9178963d7b6cf92f8b189..96054e3119b889754ee9b951d627bf2f
          }
  
 diff --git a/src/main/java/net/minecraft/world/level/levelgen/DebugLevelSource.java b/src/main/java/net/minecraft/world/level/levelgen/DebugLevelSource.java
-index a892a6cdaef15203921ba3cfaa3e277f0ffc1ab1..474a2c4e5486ac5d5fde4e560df54d293a69d991 100644
 --- a/src/main/java/net/minecraft/world/level/levelgen/DebugLevelSource.java
 +++ b/src/main/java/net/minecraft/world/level/levelgen/DebugLevelSource.java
 @@ -33,11 +33,12 @@ public class DebugLevelSource extends ChunkGenerator {

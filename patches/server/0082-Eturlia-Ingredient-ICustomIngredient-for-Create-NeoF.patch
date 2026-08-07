@@ -7,7 +7,6 @@ CompoundIngredient.toVanilla and Create sequenced recipes need the NeoForge
 custom-ingredient constructor and test/getItems/isEmpty bridges.
 
 diff --git a/src/main/java/net/minecraft/world/item/crafting/Ingredient.java b/src/main/java/net/minecraft/world/item/crafting/Ingredient.java
-index 86c8c9e43ac99beafed233583cf46f01b1ce104d..26d7ac9df55fa6b3f07fd3021b520edc0a447fa7 100644
 --- a/src/main/java/net/minecraft/world/item/crafting/Ingredient.java
 +++ b/src/main/java/net/minecraft/world/item/crafting/Ingredient.java
 @@ -41,6 +41,9 @@ public final class Ingredient implements Predicate<ItemStack> {

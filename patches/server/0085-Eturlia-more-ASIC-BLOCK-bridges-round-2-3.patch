@@ -9,7 +9,6 @@ FlowerPot Supplier ctor, Item component(Supplier)/setNoRepair,
 TemptGoal/Cat Player fields, lightning List.isEmpty site, onItemUse invoker.
 
 diff --git a/src/main/java/net/minecraft/core/NonNullList.java b/src/main/java/net/minecraft/core/NonNullList.java
-index 98f484f79742676b2d23a51d0f1bf3a42a38a742..fa5d4b61ea9b60e0e1c01ddc7770d1d19045c10c 100644
 --- a/src/main/java/net/minecraft/core/NonNullList.java
 +++ b/src/main/java/net/minecraft/core/NonNullList.java
 @@ -9,6 +9,16 @@ import javax.annotation.Nullable;
@@ -30,7 +29,6 @@ index 98f484f79742676b2d23a51d0f1bf3a42a38a742..fa5d4b61ea9b60e0e1c01ddc7770d1d1
      @Nullable
      private final E defaultValue;
 diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
-index d9f428bcad539eab2245042cc76d7dcb6573a6f6..e17ca05486c8575c1ab8c0d05a090272d66f52f0 100644
 --- a/src/main/java/net/minecraft/server/level/ServerLevel.java
 +++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
 @@ -1141,12 +1141,10 @@ public class ServerLevel extends Level implements WorldGenLevel, ca.spottedleaf.
@@ -81,7 +79,6 @@ index d9f428bcad539eab2245042cc76d7dcb6573a6f6..e17ca05486c8575c1ab8c0d05a090272
          return this.getCurrentWorldData().isHandlingTick(); // Folia - regionised ticking
      }
 diff --git a/src/main/java/net/minecraft/world/entity/ai/attributes/AttributeSupplier.java b/src/main/java/net/minecraft/world/entity/ai/attributes/AttributeSupplier.java
-index fce44d988f0c65c65f258151ffde8c5a117615ac..d516c113cac1bdb9a8606c941d1f341bddd15b70 100644
 --- a/src/main/java/net/minecraft/world/entity/ai/attributes/AttributeSupplier.java
 +++ b/src/main/java/net/minecraft/world/entity/ai/attributes/AttributeSupplier.java
 @@ -66,8 +66,25 @@ public class AttributeSupplier {
@@ -122,7 +119,6 @@ index fce44d988f0c65c65f258151ffde8c5a117615ac..d516c113cac1bdb9a8606c941d1f341b
      }
  }
 diff --git a/src/main/java/net/minecraft/world/entity/ai/goal/TemptGoal.java b/src/main/java/net/minecraft/world/entity/ai/goal/TemptGoal.java
-index 13f8c2cb42334ba3b573ca44ace1d3df76e41ff7..49a1c2756b4d115f226cdba013bfd6fb77bbc552 100644
 --- a/src/main/java/net/minecraft/world/entity/ai/goal/TemptGoal.java
 +++ b/src/main/java/net/minecraft/world/entity/ai/goal/TemptGoal.java
 @@ -6,6 +6,7 @@ import javax.annotation.Nullable;
@@ -152,7 +148,6 @@ index 13f8c2cb42334ba3b573ca44ace1d3df76e41ff7..49a1c2756b4d115f226cdba013bfd6fb
              // CraftBukkit end
              return this.player != null;
 diff --git a/src/main/java/net/minecraft/world/entity/animal/Cat.java b/src/main/java/net/minecraft/world/entity/animal/Cat.java
-index c7cd84527887cf7280b802cc110a9352cf63b4b3..887e616f309a5689687e48dc112a9ad3e2029561 100644
 --- a/src/main/java/net/minecraft/world/entity/animal/Cat.java
 +++ b/src/main/java/net/minecraft/world/entity/animal/Cat.java
 @@ -477,7 +477,7 @@ public class Cat extends TamableAnimal implements VariantHolder<Holder<CatVarian
@@ -165,7 +160,6 @@ index c7cd84527887cf7280b802cc110a9352cf63b4b3..887e616f309a5689687e48dc112a9ad3
  
          public CatTemptGoal(Cat cat, double speed, Predicate<ItemStack> foodPredicate, boolean canBeScared) {
 diff --git a/src/main/java/net/minecraft/world/entity/decoration/LeashFenceKnotEntity.java b/src/main/java/net/minecraft/world/entity/decoration/LeashFenceKnotEntity.java
-index 01173fc7177d78588978e087e63efda0b0527c2f..e8d5c8d9a047d1fe00c584befc328b205c70bfe6 100644
 --- a/src/main/java/net/minecraft/world/entity/decoration/LeashFenceKnotEntity.java
 +++ b/src/main/java/net/minecraft/world/entity/decoration/LeashFenceKnotEntity.java
 @@ -136,7 +136,7 @@ public class LeashFenceKnotEntity extends BlockAttachedEntity {
@@ -178,7 +172,6 @@ index 01173fc7177d78588978e087e63efda0b0527c2f..e8d5c8d9a047d1fe00c584befc328b20
                      // CraftBukkit end
                  }
 diff --git a/src/main/java/net/minecraft/world/item/Item.java b/src/main/java/net/minecraft/world/item/Item.java
-index 4b16843cc6e17d26a22873cd87901d779faf3694..b0eaa0525d81d52a236d76200514e3e3b420f4aa 100644
 --- a/src/main/java/net/minecraft/world/item/Item.java
 +++ b/src/main/java/net/minecraft/world/item/Item.java
 @@ -426,6 +426,25 @@ public class Item implements FeatureElement, ItemLike {
@@ -208,7 +201,6 @@ index 4b16843cc6e17d26a22873cd87901d779faf3694..b0eaa0525d81d52a236d76200514e3e3
              return this.component(DataComponents.ATTRIBUTE_MODIFIERS, attributeModifiersComponent);
          }
 diff --git a/src/main/java/net/minecraft/world/item/ItemStack.java b/src/main/java/net/minecraft/world/item/ItemStack.java
-index a08909654d6fbe57ff38926cf474dcd639b90bc8..b183f6fd0d07bd97cb919483128fbba40b9796fe 100644
 --- a/src/main/java/net/minecraft/world/item/ItemStack.java
 +++ b/src/main/java/net/minecraft/world/item/ItemStack.java
 @@ -410,6 +410,21 @@ public final class ItemStack implements DataComponentHolder {
@@ -234,7 +226,6 @@ index a08909654d6fbe57ff38926cf474dcd639b90bc8..b183f6fd0d07bd97cb919483128fbba4
          net.minecraft.world.entity.player.Player entityhuman = context.getPlayer();
          BlockPos blockposition = context.getClickedPos();
 diff --git a/src/main/java/net/minecraft/world/level/Level.java b/src/main/java/net/minecraft/world/level/Level.java
-index 1317bbeb5bb602bfd269fa8ef40d754f9ba6c978..61da660cbf67c69b9f69a604a352dc866aef410c 100644
 --- a/src/main/java/net/minecraft/world/level/Level.java
 +++ b/src/main/java/net/minecraft/world/level/Level.java
 @@ -1068,6 +1068,10 @@ public abstract class Level extends net.neoforged.neoforge.attachment.Attachment
@@ -249,7 +240,6 @@ index 1317bbeb5bb602bfd269fa8ef40d754f9ba6c978..61da660cbf67c69b9f69a604a352dc86
          io.papermc.paper.threadedregions.RegionizedWorldData worldData = this.getCurrentWorldData(); // Folia - region threading
          // CraftBukkit start - tree generation
 diff --git a/src/main/java/net/minecraft/world/level/block/CropBlock.java b/src/main/java/net/minecraft/world/level/block/CropBlock.java
-index 112d2feba5f75a2a873b595617780515945c10e4..7254210c20cba407cc2e75470d7eb1b4641518f9 100644
 --- a/src/main/java/net/minecraft/world/level/block/CropBlock.java
 +++ b/src/main/java/net/minecraft/world/level/block/CropBlock.java
 @@ -81,7 +81,7 @@ public class CropBlock extends BushBlock implements BonemealableBlock {
@@ -274,7 +264,6 @@ index 112d2feba5f75a2a873b595617780515945c10e4..7254210c20cba407cc2e75470d7eb1b4
          float f = 1.0F;
          BlockPos blockposition1 = pos.below();
 diff --git a/src/main/java/net/minecraft/world/level/block/FireBlock.java b/src/main/java/net/minecraft/world/level/block/FireBlock.java
-index 781ed7a0989c8e48f68917c153ba2bb436e26e70..854a659afdbc7a10822d083649467856cff9cb57 100644
 --- a/src/main/java/net/minecraft/world/level/block/FireBlock.java
 +++ b/src/main/java/net/minecraft/world/level/block/FireBlock.java
 @@ -249,7 +249,15 @@ public class FireBlock extends BaseFireBlock {
@@ -295,7 +284,6 @@ index 781ed7a0989c8e48f68917c153ba2bb436e26e70..854a659afdbc7a10822d083649467856
                                          // CraftBukkit end
                                      }
 diff --git a/src/main/java/net/minecraft/world/level/block/FlowerPotBlock.java b/src/main/java/net/minecraft/world/level/block/FlowerPotBlock.java
-index 662bd46e460cbbf335dfd56274fd9936e0c90e5e..521fdbaaa119a998d8a086eeef43dc4fbb6d7bc4 100644
 --- a/src/main/java/net/minecraft/world/level/block/FlowerPotBlock.java
 +++ b/src/main/java/net/minecraft/world/level/block/FlowerPotBlock.java
 @@ -35,18 +35,44 @@ public class FlowerPotBlock extends Block {
@@ -353,7 +341,6 @@ index 662bd46e460cbbf335dfd56274fd9936e0c90e5e..521fdbaaa119a998d8a086eeef43dc4f
  
      @Override
 diff --git a/src/main/java/net/minecraft/world/phys/shapes/Shapes.java b/src/main/java/net/minecraft/world/phys/shapes/Shapes.java
-index c348171c150bf69d24303d0862e45ab78baddcab..c0dbdd766e57cf5a5181bfb6110c5bae50eb4c80 100644
 --- a/src/main/java/net/minecraft/world/phys/shapes/Shapes.java
 +++ b/src/main/java/net/minecraft/world/phys/shapes/Shapes.java
 @@ -194,12 +194,74 @@ public final class Shapes {

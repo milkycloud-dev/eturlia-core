@@ -196,6 +196,134 @@ public final class EturliaServer {
     }
 
     /**
+     * Installs the Eturlia runtime without taking over the boot sequence.
+     *
+     * <p>This is the entry point used by {@code EturliaServerLaunchHandler}: ModLauncher has
+     * already bootstrapped FML by the time the launch handler runs, so {@link #main(String[])}
+     * (which bootstraps FML itself and then delegates to the server) is the wrong shape there.
+     * This method only installs the pieces that were previously unreachable — the startup
+     * banner, the region-aware event bus, the region-annotated crash handler, the mod
+     * compatibility report and the LOD configuration dump — and returns.</p>
+     *
+     * <p>Idempotent: a second call returns the existing instance without reinstalling.
+     * Never throws; a failure here must not prevent the server from starting.</p>
+     *
+     * @param gameDir          server working directory
+     * @param mcVersion        Minecraft version, for the banner
+     * @param neoForgeVersion  NeoForge version, for the banner
+     * @return the singleton instance
+     */
+    public static synchronized EturliaServer installRuntime(
+            Path gameDir, String mcVersion, String neoForgeVersion) {
+        EturliaServer existing = instance;
+        if (existing != null) {
+            return existing;
+        }
+
+        Map<String, String> args = new LinkedHashMap<>();
+        if (gameDir != null) {
+            args.put("gameDir", gameDir.toString());
+        }
+        if (mcVersion != null && !mcVersion.isEmpty()) {
+            args.put("fml.mcVersion", mcVersion);
+        }
+        if (neoForgeVersion != null && !neoForgeVersion.isEmpty()) {
+            args.put("fml.neoForgeVersion", neoForgeVersion);
+        }
+
+        EturliaServer cs = new EturliaServer(args);
+        instance = cs;
+
+        // Before anything else logs: route Eturlia's own warnings to logs/eturlia.log so the
+        // console shows the banner and a few clean status lines instead of a wall of red.
+        eturlia.core.logging.EturliaConsole.install(cs.gameDir);
+
+        cs.logBanner();
+        cs.installEventBus();
+        cs.installCrashHandler();
+        cs.reportModCompatibility();
+        cs.logLodConfiguration();
+        return cs;
+    }
+
+    /**
+     * Runs the compatibility manifest against the mods FML discovered and logs the report.
+     *
+     * <p>{@code EturliaModLoadingPlugin} had no caller at all, so {@code eturlia-supported.json}
+     * — including its hard block on {@code c2me} — was never consulted. The mod list is read
+     * reflectively because FML is not on this module's compile classpath.</p>
+     */
+    private void reportModCompatibility() {
+        try {
+            java.util.Set<String> modIds = discoverModIds();
+            if (modIds.isEmpty()) {
+                LOGGER.fine("[Eturlia] No mod ids available yet — skipping compatibility report");
+                return;
+            }
+            eturlia.core.loading.EturliaModLoadingPlugin plugin =
+                    new eturlia.core.loading.EturliaModLoadingPlugin();
+            eturlia.core.loading.EturliaModLoadingPlugin.CompatibilityReport report =
+                    plugin.onLoad(modIds);
+            LOGGER.info(report.toString());
+        } catch (RuntimeException | LinkageError e) {
+            // A compatibility report must never be the reason a server refuses to boot,
+            // unless the plugin itself decided so (strict mode rethrows below).
+            if (e instanceof IllegalStateException) {
+                throw e;
+            }
+            LOGGER.log(Level.WARNING, "[Eturlia] Mod compatibility check failed", e);
+        }
+    }
+
+    /** Reads discovered mod ids from FML's LoadingModList, or an empty set if unavailable. */
+    @SuppressWarnings("unchecked")
+    private java.util.Set<String> discoverModIds() {
+        java.util.Set<String> ids = new java.util.LinkedHashSet<>();
+        try {
+            Class<?> loadingModList = Class.forName("net.neoforged.fml.loading.LoadingModList");
+            Object list = loadingModList.getMethod("get").invoke(null);
+            if (list == null) {
+                return ids;
+            }
+            java.util.List<Object> mods =
+                    (java.util.List<Object>) loadingModList.getMethod("getMods").invoke(list);
+            for (Object modInfo : mods) {
+                Object id = modInfo.getClass().getMethod("getModId").invoke(modInfo);
+                if (id != null) {
+                    ids.add(id.toString());
+                }
+            }
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+            LOGGER.fine("[Eturlia] FML LoadingModList unavailable (" + e + ")");
+        }
+        return ids;
+    }
+
+    /**
+     * Logs the effective LOD configuration.
+     *
+     * <p>{@code ClientLodConfig} — roughly 800 lines describing documented
+     * {@code eturlia.lod.*} settings — had no caller either, so those settings were never
+     * validated or reported.</p>
+     */
+    private void logLodConfiguration() {
+        // getInstance() dumps the full compatibility table at INFO. That is useful when LOD is
+        // actually in use and pure console noise otherwise, so only touch it when enabled.
+        if (!Boolean.parseBoolean(System.getProperty("eturlia.lod.enabled", "false"))) {
+            LOGGER.fine("[Eturlia] LOD support disabled (eturlia.lod.enabled=false)");
+            return;
+        }
+        try {
+            eturlia.core.integration.ClientLodConfig lod =
+                    eturlia.core.integration.ClientLodConfig.getInstance();
+            LOGGER.info("[Eturlia] LOD enabled (source: " + lod.getConfigSource()
+                    + ", max render distance: " + lod.getMaxRenderDistance() + ")");
+        } catch (RuntimeException | LinkageError e) {
+            LOGGER.log(Level.WARNING, "[Eturlia] LOD configuration check failed", e);
+        }
+    }
+
+    /**
      * Returns the EturliaServer singleton.
      *
      * @return the singleton instance, or null if not yet initialised
@@ -255,26 +383,85 @@ public final class EturliaServer {
     // Banner
     // =========================================================================
 
-    private void logBanner() {
-        StringBuilder banner = new StringBuilder();
-        banner.append('\n');
-        // The previous ASCII art spelled "CONTED" — a leftover from an earlier project name.
-        banner.append("  ███████╗████████╗██╗   ██╗██████╗ ██╗     ██╗ █████╗ \n");
-        banner.append("  ██╔════╝╚══██╔══╝██║   ██║██╔══██╗██║     ██║██╔══██╗\n");
-        banner.append("  █████╗     ██║   ██║   ██║██████╔╝██║     ██║███████║\n");
-        banner.append("  ██╔══╝     ██║   ██║   ██║██╔══██╗██║     ██║██╔══██║\n");
-        banner.append("  ███████╗   ██║   ╚██████╔╝██║  ██║███████╗██║██║  ██║\n");
-        banner.append("  ╚══════╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝╚═╝  ╚═╝\n");
-        banner.append('\n');
-        banner.append("  Eturlia v").append(ETURLIA_VERSION).append(" — NeoForge FML on Folia\n");
-        banner.append("  MC Version       : ").append(mcVersion).append('\n');
-        banner.append("  NeoForge Version : ").append(neoForgeVersion).append('\n');
-        banner.append("  JVM              : ").append(System.getProperty("java.version")).append('\n');
-        banner.append("  OS               : ").append(System.getProperty("os.name")).append('\n');
-        banner.append("  Time             : ").append(TIMESTAMP_FORMATTER.format(Instant.now())).append('\n');
-        banner.append('\n');
+    /** ANSI colours, suppressed when the console cannot render them. */
+    private static final String ESC = String.valueOf((char) 27);
+    private static final String ANSI_RESET = ESC + "[0m";
+    private static final String ANSI_CYAN = ESC + "[38;5;44m";
+    private static final String ANSI_DIM = ESC + "[38;5;245m";
 
-        LOGGER.info(banner.toString());
+    /**
+     * The startup banner. Printed straight to stdout rather than through the logger so the
+     * block characters keep their column alignment — a logger prefixes every line with a
+     * timestamp and level, which shears the artwork in half.
+     */
+    private void logBanner() {
+        // The original artwork here spelled "CONTED", a leftover from an earlier project name.
+        String[] art = {
+            "  ███████╗ ████████╗ ██╗   ██╗ ██████╗  ██╗     ██╗  █████╗ ",
+            "  ██╔════╝ ╚══██╔══╝ ██║   ██║ ██╔══██╗ ██║     ██║ ██╔══██╗",
+            "  █████╗      ██║    ██║   ██║ ██████╔╝ ██║     ██║ ███████║",
+            "  ██╔══╝      ██║    ██║   ██║ ██╔══██╗ ██║     ██║ ██╔══██║",
+            "  ███████╗    ██║    ╚██████╔╝ ██║  ██║ ███████╗ ██║ ██║  ██║",
+            "  ╚══════╝    ╚═╝     ╚═════╝  ╚═╝  ╚═╝ ╚══════╝ ╚═╝ ╚═╝  ╚═╝",
+        };
+
+        boolean colour = useAnsiColour();
+        String accent = colour ? ANSI_CYAN : "";
+        String dim = colour ? ANSI_DIM : "";
+        String reset = colour ? ANSI_RESET : "";
+
+        StringBuilder banner = new StringBuilder(1024);
+        banner.append('\n');
+        for (String line : art) {
+            banner.append(accent).append(line).append(reset).append('\n');
+        }
+        banner.append('\n');
+        banner.append(accent)
+                .append("  Eturlia v").append(ETURLIA_VERSION)
+                .append(reset).append(dim)
+                .append("  —  NeoForge FML on Folia regionized threading")
+                .append(reset).append('\n');
+        banner.append(dim).append("  ").append("─".repeat(58)).append(reset).append('\n');
+        bannerRow(banner, dim, reset, "Minecraft", mcVersion);
+        bannerRow(banner, dim, reset, "NeoForge", neoForgeVersion);
+        bannerRow(banner, dim, reset, "Java", System.getProperty("java.version", "unknown")
+                + " (" + System.getProperty("java.vm.name", "JVM") + ")");
+        bannerRow(banner, dim, reset, "OS", System.getProperty("os.name", "unknown")
+                + " " + System.getProperty("os.arch", ""));
+        bannerRow(banner, dim, reset, "CPUs", String.valueOf(Runtime.getRuntime().availableProcessors()));
+        bannerRow(banner, dim, reset, "Max heap",
+                (Runtime.getRuntime().maxMemory() / (1024L * 1024L)) + " MB");
+        bannerRow(banner, dim, reset, "Game dir", String.valueOf(gameDir));
+        bannerRow(banner, dim, reset, "Started", TIMESTAMP_FORMATTER.format(Instant.now()));
+        banner.append(dim).append("  ").append("─".repeat(58)).append(reset).append('\n');
+
+        System.out.println(banner);
+        System.out.flush();
+    }
+
+    private static void bannerRow(StringBuilder sb, String dim, String reset,
+                                  String label, String value) {
+        sb.append(dim).append("  ").append(label);
+        for (int i = label.length(); i < 12; i++) {
+            sb.append(' ');
+        }
+        sb.append(": ").append(reset).append(value).append('\n');
+    }
+
+    /**
+     * Whether to emit ANSI escapes: honoured for {@code -Deturlia.console.color=off},
+     * the de-facto {@code NO_COLOR} convention, and consoles that are not a TTY
+     * (log files, CI, piped output).
+     */
+    private static boolean useAnsiColour() {
+        String configured = System.getProperty("eturlia.console.color");
+        if (configured != null) {
+            return !"off".equalsIgnoreCase(configured.trim());
+        }
+        if (System.getenv("NO_COLOR") != null) {
+            return false;
+        }
+        return System.console() != null;
     }
 
     // =========================================================================

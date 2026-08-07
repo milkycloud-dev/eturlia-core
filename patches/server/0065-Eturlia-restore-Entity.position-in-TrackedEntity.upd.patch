@@ -9,7 +9,6 @@ updatePlayer for sublevel tracking. Paper removed both position()
 calls; restore one on the tracked entity while keeping scalar math.
 
 diff --git a/src/main/java/net/minecraft/server/level/ChunkMap.java b/src/main/java/net/minecraft/server/level/ChunkMap.java
-index aaa40ca1eafed203aaec3fd9ebb868aacdecc1d0..5b2f31d5e3e959bc663db6866b6712429a46d3f9 100644
 --- a/src/main/java/net/minecraft/server/level/ChunkMap.java
 +++ b/src/main/java/net/minecraft/server/level/ChunkMap.java
 @@ -1210,11 +1210,14 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider

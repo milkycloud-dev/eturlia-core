@@ -8,7 +8,6 @@ Subject: [PATCH] Eturlia: hard-block Lithostitched < 1.7.13 / beta before
 with Terralith/Incendium. Abort early with upgrade instructions.
 
 diff --git a/src/main/java/io/papermc/paper/configuration/EturliaConfigBridge.java b/src/main/java/io/papermc/paper/configuration/EturliaConfigBridge.java
-index 429ad556c5ca05786a4cfb476f85be94f524f331..dc90ed78510c1ecc5b258e19046ba3e5ef902d1c 100644
 --- a/src/main/java/io/papermc/paper/configuration/EturliaConfigBridge.java
 +++ b/src/main/java/io/papermc/paper/configuration/EturliaConfigBridge.java
 @@ -28,6 +28,22 @@ public final class EturliaConfigBridge {
@@ -35,7 +34,6 @@ index 429ad556c5ca05786a4cfb476f85be94f524f331..dc90ed78510c1ecc5b258e19046ba3e5
          try {
              Object cfg = getInstance();
 diff --git a/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java b/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
-index 9d3d29480bf52bd2fb03284ad5562ff198a089c1..cbe51686fdbb18975871f5f5e8d4abfade626dc9 100644
 --- a/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
 +++ b/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
 @@ -224,6 +224,8 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface

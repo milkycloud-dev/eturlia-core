@@ -388,7 +388,9 @@ public final class RegionAwareEventBus {
     public RegionAwareEventBus(ValidationMode mode) {
         this.validationMode = Objects.requireNonNull(mode, "mode");
         this.delegateBus = null; // Not yet wired — set at runtime
-        LOGGER.info("Region-aware event bus created in " + mode + " mode");
+        // FINE: the installing side logs this once at INFO; two identical startup lines
+        // for one object is exactly the console noise this project is trying to shed.
+        LOGGER.fine("Region-aware event bus created in " + mode + " mode");
     }
 
     // =========================================================================

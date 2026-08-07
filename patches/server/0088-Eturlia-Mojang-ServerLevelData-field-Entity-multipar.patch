@@ -8,7 +8,6 @@ FakeServerLevel getfield; PrimaryLevelData access via helper.
 Add Entity.isMultipartEntity/getParts for Twilight Forest.
 
 diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
-index e17ca05486c8575c1ab8c0d05a090272d66f52f0..ae1cc7907954478a4ca7468cfd24cf53c34f8664 100644
 --- a/src/main/java/net/minecraft/server/level/ServerLevel.java
 +++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
 @@ -199,7 +199,12 @@ public class ServerLevel extends Level implements WorldGenLevel, ca.spottedleaf.
@@ -136,7 +135,6 @@ index e17ca05486c8575c1ab8c0d05a090272d66f52f0..ae1cc7907954478a4ca7468cfd24cf53
  
      @Nullable
 diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
-index eabd0e8cf3bb1976d5c032f093842d506ef8a830..458d8d8a787cb21633f143f46a7bc491ea43e1ff 100644
 --- a/src/main/java/net/minecraft/world/entity/Entity.java
 +++ b/src/main/java/net/minecraft/world/entity/Entity.java
 @@ -5867,6 +5867,16 @@ public abstract class Entity extends net.neoforged.neoforge.attachment.Attachmen

@@ -9,7 +9,6 @@ Entity.startRiding; Paper/Folia renumbered the synthetic to $8.
 Extract an explicitly named method so the mixin applies.
 
 diff --git a/src/main/java/net/minecraft/world/entity/EntityType.java b/src/main/java/net/minecraft/world/entity/EntityType.java
-index 41cc7fce27338fcc86865e25d5e039e46bb620f0..d1f5fa0b9eb3020571f3d7caebdca5e0ce05976c 100644
 --- a/src/main/java/net/minecraft/world/entity/EntityType.java
 +++ b/src/main/java/net/minecraft/world/entity/EntityType.java
 @@ -641,7 +641,14 @@ public class EntityType<T extends Entity> implements FeatureElement, EntityTypeT
