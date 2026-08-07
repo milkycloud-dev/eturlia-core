@@ -209,6 +209,8 @@ spark:
 # LOD (Distant Horizons / Voxy) — см. также eturlia-lod.properties
 # -----------------------------------------------------------------------------
 lod:
+  # Все ключи ниже применяются только при enabled: true — они транслируются в
+  # системные свойства eturlia.lod.* , которые читает ClientLodConfig.
   enabled: false
   # CLIENT_ONLY | SERVER_ASSISTED | DISABLED
   mode: DISABLED
@@ -221,11 +223,12 @@ lod:
 # NEOFORGE / МОДЫ (подсказки)
 # -----------------------------------------------------------------------------
 neoforge:
-  # Каталог модов (относительно рабочей директории сервера).
+  # СПРАВОЧНО: каталог модов задаёт FML, этот ключ не применяется кодом.
   mods-folder: mods
   # Напоминание: оригинальный arclight_sable_patch = BLOCK; нужен eturlia-shim.
   remind-sable-shim: true
-  # Не класть клиентские jars и spark-neoforge — см. docs/PACK_COMPAT_ASIC_2026-08.md
+  # СПРАВОЧНО (не применяется кодом): не класть клиентские jars и spark-neoforge —
+  # см. docs/PACK_COMPAT_ASIC_2026-08.md
   remind-pack-compat-doc: true
 
 
@@ -233,7 +236,8 @@ neoforge:
 # МОДЫ / PACK GUARDS
 # -----------------------------------------------------------------------------
 mods:
-  # lithostitched < 1.7.13 / *beta* → жёсткий отказ при старте.
+  # Применяется LithostitchedCompatGate (через eturlia.lithostitched.* system properties).
+  # lithostitched < min / *beta* → жёсткий отказ при старте.
   # Ядро (0074): NeoForge prefixNamespace для datapack-реестров (template_list).
   # Override: -Deturlia.lithostitched.allow-unsafe=true (не рекомендуется).
   require-lithostitched-min: "1.7.13"

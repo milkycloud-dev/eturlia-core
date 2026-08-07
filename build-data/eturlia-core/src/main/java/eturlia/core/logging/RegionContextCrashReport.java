@@ -58,7 +58,7 @@ public final class RegionContextCrashReport {
 
     private RegionContextCrashReport(Thread thread, Throwable cause) {
         String threadName = thread.getName();
-        long threadId = thread.getId();
+        long threadId = thread.threadId();
         String regionId = extractRegionId(threadName);
         String timestamp = new SimpleDateFormat(TIMESTAMP_FMT).format(new Date());
 

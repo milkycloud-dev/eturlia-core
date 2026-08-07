@@ -318,9 +318,8 @@ public final class RegionAwareEventBus {
          */
         private static boolean isGlobalThread(Thread thread) {
             String name = thread.getName();
-            return GLOBAL_THREAD_NAME.equals(name)
-                    || name.equals("main")
-                    || name.contains("Server");
+            // Exact match only — see RegionAwareEventBus#isOnGlobalThread.
+            return GLOBAL_THREAD_NAME.equals(name) || "main".equals(name);
         }
     }
 
@@ -359,6 +358,9 @@ public final class RegionAwareEventBus {
      */
     private final Set<String> reportedViolations =
             Collections.newSetFromMap(new ConcurrentHashMap<>());
+
+    /** Hard cap for {@link #reportedViolations} so log de-duplication cannot leak. */
+    private static final int MAX_TRACKED_VIOLATIONS = 4096;
 
     /** Counter for total events dispatched. */
     private final AtomicLong totalEventsDispatched = new AtomicLong(0);
@@ -1019,7 +1021,9 @@ public final class RegionAwareEventBus {
      * Dispatches a region-scoped event.
      */
     private boolean dispatchRegion(Object event) {
-        if (shouldValidate()) {
+        // The !isOnRegionThread() guard was missing here (unlike dispatchGlobal/dispatchEntity),
+        // so every region event was reported as a violation and STRICT mode dropped all of them.
+        if (shouldValidate() && !isOnRegionThread()) {
             String violation = "Region-scoped event '" + event.getClass().getName()
                     + "' dispatched from non-region thread '"
                     + Thread.currentThread().getName() + "'";
@@ -1112,36 +1116,46 @@ public final class RegionAwareEventBus {
      *                  or null
      */
     private void handleViolation(String violation, StackTraceElement caller) {
-        eturlia.core.region.CrossRegionInvocationGuard.check("EventBus:" + violation);
-        if (reportedViolations.add(violation)) {
-            // First time seeing this violation
-            totalViolations.incrementAndGet();
+        totalViolations.incrementAndGet();
 
-            switch (validationMode) {
-                case STRICT:
-                    IllegalStateException ex = new IllegalStateException(
-                            "[Eturlia] Region thread violation: " + violation);
-                    if (caller != null) {
-                        ex.setStackTrace(new StackTraceElement[]{caller});
-                    }
-                    throw ex;
+        // De-duplicate logging only. Bounded: violation strings embed thread names and
+        // event class names, so an unbounded set leaks on a long-running server.
+        boolean firstTime = reportedViolations.contains(violation)
+                ? false
+                : (reportedViolations.size() >= MAX_TRACKED_VIOLATIONS || reportedViolations.add(violation));
 
-                case WARN:
+        switch (validationMode) {
+            case STRICT:
+                // Always throw: previously only the first occurrence of each message
+                // failed and every repeat was silently allowed through.
+                if (firstTime) {
+                    LOGGER.severe("[Eturlia] Region thread violation: " + violation);
+                }
+                IllegalStateException ex = new IllegalStateException(
+                        "[Eturlia] Region thread violation: " + violation);
+                if (caller != null) {
+                    ex.setStackTrace(new StackTraceElement[]{caller});
+                }
+                throw ex;
+
+            case WARN:
+                if (firstTime) {
                     LOGGER.warning("[Eturlia] Region thread violation: " + violation);
                     if (caller != null) {
                         LOGGER.warning("  at " + caller);
                     }
-                    break;
+                }
+                break;
 
-                case PERMISSIVE:
-                    // Silent — no logging
-                    break;
+            case PERMISSIVE:
+                // Silent — no logging
+                break;
 
-                default:
-                    break;
-            }
+            default:
+                break;
         }
-        // Duplicate violations are silently ignored (already reported)
+
+        eturlia.core.region.CrossRegionInvocationGuard.check("EventBus:" + violation);
     }
 
     // =========================================================================
@@ -1163,11 +1177,10 @@ public final class RegionAwareEventBus {
      * the global region thread.</p>
      */
     private static boolean isOnGlobalThread() {
-        Thread current = Thread.currentThread();
-        String name = current.getName();
-        return "Server thread".equals(name)
-                || "main".equals(name)
-                || name.contains("Server");
+        String name = Thread.currentThread().getName();
+        // Exact names only: a "contains(\"Server\")" test also matched Netty IO threads
+        // ("Server IO #0"), the console handler and the watchdog.
+        return "Server thread".equals(name) || "main".equals(name);
     }
 
     /**
