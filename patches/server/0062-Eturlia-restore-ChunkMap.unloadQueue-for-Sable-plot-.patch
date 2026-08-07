@@ -8,7 +8,6 @@ Paper/Moonrise removed the field; Sable @Shadow Final unloadQueue and
 replaces it with ConcurrentLinkedDeque in ChunkMap ctor.
 
 diff --git a/src/main/java/net/minecraft/server/level/ChunkMap.java b/src/main/java/net/minecraft/server/level/ChunkMap.java
-index 19e5bcb37d9746726ba5983c4d1819f745a1b2e6..2755fd5336bcf10a921ed75f061a4595c7df548c 100644
 --- a/src/main/java/net/minecraft/server/level/ChunkMap.java
 +++ b/src/main/java/net/minecraft/server/level/ChunkMap.java
 @@ -131,6 +131,8 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider

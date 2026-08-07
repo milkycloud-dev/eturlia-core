@@ -8,7 +8,6 @@ WrapOperation finds ServerChunkCache. Bukkit extras via ThreadLocal.
 DefaultAttributes NeoForge attribute view retained.
 
 diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
-index 8f49231f4cb1230df4c5d450335d28e2e314e989..53f5f54a413150474799dca6f1e14dcf94bd9e59 100644
 --- a/src/main/java/net/minecraft/server/MinecraftServer.java
 +++ b/src/main/java/net/minecraft/server/MinecraftServer.java
 @@ -722,7 +722,15 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
@@ -46,7 +45,6 @@ index 8f49231f4cb1230df4c5d450335d28e2e314e989..53f5f54a413150474799dca6f1e14dcf
              }
  
 diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
-index e4784773a673765cc6891753a3e2c236c30dbc22..dafe1da4d2ab4d1b23aa33e7ba9608863efc0bf6 100644
 --- a/src/main/java/net/minecraft/server/level/ServerLevel.java
 +++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
 @@ -639,19 +639,23 @@ public class ServerLevel extends Level implements WorldGenLevel, ca.spottedleaf.
@@ -85,7 +83,6 @@ index e4784773a673765cc6891753a3e2c236c30dbc22..dafe1da4d2ab4d1b23aa33e7ba960886
          this.pvpMode = minecraftserver.isPvpAllowed();
          this.convertable = convertable_conversionsession;
 diff --git a/src/main/java/net/minecraft/world/level/Level.java b/src/main/java/net/minecraft/world/level/Level.java
-index 62097f2b55768c77d4a178030058a18f7c6ac36e..3b014ecb43d9c55ea3b2a3e4b26c098762540253 100644
 --- a/src/main/java/net/minecraft/world/level/Level.java
 +++ b/src/main/java/net/minecraft/world/level/Level.java
 @@ -736,7 +736,7 @@ public abstract class Level extends net.neoforged.neoforge.attachment.Attachment
@@ -98,7 +95,6 @@ index 62097f2b55768c77d4a178030058a18f7c6ac36e..3b014ecb43d9c55ea3b2a3e4b26c0987
          this.generator = gen;
          this.world = new CraftWorld((ServerLevel) this, gen, biomeProvider, env);
 diff --git a/src/main/java/org/bukkit/craftbukkit/CraftServer.java b/src/main/java/org/bukkit/craftbukkit/CraftServer.java
-index dee23b4b96b7f2c6af54a6affe385b183479f8cc..7ba0402717c7186af32b0ad08d0120a31c1b86c8 100644
 --- a/src/main/java/org/bukkit/craftbukkit/CraftServer.java
 +++ b/src/main/java/org/bukkit/craftbukkit/CraftServer.java
 @@ -1464,8 +1464,14 @@ public final class CraftServer implements Server {

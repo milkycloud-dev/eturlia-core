@@ -11,7 +11,6 @@ Subject: [PATCH] Eturlia: restore DistanceManager.inEntityTickingRange for
   the tracker loop Sable also wraps)
 
 diff --git a/src/main/java/net/minecraft/server/level/ChunkMap.java b/src/main/java/net/minecraft/server/level/ChunkMap.java
-index 74524dcd4539a31e9d0037cd607ffbfce02f414c..48931193a5cbda08bb8df78d4d02f2ecec3ef0f2 100644
 --- a/src/main/java/net/minecraft/server/level/ChunkMap.java
 +++ b/src/main/java/net/minecraft/server/level/ChunkMap.java
 @@ -135,7 +135,7 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
@@ -52,7 +51,6 @@ index 74524dcd4539a31e9d0037cd607ffbfce02f414c..48931193a5cbda08bb8df78d4d02f2ec
          }
  
 diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
-index 33a85bdd2858e90ca4450c8c8e303d0adae22cf6..d9f428bcad539eab2245042cc76d7dcb6573a6f6 100644
 --- a/src/main/java/net/minecraft/server/level/ServerLevel.java
 +++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
 @@ -858,7 +858,9 @@ public class ServerLevel extends Level implements WorldGenLevel, ca.spottedleaf.

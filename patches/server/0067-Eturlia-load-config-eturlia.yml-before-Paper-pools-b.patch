@@ -10,7 +10,6 @@ Subject: [PATCH] Eturlia: load config/eturlia.yml before Paper pools; bridge
 
 diff --git a/src/main/java/io/papermc/paper/configuration/EturliaConfigBridge.java b/src/main/java/io/papermc/paper/configuration/EturliaConfigBridge.java
 new file mode 100644
-index 0000000000000000000000000000000000000000..429ad556c5ca05786a4cfb476f85be94f524f331
 --- /dev/null
 +++ b/src/main/java/io/papermc/paper/configuration/EturliaConfigBridge.java
 @@ -0,0 +1,151 @@
@@ -166,7 +165,6 @@ index 0000000000000000000000000000000000000000..429ad556c5ca05786a4cfb476f85be94
 +    }
 +}
 diff --git a/src/main/java/io/papermc/paper/configuration/GlobalConfiguration.java b/src/main/java/io/papermc/paper/configuration/GlobalConfiguration.java
-index a7757603bef0686b3f0debe4a94602f27373534f..cad063682f1a2fa2dbe17b7263ca5a928a643c65 100644
 --- a/src/main/java/io/papermc/paper/configuration/GlobalConfiguration.java
 +++ b/src/main/java/io/papermc/paper/configuration/GlobalConfiguration.java
 @@ -243,6 +243,8 @@ public class GlobalConfiguration extends ConfigurationPart {
@@ -188,7 +186,6 @@ index a7757603bef0686b3f0debe4a94602f27373534f..cad063682f1a2fa2dbe17b7263ca5a92
          }
      }
 diff --git a/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java b/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
-index 56d9cc67b428a12364110d23aee1ae3e0b767fbc..9d3d29480bf52bd2fb03284ad5562ff198a089c1 100644
 --- a/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
 +++ b/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
 @@ -222,6 +222,8 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface

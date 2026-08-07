@@ -9,7 +9,6 @@ data/<ns>/<registry_ns>/<registry_path>/ instead of data/<ns>/<path>/.
 Without this, TEMPLATE_LIST stays empty and Lithostitched TemplateLists.getRandom NSEE kills Folia regions.
 
 diff --git a/src/main/java/net/minecraft/core/registries/Registries.java b/src/main/java/net/minecraft/core/registries/Registries.java
-index fe03b54e23b3b957ada53d1aa6f908b3c32723a6..31b909c49ea9b6ee84a7d055aa73e973a13914d5 100644
 --- a/src/main/java/net/minecraft/core/registries/Registries.java
 +++ b/src/main/java/net/minecraft/core/registries/Registries.java
 @@ -249,10 +249,12 @@ public class Registries {

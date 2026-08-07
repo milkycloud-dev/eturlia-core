@@ -10,7 +10,6 @@ aborting BLOCK RegisterEvent so Create DeferredHolders stay unbound for
 BlockItems. Treat null property maps as empty.
 
 diff --git a/src/main/java/io/papermc/paper/util/table/ZeroCollidingReferenceStateTable.java b/src/main/java/io/papermc/paper/util/table/ZeroCollidingReferenceStateTable.java
-index 57d0cd3ad6f972e986c72a57f1a6e36003f190c2..08b056625240e28a9d41d31abb227acfeab6bee6 100644
 --- a/src/main/java/io/papermc/paper/util/table/ZeroCollidingReferenceStateTable.java
 +++ b/src/main/java/io/papermc/paper/util/table/ZeroCollidingReferenceStateTable.java
 @@ -21,10 +21,12 @@ public final class ZeroCollidingReferenceStateTable {
@@ -38,7 +37,6 @@ index 57d0cd3ad6f972e986c72a57f1a6e36003f190c2..08b056625240e28a9d41d31abb227acf
          }
      }
 diff --git a/src/main/java/net/minecraft/world/level/block/state/StateHolder.java b/src/main/java/net/minecraft/world/level/block/state/StateHolder.java
-index 45744d86e9582a93a0cec26009deea091080fbbe..4f68d7809179fa52f4f878d7eb1d9849dba742c4 100644
 --- a/src/main/java/net/minecraft/world/level/block/state/StateHolder.java
 +++ b/src/main/java/net/minecraft/world/level/block/state/StateHolder.java
 @@ -43,9 +43,13 @@ public abstract class StateHolder<O, S> {

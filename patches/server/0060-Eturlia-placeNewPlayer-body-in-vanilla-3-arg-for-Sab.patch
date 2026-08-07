@@ -8,7 +8,6 @@ placeNewPlayer. Keep the login body on the 3-arg form; Paper extras via
 ThreadLocal from placeNewPlayerWithSpawn.
 
 diff --git a/src/main/java/net/minecraft/server/players/PlayerList.java b/src/main/java/net/minecraft/server/players/PlayerList.java
-index 542d44dcad5dd9c7e3be549b1cddb1f4f8dbf5af..3a06a13e88759c35f5cc821528d5faca3e9330de 100644
 --- a/src/main/java/net/minecraft/server/players/PlayerList.java
 +++ b/src/main/java/net/minecraft/server/players/PlayerList.java
 @@ -350,12 +350,29 @@ public abstract class PlayerList {

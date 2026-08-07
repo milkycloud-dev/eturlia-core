@@ -11,7 +11,6 @@ update/remove(Supplier) overloads for Twilight Forest DeferredHolder
 data components.
 
 diff --git a/src/main/java/net/minecraft/world/item/ItemStack.java b/src/main/java/net/minecraft/world/item/ItemStack.java
-index b183f6fd0d07bd97cb919483128fbba40b9796fe..84e5121f7877c5443e18058436fa5faa34f41f89 100644
 --- a/src/main/java/net/minecraft/world/item/ItemStack.java
 +++ b/src/main/java/net/minecraft/world/item/ItemStack.java
 @@ -982,11 +982,35 @@ public final class ItemStack implements DataComponentHolder {
@@ -73,7 +72,6 @@ index b183f6fd0d07bd97cb919483128fbba40b9796fe..84e5121f7877c5443e18058436fa5faa
          DataComponentPatch datacomponentpatch1 = this.components.asPatch();
  
 diff --git a/src/main/java/net/minecraft/world/level/block/entity/BrewingStandBlockEntity.java b/src/main/java/net/minecraft/world/level/block/entity/BrewingStandBlockEntity.java
-index 0a93bacd62249bae1800ff306b8a7c765b0e5a8b..5025c64fc4e4057ed3b34d0cee716eae7112129c 100644
 --- a/src/main/java/net/minecraft/world/level/block/entity/BrewingStandBlockEntity.java
 +++ b/src/main/java/net/minecraft/world/level/block/entity/BrewingStandBlockEntity.java
 @@ -188,7 +188,8 @@ public class BrewingStandBlockEntity extends BaseContainerBlockEntity implements

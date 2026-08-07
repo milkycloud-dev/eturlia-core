@@ -12,7 +12,6 @@ so the INVOKE vanished.
 - Paper close entry renamed to saveWithClose (MinecraftServer updated)
 
 diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
-index 5c9d0a486b2b6c0b75b44caad57c159abc61def5..afb282b4f6b7445a3412915d1d73762699d4ba4c 100644
 --- a/src/main/java/net/minecraft/server/MinecraftServer.java
 +++ b/src/main/java/net/minecraft/server/MinecraftServer.java
 @@ -995,7 +995,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
@@ -25,7 +24,6 @@ index 5c9d0a486b2b6c0b75b44caad57c159abc61def5..afb282b4f6b7445a3412915d1d737626
  
          // CraftBukkit start - moved to WorldServer.save
 diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
-index f70f7c5ef779c52fbf73938ea9f0bf0562c408a4..33a85bdd2858e90ca4450c8c8e303d0adae22cf6 100644
 --- a/src/main/java/net/minecraft/server/level/ServerLevel.java
 +++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
 @@ -1556,12 +1556,12 @@ public class ServerLevel extends Level implements WorldGenLevel, ca.spottedleaf.

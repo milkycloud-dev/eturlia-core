@@ -7,7 +7,6 @@ Compile-time stand-in for NeoForge interface injection so Pack.readPackMetadata
 can call isHidden() like ResourcePackLoader.
 
 diff --git a/src/main/java/net/minecraft/server/packs/PackResources.java b/src/main/java/net/minecraft/server/packs/PackResources.java
-index e3cdb44ff6fd4278d5365bc7a26a6fa0e8699b3b..de9da86f387c968c1dabde3f0bc8091239f7bc55 100644
 --- a/src/main/java/net/minecraft/server/packs/PackResources.java
 +++ b/src/main/java/net/minecraft/server/packs/PackResources.java
 @@ -11,7 +11,7 @@ import net.minecraft.server.packs.metadata.MetadataSectionSerializer;

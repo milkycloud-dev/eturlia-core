@@ -12,7 +12,6 @@ Subject: [PATCH] Eturlia: Moonlight Folia bridges + NeoForge interaction +
 - Port CommonHooks interaction / break / EntityInteractSpecific hooks
 
 diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
-index 659c6e45ae42199365d05334c6a7c2d0953c8a21..e213967dc1dd97ff43552e0a6cb630d91ce3ddb6 100644
 --- a/src/main/java/net/minecraft/server/MinecraftServer.java
 +++ b/src/main/java/net/minecraft/server/MinecraftServer.java
 @@ -2457,18 +2457,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
@@ -65,7 +64,6 @@ index 659c6e45ae42199365d05334c6a7c2d0953c8a21..e213967dc1dd97ff43552e0a6cb630d9
          DataPackConfig datapackconfiguration = dataConfiguration.dataPacks();
          FeatureFlagSet featureflagset = initMode ? FeatureFlagSet.of() : dataConfiguration.enabledFeatures();
 diff --git a/src/main/java/net/minecraft/server/commands/PlaceCommand.java b/src/main/java/net/minecraft/server/commands/PlaceCommand.java
-index 351b3cb441a0700d961148239f4afed9ed5dcb57..081e2c7928290c82c853dbaa4c10741926498b4a 100644
 --- a/src/main/java/net/minecraft/server/commands/PlaceCommand.java
 +++ b/src/main/java/net/minecraft/server/commands/PlaceCommand.java
 @@ -161,6 +161,10 @@ public class PlaceCommand {
@@ -118,7 +116,6 @@ index 351b3cb441a0700d961148239f4afed9ed5dcb57..081e2c7928290c82c853dbaa4c107419
          // Folia end - region threading
      }
 diff --git a/src/main/java/net/minecraft/server/commands/TeleportCommand.java b/src/main/java/net/minecraft/server/commands/TeleportCommand.java
-index 4a13ac9f5342a1b8dc155431eb33f045f87c9196..ac5608fb6ffd153a0a9c2a3933e8f3a4b306b868 100644
 --- a/src/main/java/net/minecraft/server/commands/TeleportCommand.java
 +++ b/src/main/java/net/minecraft/server/commands/TeleportCommand.java
 @@ -41,6 +41,10 @@ import org.bukkit.event.player.PlayerTeleportEvent;
@@ -147,7 +144,6 @@ index 4a13ac9f5342a1b8dc155431eb33f045f87c9196..ac5608fb6ffd153a0a9c2a3933e8f3a4
              if (true) {
                  ServerLevel worldFinal = world;
 diff --git a/src/main/java/net/minecraft/server/level/ServerPlayer.java b/src/main/java/net/minecraft/server/level/ServerPlayer.java
-index e4a68f43c1a48fe8193623c646eb40bc5f664c76..c62f264a77658c83114713c1b43a805b29a3f923 100644
 --- a/src/main/java/net/minecraft/server/level/ServerPlayer.java
 +++ b/src/main/java/net/minecraft/server/level/ServerPlayer.java
 @@ -424,7 +424,10 @@ public class ServerPlayer extends net.minecraft.world.entity.player.Player imple
@@ -177,7 +173,6 @@ index e4a68f43c1a48fe8193623c646eb40bc5f664c76..c62f264a77658c83114713c1b43a805b
          // Folia end - region threading
          AABB axisalignedbb = this.getDimensions(Pose.STANDING).makeBoundingBox(Vec3.ZERO);
 diff --git a/src/main/java/net/minecraft/server/level/ServerPlayerGameMode.java b/src/main/java/net/minecraft/server/level/ServerPlayerGameMode.java
-index 3669dbb613570feb953178389e098f0eb1376d47..a35c10ee44481a6a74256af30ec99a69e7da65e8 100644
 --- a/src/main/java/net/minecraft/server/level/ServerPlayerGameMode.java
 +++ b/src/main/java/net/minecraft/server/level/ServerPlayerGameMode.java
 @@ -179,6 +179,12 @@ public class ServerPlayerGameMode {
@@ -300,7 +295,6 @@ index 3669dbb613570feb953178389e098f0eb1376d47..a35c10ee44481a6a74256af30ec99a69
                  if (this.isCreative()) {
                      int i = stack.getCount();
 diff --git a/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-index 18d9e92f2fdc2cb25229005ffc08bffe555e0583..089f9e18af34a72d036d8989749ea6b3d00de2ae 100644
 --- a/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
 +++ b/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
 @@ -2925,6 +2925,11 @@ public class ServerGamePacketListenerImpl extends ServerCommonPacketListenerImpl
@@ -316,7 +310,6 @@ index 18d9e92f2fdc2cb25229005ffc08bffe555e0583..089f9e18af34a72d036d8989749ea6b3
                          }, new PlayerInteractAtEntityEvent(ServerGamePacketListenerImpl.this.getCraftPlayer(), entity.getBukkitEntity(), new org.bukkit.util.Vector(pos.x, pos.y, pos.z), (hand == InteractionHand.OFF_HAND) ? EquipmentSlot.OFF_HAND : EquipmentSlot.HAND)); // CraftBukkit
                      }
 diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
-index fc6321db6a31d247697d8efd98e87367f5d94f4c..252887757c99987575a317dcf14bb3b40cf8a788 100644
 --- a/src/main/java/net/minecraft/world/entity/Entity.java
 +++ b/src/main/java/net/minecraft/world/entity/Entity.java
 @@ -5784,10 +5784,11 @@ public abstract class Entity extends net.neoforged.neoforge.attachment.Attachmen
@@ -334,7 +327,6 @@ index fc6321db6a31d247697d8efd98e87367f5d94f4c..252887757c99987575a317dcf14bb3b4
          if (this.persistentData == null) {
              this.persistentData = new CompoundTag();
 diff --git a/src/main/java/net/minecraft/world/level/material/Fluid.java b/src/main/java/net/minecraft/world/level/material/Fluid.java
-index 6ef50d0f3c40e482651084543a0d443aadf8e583..19684327cc391cbcc856318ae3e1a05f8be558d7 100644
 --- a/src/main/java/net/minecraft/world/level/material/Fluid.java
 +++ b/src/main/java/net/minecraft/world/level/material/Fluid.java
 @@ -101,6 +101,16 @@ public abstract class Fluid {

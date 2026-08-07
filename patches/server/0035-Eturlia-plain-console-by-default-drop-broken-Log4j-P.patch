@@ -14,7 +14,6 @@ Remove %stripAnsi and rewrite policies that fail under ModLauncher
 Log4j's.
 
 diff --git a/src/main/java/io/papermc/paper/adventure/providers/ComponentLoggerProviderImpl.java b/src/main/java/io/papermc/paper/adventure/providers/ComponentLoggerProviderImpl.java
-index a143ea1e58464a3122fbd8ccafe417bdb3c31c78..2011e1ad00f83f44013a7e7afbc1c84cbaabacf5 100644
 --- a/src/main/java/io/papermc/paper/adventure/providers/ComponentLoggerProviderImpl.java
 +++ b/src/main/java/io/papermc/paper/adventure/providers/ComponentLoggerProviderImpl.java
 @@ -1,10 +1,10 @@
@@ -41,7 +40,6 @@ index a143ea1e58464a3122fbd8ccafe417bdb3c31c78..2011e1ad00f83f44013a7e7afbc1c84c
      }
  }
 diff --git a/src/main/resources/log4j2.xml b/src/main/resources/log4j2.xml
-index d2a75850af9c6ad2aca66a5f994f1b587d73eac4..e49f7e12ba4b6b6c12ea6764b2c031faca5d6578 100644
 --- a/src/main/resources/log4j2.xml
 +++ b/src/main/resources/log4j2.xml
 @@ -6,6 +6,7 @@
