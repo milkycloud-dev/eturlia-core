@@ -31,7 +31,7 @@
 |---|---|
 | **Артефакт** | `eturlia-1.21.1-neoforge-21.1.248.jar` |
 | **Launch target** | `eturliaserver` |
-| **Точка входа** | `eturlia.EturliaServer` |
+| **Точка входа** | `org.bukkit.craftbukkit.Main` (через `EturliaServerLaunchHandler`) |
 | **Релиз** | [v0.2.5](https://github.com/eturnercus/Core/releases/tag/v0.2.5) |
 
 ## Как это работает
@@ -167,6 +167,10 @@ Eturlia закрывает Folia↔NeoForge gaps **патчами ядра**. Н
 
 ### Известные ограничения
 
+- `mods/`-гигиена **переименовывает** конфликтные jar'ы (`spark-*neoforge*`, оригинальный
+  `arclight_sable_patch`) в `*.jar.eturlia-skipped` при каждом старте. Отключается:
+  `-Deturlia.mods.hygiene=warn` (только сообщать) или `=off` (не сканировать).
+
 - `ServerTickEvent.Pre/Post` (и `LevelTickEvent`) фактически шлются **из каждого
   region-потока**, а не один раз за глобальный тик. Моды с однопоточными допущениями
   в обработчиках тика получат конкурентные вызовы.
@@ -234,7 +238,7 @@ The goal is Folia’s multi-core scaling without giving up the NeoForge ecosyste
 |---|---|
 | **Artifact** | `eturlia-1.21.1-neoforge-21.1.248.jar` |
 | **Launch target** | `eturliaserver` |
-| **Entry point** | `eturlia.EturliaServer` |
+| **Entry point** | `org.bukkit.craftbukkit.Main` (via `EturliaServerLaunchHandler`) |
 | **Release** | [v0.2.5](https://github.com/eturnercus/Core/releases/tag/v0.2.5) |
 
 ## How it works
@@ -365,6 +369,10 @@ Modder policy: [`docs/MODDER_POLICY.md`](./docs/MODDER_POLICY.md).
   folder is not produced yet. The code is in place, waiting to be wired up.
 
 ### Known limitations
+
+- The `mods/` hygiene pass **renames** conflicting jars (`spark-*neoforge*`, the original
+  `arclight_sable_patch`) to `*.jar.eturlia-skipped` on every boot. Opt out with
+  `-Deturlia.mods.hygiene=warn` (report only) or `=off` (do not scan).
 
 - `ServerTickEvent.Pre/Post` (and `LevelTickEvent`) are fired **per region tick**, not once
   per global tick, so listeners are invoked concurrently from every region thread. Mods with
