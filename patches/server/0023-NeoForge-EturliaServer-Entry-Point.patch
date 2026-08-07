@@ -72,25 +72,32 @@ index 4ed79a51c89d54a7b2ab65a99b5b09cc807f4d4e..4b35c256ea3e6cf5405b950886ef621b
                      } catch (final InterruptedException ex) {}
                  }
              }
-@@ -1672,6 +1682,11 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -1672,6 +1682,15 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
              return scheduledEnd - System.nanoTime() > targetBuffer;
          };
          this.server.spark.tickStart(); // Paper - spark
 +        // NeoForge start - server tick pre event
-+        // KNOWN LIMITATION: this runs once per region tick, so listeners see concurrent
-+        // invocations from every region thread. Single-threaded mods must not rely on it.
-+        EventHooks.fireServerTickPre(shouldKeepTicking, this);
++        // Eturlia: Folia runs this body once per region, so firing the event here handed every
++        // listener N concurrent invocations per tick. Only the first region to reach a given
++        // tick number fires it, which restores NeoForge's once-per-tick contract. It is still
++        // delivered on a region thread, so listeners must not assume the global thread.
++        if (eturlia$firstTickPre(region.getCurrentTick())) {
++            EventHooks.fireServerTickPre(shouldKeepTicking, this);
++        }
 +        // NeoForge end
          new com.destroystokyo.paper.event.server.ServerTickStartEvent((int)region.getCurrentTick()).callEvent(); // Paper
          // Folia end - region threading
          co.aikar.timings.TimingsManager.FULL_SERVER_TICK.startTiming(); // Paper
-@@ -1764,6 +1779,10 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -1764,6 +1783,13 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
          this.profiler.pop();
          org.spigotmc.WatchdogThread.tick(); // Spigot
          co.aikar.timings.TimingsManager.FULL_SERVER_TICK.stopTiming(); // Paper
 +        // NeoForge start - server tick post event
-+        // KNOWN LIMITATION: fired per region tick — see fireServerTickPre above.
-+        EventHooks.fireServerTickPost(shouldKeepTicking, this);
++        // Eturlia: gated like fireServerTickPre above, on its own counter — one Post per
++        // tick number, possibly from a different region thread than the Pre.
++        if (eturlia$firstTickPost(region.getCurrentTick())) {
++            EventHooks.fireServerTickPost(shouldKeepTicking, this);
++        }
 +        // NeoForge end
      }
  
