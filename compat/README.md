@@ -1,8 +1,22 @@
 # Eturlia Compat — Compatibility Modules
 
+> **Status: design sketch, not working code.**
+>
+> Both modules (`eturlia-compat-create`, `eturlia-compat-sable`) are skeletons: every
+> handler method is an empty stub, no mixins are applied, and the mod dependencies are
+> not pinned to resolvable coordinates yet. They are *not* built by the root project or
+> by CI, and installing them into `mods/` currently has no effect.
+>
+> The mixin configs that used to ship here were removed: they declared `"required": true`
+> and referenced mixin classes and mixin plugins that do not exist in this tree, so the
+> modules crashed mod loading instead of doing nothing. Re-add a config only together with
+> the actual mixin classes.
+>
+> The rest of this document describes the intended design.
+
 This directory contains the compatibility layer modules for the Eturlia (Folia-based)
-NeoForge server project. Each module patches a specific mod to operate correctly on
-Folia's regionized threading model.
+NeoForge server project. Each module is meant to patch a specific mod to operate correctly
+on Folia's regionized threading model.
 
 ## Architecture Overview
 

@@ -18,25 +18,21 @@ repositories {
         name = "NeoForge"
         url = uri("https://maven.neoforged.net/releases/")
     }
-    maven {
-        name = "Create"
-        url = uri("https://maven.creativetab.dev/releases/")
-    }
-    maven {
-        name = "Create Big Cannons"
-        url = uri("https://maven.creativetab.dev/releases/")
-    }
+    // Create publishes to https://maven.createmod.net (artifact create-1.21.1 for MC 1.21.1).
+    // The old URL below never hosted Create and the coordinates below were for MC 1.18/1.20,
+    // so this module could not resolve its dependencies at all.
+    // maven { name = "Create"; url = uri("https://maven.createmod.net") }
 }
 
 dependencies {
     // NeoForge API — provides the mod loading framework and event bus
     implementation("net.neoforged:neoforge:21.1.248")
 
-    // Create mod — mechanical engineering mod; provides kinetic network, contraptions
-    compileOnly("com.simibubi.create:Create:0.5.1.f")
-
-    // Create Big Cannons — artillery add-on for Create
-    compileOnly("com.railwayteam.createbigcannons:createbigcannons:1.0.0")
+    // TODO: pin the real Create / Create Big Cannons coordinates for MC 1.21.1 before
+    // re-enabling. Until then this module compiles against NeoForge only and its handlers
+    // stay stubs — see compat/README.md.
+    // compileOnly("com.simibubi.create:create-1.21.1:<version>")
+    // compileOnly("rbasamoyai:createbigcannons-1.21.1:<version>")
 }
 
 tasks.withType<ProcessResources> {

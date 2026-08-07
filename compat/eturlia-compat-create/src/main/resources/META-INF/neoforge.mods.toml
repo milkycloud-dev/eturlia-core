@@ -9,11 +9,12 @@ issueTrackerURL="https://github.com/eturlia/eturlia-neoforge/issues"
     displayName="Eturlia Compat: Create"
     authors="Eturlia Team"
     description='''
-    Compatibility layer for Create and Create Big Cannons on Eturlia (Folia-based) regionized servers.
+    WORK IN PROGRESS — this module does not do anything yet.
 
-    Patches Create's kinetic networks, contraptions, projectiles, and explosions to operate
-    correctly on Folia's per-region threading model, preventing cross-thread data corruption
-    and ensuring thread-safe block/entity interactions.
+    Intended as a compatibility layer for Create and Create Big Cannons on Eturlia
+    (Folia-based) regionized servers: kinetic networks, contraptions, projectiles and
+    explosions crossing region boundaries. All handlers are currently stubs and no mixins
+    are applied. Installing this mod has no effect beyond appearing in the mod list.
     '''
 
 [[dependencies.eturlia_compat_create]]
@@ -37,5 +38,7 @@ issueTrackerURL="https://github.com/eturlia/eturlia-neoforge/issues"
     ordering="AFTER"
     side="BOTH"
 
-[[mixins]]
-    config="eturlia-compat-create.mixins.json"
+# No [[mixins]] entry: the mixin config listed four classes (kinetic/contraption/projectile/
+# explosion) and a mixin plugin that do not exist in this source tree. With
+# "required": true that made the module fail hard at load time instead of no-opping.
+# Re-add the config together with the actual mixin classes.
