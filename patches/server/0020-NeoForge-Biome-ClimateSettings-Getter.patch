@@ -12,7 +12,6 @@ At runtime, NeoForge's real ModifiableBiomeInfo replaces these simple getters.
 For compile time, these return the backing fields directly.
 
 diff --git a/src/main/java/net/minecraft/world/level/biome/Biome.java b/src/main/java/net/minecraft/world/level/biome/Biome.java
-index 90c165c890a2d998e3b0af9b4310e3995ede6f64..5b8b0d139132d5f7b588fd3936eaeb997f15ee82 100644
 --- a/src/main/java/net/minecraft/world/level/biome/Biome.java
 +++ b/src/main/java/net/minecraft/world/level/biome/Biome.java
 @@ -87,6 +87,24 @@ public final class Biome {

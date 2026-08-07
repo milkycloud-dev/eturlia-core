@@ -7,7 +7,6 @@ Item/ItemStack getFoodProperties for quality_food; WorldTimingsHandler
 uses ServerLevelData for Moonlight FakeServerLevel.
 
 diff --git a/src/main/java/co/aikar/timings/WorldTimingsHandler.java b/src/main/java/co/aikar/timings/WorldTimingsHandler.java
-index 2f0d9b953802dee821cfde82d22b0567cce8ee91..69f78a67a829543ba2a22a7eaa081e53d5e76bb3 100644
 --- a/src/main/java/co/aikar/timings/WorldTimingsHandler.java
 +++ b/src/main/java/co/aikar/timings/WorldTimingsHandler.java
 @@ -60,7 +60,7 @@ public class WorldTimingsHandler {
@@ -28,7 +27,6 @@ index 2f0d9b953802dee821cfde82d22b0567cce8ee91..69f78a67a829543ba2a22a7eaa081e53
      }
  }
 diff --git a/src/main/java/net/minecraft/world/item/Item.java b/src/main/java/net/minecraft/world/item/Item.java
-index b0eaa0525d81d52a236d76200514e3e3b420f4aa..cdc1d162baf6393d0e1e1c5f8482e4c34fc2536c 100644
 --- a/src/main/java/net/minecraft/world/item/Item.java
 +++ b/src/main/java/net/minecraft/world/item/Item.java
 @@ -274,6 +274,12 @@ public class Item implements FeatureElement, ItemLike {
@@ -45,7 +43,6 @@ index b0eaa0525d81d52a236d76200514e3e3b420f4aa..cdc1d162baf6393d0e1e1c5f8482e4c3
      public boolean canPerformAction(ItemStack stack, net.neoforged.neoforge.common.ItemAbility itemAbility) {
          return false;
 diff --git a/src/main/java/net/minecraft/world/item/ItemStack.java b/src/main/java/net/minecraft/world/item/ItemStack.java
-index 84e5121f7877c5443e18058436fa5faa34f41f89..8c26c7909f04a6b2c2af29f7c4b9487eacd2c852 100644
 --- a/src/main/java/net/minecraft/world/item/ItemStack.java
 +++ b/src/main/java/net/minecraft/world/item/ItemStack.java
 @@ -1458,4 +1458,10 @@ public final class ItemStack implements DataComponentHolder {

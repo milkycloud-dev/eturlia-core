@@ -13,7 +13,6 @@ Subject: [PATCH] Eturlia: ASIC BLOCK mixin/API bridges
 - Boat.Type + DamageEffects + ItemDisplayContext + GrassColorModifier IExtensibleEnum for Twilight Forest
 
 diff --git a/src/main/java/net/minecraft/network/chat/ComponentSerialization.java b/src/main/java/net/minecraft/network/chat/ComponentSerialization.java
-index 22c6a324dedeb315eac2d3d3f55d2f3a9eebb0ad..7ac5cb51beb47bec3cc565ae06f332d193868fea 100644
 --- a/src/main/java/net/minecraft/network/chat/ComponentSerialization.java
 +++ b/src/main/java/net/minecraft/network/chat/ComponentSerialization.java
 @@ -136,16 +136,31 @@ public class ComponentSerialization {
@@ -52,7 +51,6 @@ index 22c6a324dedeb315eac2d3d3f55d2f3a9eebb0ad..7ac5cb51beb47bec3cc565ae06f332d1
          Codec<Component> codec = RecordCodecBuilder.create(
              instance -> instance.group(
 diff --git a/src/main/java/net/minecraft/world/damagesource/DamageEffects.java b/src/main/java/net/minecraft/world/damagesource/DamageEffects.java
-index fd762c3238371c927dd117467b3938286730bf0a..125c7a190a50242c25b55cc165c3c6b4e3106fc9 100644
 --- a/src/main/java/net/minecraft/world/damagesource/DamageEffects.java
 +++ b/src/main/java/net/minecraft/world/damagesource/DamageEffects.java
 @@ -5,7 +5,9 @@ import net.minecraft.sounds.SoundEvent;
@@ -100,7 +98,6 @@ index fd762c3238371c927dd117467b3938286730bf0a..125c7a190a50242c25b55cc165c3c6b4
      }
  }
 diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
-index 1029e3df718b5bd15056c59615097d2d0d60eb1c..eabd0e8cf3bb1976d5c032f093842d506ef8a830 100644
 --- a/src/main/java/net/minecraft/world/entity/Entity.java
 +++ b/src/main/java/net/minecraft/world/entity/Entity.java
 @@ -681,7 +681,8 @@ public abstract class Entity extends net.neoforged.neoforge.attachment.Attachmen
@@ -137,7 +134,6 @@ index 1029e3df718b5bd15056c59615097d2d0d60eb1c..eabd0e8cf3bb1976d5c032f093842d50
          return this.forgeFluidTypeOnEyes;
      }
 diff --git a/src/main/java/net/minecraft/world/entity/LivingEntity.java b/src/main/java/net/minecraft/world/entity/LivingEntity.java
-index cf2ba18d6ac95961059e01093f018c5fe2530049..45d9e115ba10e4a309e220ed0430413b6d1fac2e 100644
 --- a/src/main/java/net/minecraft/world/entity/LivingEntity.java
 +++ b/src/main/java/net/minecraft/world/entity/LivingEntity.java
 @@ -1809,7 +1809,7 @@ public abstract class LivingEntity extends Entity implements Attackable {
@@ -177,7 +173,6 @@ index cf2ba18d6ac95961059e01093f018c5fe2530049..45d9e115ba10e4a309e220ed0430413b
                  f = this.isSprinting() ? 0.9F : this.getWaterSlowDown();
                  float f1 = 0.02F;
 diff --git a/src/main/java/net/minecraft/world/entity/Mob.java b/src/main/java/net/minecraft/world/entity/Mob.java
-index 1cb0029739a487d930e4f10371c82d3a03a46de4..129adde296b71c79cf66e8ba8c44c784371618eb 100644
 --- a/src/main/java/net/minecraft/world/entity/Mob.java
 +++ b/src/main/java/net/minecraft/world/entity/Mob.java
 @@ -896,7 +896,7 @@ public abstract class Mob extends LivingEntity implements EquipmentUser, Leashab
@@ -204,7 +199,6 @@ index 1cb0029739a487d930e4f10371c82d3a03a46de4..129adde296b71c79cf66e8ba8c44c784
                  } else {
                  // Paper end - Configurable despawn distances
 diff --git a/src/main/java/net/minecraft/world/entity/animal/Fox.java b/src/main/java/net/minecraft/world/entity/animal/Fox.java
-index 9a0adf65d4d54852301a91b6fe444e4c5a139f5d..02d1d6eafdaae71d1b6fc42d8bbe3e0205d521da 100644
 --- a/src/main/java/net/minecraft/world/entity/animal/Fox.java
 +++ b/src/main/java/net/minecraft/world/entity/animal/Fox.java
 @@ -719,7 +719,7 @@ public class Fox extends Animal implements VariantHolder<Fox.Type> {
@@ -226,7 +220,6 @@ index 9a0adf65d4d54852301a91b6fe444e4c5a139f5d..02d1d6eafdaae71d1b6fc42d8bbe3e02
          // Below is code to drop
  
 diff --git a/src/main/java/net/minecraft/world/entity/decoration/ArmorStand.java b/src/main/java/net/minecraft/world/entity/decoration/ArmorStand.java
-index c292f58ba4b29395484dbbf8591e455f449581d8..f9ce32c74c6f223e331fce0eebfffc5cfd103842 100644
 --- a/src/main/java/net/minecraft/world/entity/decoration/ArmorStand.java
 +++ b/src/main/java/net/minecraft/world/entity/decoration/ArmorStand.java
 @@ -647,7 +647,7 @@ public class ArmorStand extends LivingEntity {
@@ -239,7 +232,6 @@ index c292f58ba4b29395484dbbf8591e455f449581d8..f9ce32c74c6f223e331fce0eebfffc5c
      }
  
 diff --git a/src/main/java/net/minecraft/world/entity/vehicle/Boat.java b/src/main/java/net/minecraft/world/entity/vehicle/Boat.java
-index f1955afc8e367f80ead85bd5ad3b8d66c255565a..961046c6b47e8e07f00afb32cddfb5d236b20302 100644
 --- a/src/main/java/net/minecraft/world/entity/vehicle/Boat.java
 +++ b/src/main/java/net/minecraft/world/entity/vehicle/Boat.java
 @@ -181,7 +181,7 @@ public class Boat extends VehicleEntity implements Leashable, VariantHolder<Boat
@@ -374,7 +366,6 @@ index f1955afc8e367f80ead85bd5ad3b8d66c255565a..961046c6b47e8e07f00afb32cddfb5d2
  
      public static enum Status {
 diff --git a/src/main/java/net/minecraft/world/item/BlockItem.java b/src/main/java/net/minecraft/world/item/BlockItem.java
-index 96fb69ec6db2e7c8c728435f0c537b076259b2fb..3d8561996b674f84b83da1403dff3b42019436c5 100644
 --- a/src/main/java/net/minecraft/world/item/BlockItem.java
 +++ b/src/main/java/net/minecraft/world/item/BlockItem.java
 @@ -128,7 +128,7 @@ public class BlockItem extends Item {
@@ -404,7 +395,6 @@ index 96fb69ec6db2e7c8c728435f0c537b076259b2fb..3d8561996b674f84b83da1403dff3b42
      public BlockPlaceContext updatePlacementContext(BlockPlaceContext context) {
          return context;
 diff --git a/src/main/java/net/minecraft/world/item/Item.java b/src/main/java/net/minecraft/world/item/Item.java
-index 7ea84e400353e3d13fd78f9701c7247b63c99336..4b16843cc6e17d26a22873cd87901d779faf3694 100644
 --- a/src/main/java/net/minecraft/world/item/Item.java
 +++ b/src/main/java/net/minecraft/world/item/Item.java
 @@ -262,6 +262,18 @@ public class Item implements FeatureElement, ItemLike {
@@ -427,7 +417,6 @@ index 7ea84e400353e3d13fd78f9701c7247b63c99336..4b16843cc6e17d26a22873cd87901d77
      public boolean canPerformAction(ItemStack stack, net.neoforged.neoforge.common.ItemAbility itemAbility) {
          return false;
 diff --git a/src/main/java/net/minecraft/world/item/ItemDisplayContext.java b/src/main/java/net/minecraft/world/item/ItemDisplayContext.java
-index 90325472a908eeba1dbb2c3fc3b251cd2a36cd4c..dc8b65cae63ea216a16966a4f586127081c5e1b6 100644
 --- a/src/main/java/net/minecraft/world/item/ItemDisplayContext.java
 +++ b/src/main/java/net/minecraft/world/item/ItemDisplayContext.java
 @@ -5,7 +5,10 @@ import java.util.function.IntFunction;
@@ -484,7 +473,6 @@ index 90325472a908eeba1dbb2c3fc3b251cd2a36cd4c..dc8b65cae63ea216a16966a4f5861270
 +    }
  }
 diff --git a/src/main/java/net/minecraft/world/item/ItemStack.java b/src/main/java/net/minecraft/world/item/ItemStack.java
-index 0b503d72d0d7fe1e4db628a6bfc4b9444fa6b02f..a08909654d6fbe57ff38926cf474dcd639b90bc8 100644
 --- a/src/main/java/net/minecraft/world/item/ItemStack.java
 +++ b/src/main/java/net/minecraft/world/item/ItemStack.java
 @@ -1400,4 +1400,13 @@ public final class ItemStack implements DataComponentHolder {
@@ -502,7 +490,6 @@ index 0b503d72d0d7fe1e4db628a6bfc4b9444fa6b02f..a08909654d6fbe57ff38926cf474dcd6
 +    }
  }
 diff --git a/src/main/java/net/minecraft/world/level/biome/BiomeSpecialEffects.java b/src/main/java/net/minecraft/world/level/biome/BiomeSpecialEffects.java
-index ffe922537bad4c47da329d5e9640bd70b0ce3a3f..e18e6070f30e3aea148edafc771abbabbce65ae7 100644
 --- a/src/main/java/net/minecraft/world/level/biome/BiomeSpecialEffects.java
 +++ b/src/main/java/net/minecraft/world/level/biome/BiomeSpecialEffects.java
 @@ -211,7 +211,9 @@ public class BiomeSpecialEffects {

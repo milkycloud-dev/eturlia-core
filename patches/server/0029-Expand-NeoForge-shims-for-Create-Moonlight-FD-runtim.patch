@@ -10,7 +10,6 @@ EntityType.Builder tracking aliases, Item.modifyDefaultComponentsFrom,
 RegistryOps copy ctor, and BlockState IBlockStateExtension.
 
 diff --git a/src/main/java/net/minecraft/core/Vec3i.java b/src/main/java/net/minecraft/core/Vec3i.java
-index 7b0fc7135bc107103dcaed6dc0707b1829928fae..0be4624e6ac2b508008004d01077828e20cc0e72 100644
 --- a/src/main/java/net/minecraft/core/Vec3i.java
 +++ b/src/main/java/net/minecraft/core/Vec3i.java
 @@ -41,12 +41,14 @@ public class Vec3i implements Comparable<Vec3i> {
@@ -31,7 +30,6 @@ index 7b0fc7135bc107103dcaed6dc0707b1829928fae..0be4624e6ac2b508008004d01077828e
      }
  
 diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
-index c80208c1da49dcaf0bc51a4b2e06dae0dd2c52ba..102400c478b813258809e28c5629fcd3928b44e6 100644
 --- a/src/main/java/net/minecraft/server/level/ServerLevel.java
 +++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
 @@ -300,7 +300,8 @@ public class ServerLevel extends Level implements WorldGenLevel, ca.spottedleaf.
@@ -54,7 +52,6 @@ index c80208c1da49dcaf0bc51a4b2e06dae0dd2c52ba..102400c478b813258809e28c5629fcd3
          ServerChunkCache chunkProvider = this.getChunkSource();
  
 diff --git a/src/main/java/net/minecraft/world/entity/EntityType.java b/src/main/java/net/minecraft/world/entity/EntityType.java
-index c74a01a8551457507441d266b6923b4248560abf..41cc7fce27338fcc86865e25d5e039e46bb620f0 100644
 --- a/src/main/java/net/minecraft/world/entity/EntityType.java
 +++ b/src/main/java/net/minecraft/world/entity/EntityType.java
 @@ -878,6 +878,20 @@ public class EntityType<T extends Entity> implements FeatureElement, EntityTypeT
@@ -79,7 +76,6 @@ index c74a01a8551457507441d266b6923b4248560abf..41cc7fce27338fcc86865e25d5e039e4
              this.requiredFeatures = FeatureFlags.REGISTRY.subset(features);
              return this;
 diff --git a/src/main/java/net/minecraft/world/item/crafting/RecipeType.java b/src/main/java/net/minecraft/world/item/crafting/RecipeType.java
-index 2f3a0ff06c27bfa4d6cb2385102e3f7c8a0cb367..0f1d45c0184ddc27446d52e995101a5ab6393f5c 100644
 --- a/src/main/java/net/minecraft/world/item/crafting/RecipeType.java
 +++ b/src/main/java/net/minecraft/world/item/crafting/RecipeType.java
 @@ -21,4 +21,15 @@ public interface RecipeType<T extends Recipe<?>> {
@@ -99,7 +95,6 @@ index 2f3a0ff06c27bfa4d6cb2385102e3f7c8a0cb367..0f1d45c0184ddc27446d52e995101a5a
 +    }
  }
 diff --git a/src/main/java/net/minecraft/world/item/crafting/ShapedRecipePattern.java b/src/main/java/net/minecraft/world/item/crafting/ShapedRecipePattern.java
-index 7c3e561f2ca2522ab8336487c0307e1b69a397a8..032539d1668100214783a1d3b04008c2fbcf546d 100644
 --- a/src/main/java/net/minecraft/world/item/crafting/ShapedRecipePattern.java
 +++ b/src/main/java/net/minecraft/world/item/crafting/ShapedRecipePattern.java
 @@ -19,7 +19,29 @@ import net.minecraft.util.ExtraCodecs;
@@ -154,7 +149,6 @@ index 7c3e561f2ca2522ab8336487c0307e1b69a397a8..032539d1668100214783a1d3b04008c2
  
                      if (i != string.length()) {
 diff --git a/src/main/java/net/minecraft/world/level/block/FireBlock.java b/src/main/java/net/minecraft/world/level/block/FireBlock.java
-index 0a77a470d78f68e8397f29f298e7f52fbd7ba9a2..1862bb81db8caae29ae0bcf11b71eb035c97db5d 100644
 --- a/src/main/java/net/minecraft/world/level/block/FireBlock.java
 +++ b/src/main/java/net/minecraft/world/level/block/FireBlock.java
 @@ -211,14 +211,13 @@ public class FireBlock extends BaseFireBlock {
@@ -242,7 +236,6 @@ index 0a77a470d78f68e8397f29f298e7f52fbd7ba9a2..1862bb81db8caae29ae0bcf11b71eb03
          this.burnOdds.put(block, spreadChance);
      }
 diff --git a/src/main/java/net/minecraft/world/level/block/state/BlockState.java b/src/main/java/net/minecraft/world/level/block/state/BlockState.java
-index 601135f3368272bf1ca3a43ec9c199e3ee838462..215a0ca4f789e36a9e137e99a9c089d9025c169a 100644
 --- a/src/main/java/net/minecraft/world/level/block/state/BlockState.java
 +++ b/src/main/java/net/minecraft/world/level/block/state/BlockState.java
 @@ -7,7 +7,7 @@ import net.minecraft.core.registries.BuiltInRegistries;

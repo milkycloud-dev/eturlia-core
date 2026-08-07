@@ -9,7 +9,6 @@ delegate TagKey overload like NeoForge, expose FluidState.getFluidType,
 and isInFluidType(FluidType).
 
 diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
-index 7829219ed5449862854e687907e1370690db1971..b7b1519e26867407ce378374cfc37d01b592aad9 100644
 --- a/src/main/java/net/minecraft/world/entity/Entity.java
 +++ b/src/main/java/net/minecraft/world/entity/Entity.java
 @@ -5231,81 +5231,105 @@ public abstract class Entity extends net.neoforged.neoforge.attachment.Attachmen
@@ -191,7 +190,6 @@ index 7829219ed5449862854e687907e1370690db1971..b7b1519e26867407ce378374cfc37d01
          return this.forgeFluidTypeOnEyes;
      }
 diff --git a/src/main/java/net/minecraft/world/level/material/FluidState.java b/src/main/java/net/minecraft/world/level/material/FluidState.java
-index 14bb12d2a0066e8b020f2e0e670a7a5c74633623..95f4a35df625ebe31d48f427b9b1e56161cae476 100644
 --- a/src/main/java/net/minecraft/world/level/material/FluidState.java
 +++ b/src/main/java/net/minecraft/world/level/material/FluidState.java
 @@ -36,6 +36,11 @@ public final class FluidState extends StateHolder<Fluid, FluidState> {
