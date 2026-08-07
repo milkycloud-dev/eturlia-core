@@ -1,0 +1,98 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Fri, 7 Aug 2026 07:09:01 +0000
+Subject: [PATCH] Eturlia: Ingredient(ICustomIngredient) for Create/NeoForge
+
+CompoundIngredient.toVanilla and Create sequenced recipes need the NeoForge
+custom-ingredient constructor and test/getItems/isEmpty bridges.
+
+diff --git a/src/main/java/net/minecraft/world/item/crafting/Ingredient.java b/src/main/java/net/minecraft/world/item/crafting/Ingredient.java
+index 86c8c9e43ac99beafed233583cf46f01b1ce104d..26d7ac9df55fa6b3f07fd3021b520edc0a447fa7 100644
+--- a/src/main/java/net/minecraft/world/item/crafting/Ingredient.java
++++ b/src/main/java/net/minecraft/world/item/crafting/Ingredient.java
+@@ -41,6 +41,9 @@ public final class Ingredient implements Predicate<ItemStack> {
+     @Nullable
+     private IntList stackingIds;
+     public boolean exact; // CraftBukkit
++    // NeoForge: custom ingredient (CompoundIngredient / Create sequenced assembly)
++    @Nullable
++    private net.neoforged.neoforge.common.crafting.ICustomIngredient customIngredient = null;
+     public static final Codec<Ingredient> CODEC = Ingredient.codec(true);
+     public static final Codec<Ingredient> CODEC_NONEMPTY = Ingredient.codec(false);
+     // NeoForge: list codecs expected by CompoundIngredient / CraftingHelper (vanilla-backed shim until full custom-ingredient port)
+@@ -61,13 +64,18 @@ public final class Ingredient implements Predicate<ItemStack> {
+         this.values = entries;
+     }
+ 
++    // NeoForge: ICustomIngredient.toVanilla() / CompoundIngredient.of
++    public Ingredient(net.neoforged.neoforge.common.crafting.ICustomIngredient customIngredient) {
++        this(new Ingredient.Value[0]);
++        this.customIngredient = customIngredient;
++    }
++
+     public ItemStack[] getItems() {
+         if (this.itemStacks == null) {
+-            this.itemStacks = (ItemStack[]) Arrays.stream(this.values).flatMap((recipeitemstack_provider) -> {
+-                return recipeitemstack_provider.getItems().stream();
+-            }).distinct().toArray((i) -> {
+-                return new ItemStack[i];
+-            });
++            Stream<ItemStack> stream = this.customIngredient == null
++                ? Arrays.stream(this.values).flatMap((recipeitemstack_provider) -> recipeitemstack_provider.getItems().stream())
++                : this.customIngredient.getItems();
++            this.itemStacks = stream.distinct().toArray((i) -> new ItemStack[i]);
+         }
+ 
+         return this.itemStacks;
+@@ -76,6 +84,8 @@ public final class Ingredient implements Predicate<ItemStack> {
+     public boolean test(@Nullable ItemStack itemstack) {
+         if (itemstack == null) {
+             return false;
++        } else if (this.customIngredient != null) {
++            return this.customIngredient.test(itemstack);
+         } else if (this.isEmpty()) {
+             return itemstack.isEmpty();
+         } else {
+@@ -124,12 +134,40 @@ public final class Ingredient implements Predicate<ItemStack> {
+     }
+ 
+     public boolean isEmpty() {
+-        return this.values.length == 0;
++        return this.values.length == 0 && !this.isCustom();
++    }
++
++    public boolean hasNoItems() {
++        ItemStack[] items = this.getItems();
++        if (items.length == 0) {
++            return true;
++        }
++        if (items.length == 1) {
++            ItemStack item = items[0];
++            return item.getItem() == net.minecraft.world.item.Items.BARRIER
++                && item.getHoverName() instanceof net.minecraft.network.chat.MutableComponent hoverName
++                && hoverName.getString().startsWith("Empty Tag: ");
++        }
++        return false;
++    }
++
++    public boolean isSimple() {
++        return this.customIngredient == null || this.customIngredient.isSimple();
++    }
++
++    @Nullable
++    public net.neoforged.neoforge.common.crafting.ICustomIngredient getCustomIngredient() {
++        return this.customIngredient;
++    }
++
++    public boolean isCustom() {
++        return this.customIngredient != null;
+     }
+ 
+     public boolean equals(Object object) {
+         if (object instanceof Ingredient recipeitemstack) {
+-            return Arrays.equals(this.values, recipeitemstack.values);
++            return java.util.Objects.equals(this.customIngredient, recipeitemstack.customIngredient)
++                && Arrays.equals(this.values, recipeitemstack.values);
+         } else {
+             return false;
+         }
