@@ -9,10 +9,12 @@ issueTrackerURL="https://github.com/eturlia/eturlia-neoforge/issues"
     displayName="Eturlia Compat: Sable"
     authors="Eturlia Team"
     description='''
-    Compatibility layer for Sable and Create Aeronautics on Eturlia (Folia-based) regionized servers.
+    WORK IN PROGRESS — this module does not do anything yet.
 
-    Bridges Sable's Rapier physics engine (JNI) to Folia's per-region threading model, ensuring
-    thread-safe physics simulation, cross-region sub-level management, and JNI callback auditing.
+    Intended as a compatibility layer for Sable and Create Aeronautics on Eturlia
+    (Folia-based) regionized servers: Rapier physics (JNI) against Folia's per-region
+    threading, cross-region sub-level management and JNI callback auditing. All handlers
+    are currently stubs and no mixins are applied.
     '''
 
 [[dependencies.eturlia_compat_sable]]
@@ -43,5 +45,7 @@ issueTrackerURL="https://github.com/eturlia/eturlia-neoforge/issues"
     ordering="AFTER"
     side="BOTH"
 
-[[mixins]]
-    config="eturlia-compat-sable.mixins.json"
+# No [[mixins]] entry: the mixin config listed six classes (physics/sublevel/vehicle) and a
+# mixin plugin that do not exist in this source tree. With "required": true that made the
+# module fail hard at load time instead of no-opping.
+# Re-add the config together with the actual mixin classes.

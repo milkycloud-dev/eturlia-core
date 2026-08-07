@@ -18,27 +18,20 @@ repositories {
         name = "NeoForge"
         url = uri("https://maven.neoforged.net/releases/")
     }
-    maven {
-        name = "Sable"
-        // TODO: Update to actual Sable Maven repository URL when available
-        url = uri("https://maven.creativetab.dev/releases/")
-    }
-    maven {
-        name = "Create Aeronautics"
-        // TODO: Update to actual Create Aeronautics Maven repository URL when available
-        url = uri("https://maven.creativetab.dev/releases/")
-    }
+    // Sable / Create Aeronautics have no published Maven coordinates that resolve; the
+    // placeholder repository below never hosted them, so this module could not resolve
+    // its dependencies at all.
 }
 
 dependencies {
     // NeoForge API — provides the mod loading framework and event bus
     implementation("net.neoforged:neoforge:21.1.248")
 
-    // Sable — physics engine mod with Rapier JNI backend
-    compileOnly("dev.sable:sable:0.1.0")
-
-    // Create Aeronautics — aircraft engineering add-on for Create
-    compileOnly("com.simibubi.create_aeronautics:create_aeronautics:0.1.0")
+    // TODO: add Sable / Create Aeronautics as local file dependencies (or real coordinates
+    // once published) before re-enabling. Until then this module compiles against NeoForge
+    // only and its handlers stay stubs — see compat/README.md.
+    // compileOnly(files("libs/sable-<version>.jar"))
+    // compileOnly(files("libs/create_aeronautics-<version>.jar"))
 }
 
 tasks.withType<ProcessResources> {
