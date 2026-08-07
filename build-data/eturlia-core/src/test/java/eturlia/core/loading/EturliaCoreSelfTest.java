@@ -36,6 +36,7 @@ public final class EturliaCoreSelfTest {
         jsonReaderRejectsMalformedInput();
         manifestParsingReadsRealEntries();
         manifestParsingSkipsEntriesWithoutModId();
+        requiredRepositoryFilesExist();
         yamlSubsetReadsNestedKeys();
         yamlSubsetIgnoresSequencesAndTabs();
         crashReportJsonStaysParseable();
@@ -105,7 +106,7 @@ public final class EturliaCoreSelfTest {
     // ------------------------------------------------------------ Manifest
 
     private static void manifestParsingReadsRealEntries() throws IOException {
-        Path manifest = Path.of("folia-server", "eturlia-supported.json");
+        Path manifest = Path.of("build-data", "eturlia-supported.json");
         if (!Files.isRegularFile(manifest)) {
             System.out.println("skip  — " + manifest + " not found (run from the repository root)");
             return;
@@ -168,6 +169,41 @@ public final class EturliaCoreSelfTest {
         } finally {
             deleteRecursively(root);
         }
+    }
+
+    // ------------------------------------------------- repository integrity
+
+    /**
+     * Files the build reads by path and that nothing else would notice the loss of.
+     *
+     * <p>Running {@code applyPatches} on a case-insensitive filesystem drops the generated
+     * {@code Folia-Server} tree straight on top of the tracked {@code folia-server/}, so a
+     * later {@code git add -A} records the tracked files there as deleted. That is how
+     * {@code eturlia-supported.json} silently vanished from the jar once. This check fails
+     * loudly instead of shipping a jar with a piece missing.</p>
+     */
+    private static void requiredRepositoryFilesExist() {
+        String[] required = {
+            "build-data/eturlia-supported.json",
+            "folia-server/build.gradle.kts.patch",
+            "folia-api/build.gradle.kts.patch",
+            "build-data/eturlia-core/src/main/resources/eturlia.yml",
+            "build-data/eturlia-core/src/main/resources/META-INF/services/"
+                    + "cpw.mods.modlauncher.api.ILaunchHandlerService",
+            "neoforge/coremods/src/main/resources/META-INF/services/"
+                    + "net.neoforged.neoforgespi.coremod.ICoreMod",
+        };
+        List<String> missing = new java.util.ArrayList<>();
+        for (String path : required) {
+            if (!Files.isRegularFile(Path.of(path))) {
+                missing.add(path);
+            }
+        }
+        if (!Files.isDirectory(Path.of("patches", "server"))) {
+            System.out.println("skip  — not running from the repository root");
+            return;
+        }
+        check("required repository files present", "[]", missing.toString());
     }
 
     // -------------------------------------------------------- Crash report
