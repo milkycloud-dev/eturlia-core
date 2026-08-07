@@ -16,12 +16,15 @@ set -euo pipefail
 
 # ---------- Configuration ----------
 
-JAR_PATH="${1:?Usage: smoke-test.sh <path-to-eturliatest2.jar> [timeout-seconds]}"
+JAR_PATH="$(cd "$(dirname "${1:?Usage: smoke-test.sh <path-to-eturlia.jar> [timeout-seconds]}")" && pwd)/$(basename "$1")"
 TIMEOUT="${2:-120}"
-LOG_FILE="smoke-test.log"
-WORK_DIR="$(mktemp -d eturlia-smoke-test.XXXXXX)"
-EULA_FILE="$WORK_DIR/eula.txt"
+# Absolute: the server runs with its own working directory, so a relative log path
+# would end up somewhere else than the caller expects.
+LOG_FILE="$PWD/smoke-test.log"
+WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/eturlia-smoke-test.XXXXXX")"
 SERVER_DIR="$WORK_DIR/server"
+# The launcher reads eula.txt from the server's working directory.
+EULA_FILE="$SERVER_DIR/eula.txt"
 
 # Patterns to detect in server output
 PATTERN_DONE='Done \('
@@ -52,15 +55,17 @@ echo "eula=true" > "$EULA_FILE"
 
 echo "Starting server..." | tee -a "$LOG_FILE"
 
-# Launch server in background, capturing all output
-java -Xms1G -Xmx2G \
-    -XX:+UseG1GC \
-    -XX:+ParallelRefProcEnabled \
-    -Deturlia.lod.mode=DISABLED \
-    -jar "$JAR_PATH" \
-    --nogui \
-    > >(tee -a "$LOG_FILE") 2>&1 \
-    &
+# Launch server in background from the server directory (eula.txt, logs/, world data
+# and crash-reports/ all live there).
+(
+    cd "$SERVER_DIR"
+    exec java -Xms1G -Xmx2G \
+        -XX:+UseG1GC \
+        -XX:+ParallelRefProcEnabled \
+        -Deturlia.lod.mode=DISABLED \
+        -jar "$JAR_PATH" \
+        --nogui
+) > >(tee -a "$LOG_FILE") 2>&1 &
 
 SERVER_PID=$!
 
@@ -135,10 +140,10 @@ echo "" | tee -a "$LOG_FILE"
 echo "Stopping server (PID: $SERVER_PID)..." | tee -a "$LOG_FILE"
 
 if kill -0 "$SERVER_PID" 2>/dev/null; then
-    # Send /stop command via stdin — but since we're running with --nogui
-    # and the process is backgrounded, we need a different approach.
-    # Use 'stop' via a brief stdin pipe.
-    echo "stop" | timeout 10s java -cp "$JAR_PATH" -jar "$JAR_PATH" --nogui 2>/dev/null || true
+    # SIGTERM the launcher: its shutdown hook stops the server JVM it spawned.
+    # (The old code piped "stop" into a *second* `java -jar` invocation, i.e. it started
+    # another server against the same directory instead of stopping the running one.)
+    kill -TERM "$SERVER_PID" 2>/dev/null || true
 
     # Wait up to 30 seconds for graceful shutdown
     waited=0
@@ -147,9 +152,10 @@ if kill -0 "$SERVER_PID" 2>/dev/null; then
         waited=$((waited + 1))
     done
 
-    # Force kill if still running
+    # Force kill the launcher and anything it left behind
     if kill -0 "$SERVER_PID" 2>/dev/null; then
         echo "Force-killing server after 30s shutdown timeout" | tee -a "$LOG_FILE"
+        pkill -9 -P "$SERVER_PID" 2>/dev/null || true
         kill -9 "$SERVER_PID" 2>/dev/null || true
     fi
 fi
