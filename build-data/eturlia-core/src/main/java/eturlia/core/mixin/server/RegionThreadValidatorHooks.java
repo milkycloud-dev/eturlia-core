@@ -77,21 +77,23 @@ public final class RegionThreadValidatorHooks {
     /** Cached Class<?> for RegionizedWorldThread, or null if not on classpath. */
     private static volatile Class<?> regionizedWorldThreadClass;
 
-    /** Whether we have attempted to resolve the Paper API class. */
-    private static final AtomicBoolean paperApiResolved = new AtomicBoolean(false);
+    /** Guards the one-time reflection lookup. */
+    private static final AtomicBoolean paperApiLookupStarted = new AtomicBoolean(false);
+
+    /** Set to true only after {@link #regionizedWorldThreadClass} has been published. */
+    private static volatile boolean paperApiResolutionDone = false;
 
     /** Whether Paper API is available (true once resolved and found). */
     private static volatile boolean paperApiAvailable = false;
 
     // ---------------------------------------------------------------------------
-    // Mode flags (read once from system properties)
+    // Mode flags (resolved lazily — system properties may be set after this class
+    // is first loaded, e.g. by EturliaConfig when config/eturlia.yml is read)
     // ---------------------------------------------------------------------------
 
-    /** Whether thread validation is enabled at all. */
-    private static final boolean VALIDATION_ENABLED = resolveEnabled();
-
-    /** Whether violations should throw (strict) or just warn (permissive). */
-    private static final boolean STRICT_MODE = resolveStrict();
+    /** Cached tri-state flags: null = not resolved yet. */
+    private static volatile Boolean validationEnabled;
+    private static volatile Boolean strictMode;
 
     private RegionThreadValidatorHooks() {
         // Utility class — no instances
@@ -125,7 +127,7 @@ public final class RegionThreadValidatorHooks {
      *         is not a valid tick thread
      */
     public static void checkRegionThread(Object level) {
-        if (!VALIDATION_ENABLED) {
+        if (!isValidationEnabled()) {
             return;
         }
 
@@ -134,6 +136,8 @@ public final class RegionThreadValidatorHooks {
         }
 
         Thread current = Thread.currentThread();
+
+        ensurePaperApiResolved();
 
         // Tier 1: Check if we are on a Paper RegionizedWorldThread
         if (isRegionizedWorldThread(current)) {
@@ -145,8 +149,10 @@ public final class RegionThreadValidatorHooks {
             return;
         }
 
-        // Tier 3: Thread-name heuristic fallback
-        if (isHeuristicRegionThread(current)) {
+        // Tier 3: Thread-name heuristic — ONLY when the Paper API is unavailable.
+        // With the real API present the heuristic can only produce false negatives
+        // (e.g. Netty threads named "... Tick ...") and would defeat the check.
+        if (!paperApiAvailable && isHeuristicRegionThread(current)) {
             return;
         }
 
@@ -170,8 +176,6 @@ public final class RegionThreadValidatorHooks {
      * @return {@code true} if the thread is a {@code RegionizedWorldThread}
      */
     private static boolean isRegionizedWorldThread(Thread thread) {
-        ensurePaperApiResolved();
-
         if (paperApiAvailable && regionizedWorldThreadClass != null) {
             return regionizedWorldThreadClass.isInstance(thread);
         }
@@ -205,12 +209,11 @@ public final class RegionThreadValidatorHooks {
      * on the classpath (e.g., during testing or on a modified server).</p>
      *
      * @param thread the thread to check
-     * @return {@code true} if the thread name contains {@code "Region"} or
-     *         {@code "Tick"}
+     * @return {@code true} if the thread name looks like a Folia region worker
      */
     private static boolean isHeuristicRegionThread(Thread thread) {
         String name = thread.getName();
-        return name.contains("Region") || name.contains("Tick");
+        return name.contains("Region") || name.contains("Worker");
     }
 
     // ===========================================================================
@@ -242,7 +245,7 @@ public final class RegionThreadValidatorHooks {
                 + "This may indicate a cross-region threading violation that could "
                 + "cause data corruption.";
 
-        if (STRICT_MODE) {
+        if (isStrictMode()) {
             LOGGER.severe(message + " (STRICT MODE — throwing)");
             throw new IllegalStateException(message);
         } else {
@@ -264,11 +267,11 @@ public final class RegionThreadValidatorHooks {
      * performed at most once.</p>
      */
     private static void ensurePaperApiResolved() {
-        if (paperApiResolved.get()) {
+        if (paperApiResolutionDone) {
             return;
         }
 
-        if (paperApiResolved.compareAndSet(false, true)) {
+        if (paperApiLookupStarted.compareAndSet(false, true)) {
             try {
                 Class<?> rwtClass = Class.forName(RWT_CLASS_NAME, false,
                         RegionThreadValidatorHooks.class.getClassLoader());
@@ -283,6 +286,11 @@ public final class RegionThreadValidatorHooks {
                 LOGGER.fine("[Eturlia] RegionizedWorldThread not found on classpath "
                         + "(" + RWT_CLASS_NAME + ") — "
                         + "using thread-name heuristic for validation");
+            } finally {
+                // Published last: a concurrent caller must not observe "resolved" while
+                // regionizedWorldThreadClass is still null (that would silently downgrade
+                // validation to the thread-name heuristic).
+                paperApiResolutionDone = true;
             }
         }
     }
@@ -294,18 +302,25 @@ public final class RegionThreadValidatorHooks {
     /**
      * Resolves whether thread validation is enabled from system properties.
      *
+     * <p>Resolved on first use rather than in a static initializer: the property
+     * may be set from {@code config/eturlia.yml} long after this class is loaded.</p>
+     *
      * @return {@code true} if validation is enabled (default)
      */
-    private static boolean resolveEnabled() {
+    private static boolean isValidationEnabled() {
+        Boolean cached = validationEnabled;
+        if (cached != null) {
+            return cached;
+        }
         String prop = System.getProperty(PROP_ENABLED);
+        boolean enabled = prop == null || Boolean.parseBoolean(prop);
         if (prop != null) {
-            boolean enabled = Boolean.parseBoolean(prop);
             LOGGER.info("[Eturlia] Thread validation "
                     + (enabled ? "enabled" : "DISABLED")
                     + " via system property " + PROP_ENABLED);
-            return enabled;
         }
-        return true; // default: enabled
+        validationEnabled = enabled;
+        return enabled;
     }
 
     /**
@@ -313,15 +328,25 @@ public final class RegionThreadValidatorHooks {
      *
      * @return {@code true} if strict mode (default: permissive)
      */
-    private static boolean resolveStrict() {
+    private static boolean isStrictMode() {
+        Boolean cached = strictMode;
+        if (cached != null) {
+            return cached;
+        }
         String prop = System.getProperty(PROP_STRICT);
+        boolean strict = prop != null && Boolean.parseBoolean(prop);
         if (prop != null) {
-            boolean strict = Boolean.parseBoolean(prop);
             LOGGER.info("[Eturlia] Thread validation mode: "
                     + (strict ? "STRICT" : "permissive")
                     + " via system property " + PROP_STRICT);
-            return strict;
         }
-        return false; // default: permissive
+        strictMode = strict;
+        return strict;
+    }
+
+    /** Drops cached mode flags so the next check re-reads the system properties. */
+    public static void reloadModeFlags() {
+        validationEnabled = null;
+        strictMode = null;
     }
 }
