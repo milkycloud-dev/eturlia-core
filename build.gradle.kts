@@ -59,6 +59,7 @@ subprojects {
         mavenCentral()
         maven(paperMavenPublicUrl)
         maven("https://maven.neoforged.net/releases") // Eturlia-NeoForge: FancyModLoader
+        maven("https://maven.fabricmc.net/") // sponge-mixin (NeoForge 21.1 pins 0.15.2+)
         maven("https://repo.spongepowered.org/repository/maven-public/") // SpongePowered: Configurate
         maven("https://oss.sonatype.org/content/repositories/snapshots") // Spark snapshots
         maven("https://hub.spigotmc.org/nexus/content/repositories/snapshots/") // Spigot / Spark
@@ -159,11 +160,19 @@ project(":folia-server") {
             return@afterEvaluate
         }
 
+        val spongeMixin = "net.fabricmc:sponge-mixin:${providers.gradleProperty("spongeMixinVersion").get()}"
         dependencies {
             "compileOnly"("net.neoforged:neoforge:${providers.gradleProperty("neoforgeVersion").get()}:universal")
             "runtimeOnly"("net.neoforged:neoforge:${providers.gradleProperty("neoforgeVersion").get()}:universal")
             "compileOnly"("net.neoforged.fancymodloader:loader:${providers.gradleProperty("fmlLoaderVersion").get()}")
             "runtimeOnly"("net.neoforged.fancymodloader:loader:${providers.gradleProperty("fmlLoaderVersion").get()}")
+            // Force NeoForge installer mixin (JAVA_21); FML 4.0.43 otherwise pulls 0.14.0 → JAVA_17 only.
+            "runtimeOnly"(spongeMixin)
+        }
+        configurations.configureEach {
+            resolutionStrategy {
+                force(spongeMixin)
+            }
         }
         if (configurations.findByName("fmlLoader") == null) {
             configurations.create("fmlLoader") {
@@ -178,6 +187,7 @@ project(":folia-server") {
                 "fmlLoader",
                 "net.neoforged:neoforge:${providers.gradleProperty("neoforgeVersion").get()}:universal"
             )
+            dependencies.add("fmlLoader", spongeMixin)
         }
 
         // Prefer published NeoForge universal (mojmap) for EventHooks / CommonHooks / etc.
@@ -382,9 +392,19 @@ gradle.projectsEvaluated {
                 })
                 if (fmlLoaderConfig != null) addAll(fmlLoaderConfig.files)
             }
+            // Prefer NeoForge installer mixin (0.15.2+); drop stale FML-transitive 0.14.0 copies.
+            val preferredMixin = candidates
+                .filter { it.name.startsWith("sponge-mixin-") && it.isFile }
+                .maxWithOrNull(compareBy({ it.name.contains("0.15.") }, { it.name }))
             val seenPaths = mutableSetOf<String>()
             val classpathFiles = candidates.filter { file ->
-                file.exists() && seenPaths.add(file.absoluteFile.normalize().path)
+                if (!file.exists()) return@filter false
+                if (file.name.startsWith("sponge-mixin-") && preferredMixin != null &&
+                    file.absoluteFile.normalize() != preferredMixin.absoluteFile.normalize()
+                ) {
+                    return@filter false
+                }
+                seenPaths.add(file.absoluteFile.normalize().path)
             }
             // Use ORIGINAL jar names (no NNN- prefix) so JPMS automatic module names
             // match what ModLauncher/FML require (e.g. jopt.simple, not 072.jopt.simple).

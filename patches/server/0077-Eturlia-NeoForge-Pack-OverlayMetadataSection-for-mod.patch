@@ -1,0 +1,392 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Fri, 7 Aug 2026 06:28:39 +0000
+Subject: [PATCH] Eturlia: NeoForge Pack/OverlayMetadataSection for mod
+ datapacks
+
+ResourcePackLoader needs OverlayMetadataSection.NEOFORGE_TYPE plus Pack
+hidden/children APIs, and PackRepository must expand child packs when
+discovering/selecting so mod jar datapacks load correctly.
+
+diff --git a/src/main/java/net/minecraft/server/packs/OverlayMetadataSection.java b/src/main/java/net/minecraft/server/packs/OverlayMetadataSection.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..75068411ed82f7b7e3fa32682ded55eaab511c49
+--- /dev/null
++++ b/src/main/java/net/minecraft/server/packs/OverlayMetadataSection.java
+@@ -0,0 +1,47 @@
++package net.minecraft.server.packs;
++
++import com.mojang.serialization.Codec;
++import com.mojang.serialization.DataResult;
++import com.mojang.serialization.codecs.RecordCodecBuilder;
++import java.util.List;
++import java.util.regex.Pattern;
++import net.minecraft.server.packs.metadata.MetadataSectionType;
++import net.minecraft.util.InclusiveRange;
++
++public record OverlayMetadataSection(List<OverlayMetadataSection.OverlayEntry> overlays) {
++    private static final Pattern DIR_VALIDATOR = Pattern.compile("[-_a-zA-Z0-9.]+");
++    private static final Codec<OverlayMetadataSection> CODEC = RecordCodecBuilder.create(
++        instance -> instance.group(OverlayMetadataSection.OverlayEntry.CODEC.listOf().fieldOf("entries").forGetter(OverlayMetadataSection::overlays))
++                .apply(instance, OverlayMetadataSection::new)
++    );
++    public static final MetadataSectionType<OverlayMetadataSection> TYPE = MetadataSectionType.fromCodec("overlays", CODEC);
++    // NeoForge: alternate overlays section loaded only on NeoForge (ResourcePackLoader / Pack.readPackMetadata)
++    public static final MetadataSectionType<OverlayMetadataSection> NEOFORGE_TYPE = MetadataSectionType.fromCodec("neoforge:overlays", CODEC);
++
++    private static DataResult<String> validateOverlayDir(String directoryName) {
++        return !DIR_VALIDATOR.matcher(directoryName).matches()
++            ? DataResult.error(() -> directoryName + " is not accepted directory name")
++            : DataResult.success(directoryName);
++    }
++
++    public List<String> overlaysForVersion(int packFormat) {
++        return this.overlays.stream().filter(overlay -> overlay.isApplicable(packFormat)).map(OverlayMetadataSection.OverlayEntry::overlay).toList();
++    }
++
++    public static record OverlayEntry(InclusiveRange<Integer> format, String overlay) {
++        static final Codec<OverlayMetadataSection.OverlayEntry> CODEC = RecordCodecBuilder.create(
++            instance -> instance.group(
++                        InclusiveRange.codec(Codec.INT).fieldOf("formats").forGetter(OverlayMetadataSection.OverlayEntry::format),
++                        Codec.STRING
++                            .validate(OverlayMetadataSection::validateOverlayDir)
++                            .fieldOf("directory")
++                            .forGetter(OverlayMetadataSection.OverlayEntry::overlay)
++                    )
++                    .apply(instance, OverlayMetadataSection.OverlayEntry::new)
++        );
++
++        public boolean isApplicable(int packFormat) {
++            return this.format.isValueInRange(packFormat);
++        }
++    }
++}
+diff --git a/src/main/java/net/minecraft/server/packs/repository/Pack.java b/src/main/java/net/minecraft/server/packs/repository/Pack.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..1a4330f231e7cd02406c6dfe2eaa267f38a9242d
+--- /dev/null
++++ b/src/main/java/net/minecraft/server/packs/repository/Pack.java
+@@ -0,0 +1,258 @@
++package net.minecraft.server.packs.repository;
++
++import com.mojang.logging.LogUtils;
++import java.util.List;
++import java.util.function.Function;
++import javax.annotation.Nullable;
++import net.minecraft.ChatFormatting;
++import net.minecraft.SharedConstants;
++import net.minecraft.network.chat.Component;
++import net.minecraft.server.packs.FeatureFlagsMetadataSection;
++import net.minecraft.server.packs.OverlayMetadataSection;
++import net.minecraft.server.packs.PackLocationInfo;
++import net.minecraft.server.packs.PackResources;
++import net.minecraft.server.packs.PackSelectionConfig;
++import net.minecraft.server.packs.PackType;
++import net.minecraft.server.packs.metadata.pack.PackMetadataSection;
++import net.minecraft.util.InclusiveRange;
++import net.minecraft.world.flag.FeatureFlagSet;
++import org.slf4j.Logger;
++
++public class Pack {
++    private static final Logger LOGGER = LogUtils.getLogger();
++    private final PackLocationInfo location;
++    public final Pack.ResourcesSupplier resources;
++    private final Pack.Metadata metadata;
++    private final PackSelectionConfig selectionConfig;
++    // NeoForge: hidden packs + child packs (mod datapack overlays)
++    private final boolean hidden;
++    private final List<Pack> children;
++    private static final PackSource CHILD_SOURCE = PackSource.create(
++        name -> Component.translatable("pack.nameAndSource", name, Component.translatable("pack.neoforge.source.child")).withStyle(ChatFormatting.GRAY),
++        false
++    );
++
++    @Nullable
++    public static Pack readMetaAndCreate(PackLocationInfo info, Pack.ResourcesSupplier packFactory, PackType type, PackSelectionConfig position) {
++        int i = SharedConstants.getCurrentVersion().getPackVersion(type);
++        Pack.Metadata metadata = readPackMetadata(info, packFactory, i);
++        return metadata != null ? new Pack(info, packFactory, metadata, position) : null;
++    }
++
++    public Pack(PackLocationInfo info, Pack.ResourcesSupplier packFactory, Pack.Metadata metaData, PackSelectionConfig position) {
++        this(info, packFactory, metaData, position, List.of());
++    }
++
++    private Pack(PackLocationInfo info, Pack.ResourcesSupplier packFactory, Pack.Metadata metaData, PackSelectionConfig position, List<Pack> children) {
++        List<Pack> flattenedChildren = new java.util.ArrayList<>();
++        List<Pack> remainingChildren = children;
++        while (!remainingChildren.isEmpty()) {
++            List<Pack> oldChildren = remainingChildren;
++            remainingChildren = new java.util.ArrayList<>();
++            for (Pack child : oldChildren) {
++                Pack adaptedChild = new Pack(
++                    new PackLocationInfo(child.location.id(), child.location.title(), CHILD_SOURCE, child.location.knownPackInfo()),
++                    child.resources,
++                    new Metadata(child.metadata.description, child.metadata.compatibility, child.metadata.requestedFeatures, child.metadata.overlays, true),
++                    new PackSelectionConfig(false, child.selectionConfig.defaultPosition(), child.selectionConfig.fixedPosition()),
++                    List.of()
++                );
++                flattenedChildren.add(adaptedChild);
++                remainingChildren.addAll(child.getChildren());
++            }
++        }
++        this.children = List.copyOf(flattenedChildren);
++        this.hidden = metaData.isHidden();
++        this.location = info;
++        this.resources = packFactory;
++        this.metadata = metaData;
++        this.selectionConfig = position;
++    }
++
++    @Nullable
++    public static Pack.Metadata readPackMetadata(PackLocationInfo info, Pack.ResourcesSupplier packFactory, int currentPackFormat) {
++        try {
++            Pack.Metadata var11;
++            try (PackResources packResources = packFactory.openPrimary(info)) {
++                PackMetadataSection packMetadataSection = packResources.getMetadataSection(PackMetadataSection.TYPE);
++                if (packMetadataSection == null) {
++                    LOGGER.warn("Missing metadata in pack {}", info.id());
++                    return null;
++                }
++
++                FeatureFlagsMetadataSection featureFlagsMetadataSection = packResources.getMetadataSection(FeatureFlagsMetadataSection.TYPE);
++                FeatureFlagSet featureFlagSet = featureFlagsMetadataSection != null ? featureFlagsMetadataSection.flags() : FeatureFlagSet.of();
++                InclusiveRange<Integer> inclusiveRange = getDeclaredPackVersions(info.id(), packMetadataSection);
++                PackCompatibility packCompatibility = PackCompatibility.forVersion(inclusiveRange, currentPackFormat);
++                OverlayMetadataSection overlayMetadataSection = packResources.getMetadataSection(OverlayMetadataSection.TYPE);
++                List<String> list = overlayMetadataSection != null ? overlayMetadataSection.overlaysForVersion(currentPackFormat) : List.of();
++                // NeoForge: merge neoforge:overlays
++                var neoOverlays = packResources.getMetadataSection(OverlayMetadataSection.NEOFORGE_TYPE);
++                if (neoOverlays != null) {
++                    list = new java.util.ArrayList<>(list);
++                    list.addAll(neoOverlays.overlaysForVersion(currentPackFormat));
++                    list = List.copyOf(list);
++                }
++                var11 = new Pack.Metadata(packMetadataSection.description(), packCompatibility, featureFlagSet, list, packResources.isHidden());
++            }
++
++            return var11;
++        } catch (Exception var14) {
++            LOGGER.warn("Failed to read pack {} metadata", info.id(), var14);
++            return null;
++        }
++    }
++
++    private static InclusiveRange<Integer> getDeclaredPackVersions(String packId, PackMetadataSection metadata) {
++        int i = metadata.packFormat();
++        if (metadata.supportedFormats().isEmpty()) {
++            return new InclusiveRange<>(i);
++        } else {
++            InclusiveRange<Integer> inclusiveRange = metadata.supportedFormats().get();
++            if (!inclusiveRange.isValueInRange(i)) {
++                LOGGER.warn("Pack {} declared support for versions {} but declared main format is {}, defaulting to {}", packId, inclusiveRange, i, i);
++                return new InclusiveRange<>(i);
++            } else {
++                return inclusiveRange;
++            }
++        }
++    }
++
++    public PackLocationInfo location() {
++        return this.location;
++    }
++
++    public Component getTitle() {
++        return this.location.title();
++    }
++
++    public Component getDescription() {
++        return this.metadata.description();
++    }
++
++    public Component getChatLink(boolean enabled) {
++        return this.location.createChatLink(enabled, this.metadata.description);
++    }
++
++    public PackCompatibility getCompatibility() {
++        return this.metadata.compatibility();
++    }
++
++    public FeatureFlagSet getRequestedFeatures() {
++        return this.metadata.requestedFeatures();
++    }
++
++    public PackResources open() {
++        return this.resources.openFull(this.location, this.metadata);
++    }
++
++    public String getId() {
++        return this.location.id();
++    }
++
++    public PackSelectionConfig selectionConfig() {
++        return this.selectionConfig;
++    }
++
++    public boolean isRequired() {
++        return this.selectionConfig.required();
++    }
++
++    public boolean isFixedPosition() {
++        return this.selectionConfig.fixedPosition();
++    }
++
++    public Pack.Position getDefaultPosition() {
++        return this.selectionConfig.defaultPosition();
++    }
++
++    public PackSource getPackSource() {
++        return this.location.source();
++    }
++
++    public boolean isHidden() {
++        return this.hidden;
++    }
++
++    public List<Pack> getChildren() {
++        return this.children;
++    }
++
++    public java.util.stream.Stream<Pack> streamSelfAndChildren() {
++        return java.util.stream.Stream.concat(java.util.stream.Stream.of(this), this.children.stream());
++    }
++
++    public Pack withChildren(List<Pack> children) {
++        return new Pack(this.location, this.resources, this.metadata, this.selectionConfig, children);
++    }
++
++    public Pack hidden() {
++        return new Pack(
++            new PackLocationInfo(this.location.id(), this.location.title(), this.location.source(), this.location.knownPackInfo()),
++            this.resources,
++            new Metadata(this.metadata.description, this.metadata.compatibility, this.metadata.requestedFeatures, this.metadata.overlays, true),
++            new PackSelectionConfig(this.selectionConfig.required(), this.selectionConfig.defaultPosition(), this.selectionConfig.fixedPosition()),
++            this.children
++        );
++    }
++
++    @Override
++    public boolean equals(Object object) {
++        return this == object || object instanceof Pack pack && this.location.equals(pack.location);
++    }
++
++    @Override
++    public int hashCode() {
++        return this.location.hashCode();
++    }
++
++    public static record Metadata(Component description, PackCompatibility compatibility, FeatureFlagSet requestedFeatures, List<String> overlays, boolean isHidden) {
++        /** @deprecated NeoForge: use 5-arg constructor */
++        @Deprecated
++        public Metadata(Component description, PackCompatibility compatibility, FeatureFlagSet requestedFeatures, List<String> overlays) {
++            this(description, compatibility, requestedFeatures, overlays, false);
++        }
++    }
++
++    public static enum Position {
++        TOP,
++        BOTTOM;
++
++        public <T> int insert(List<T> items, T item, Function<T, PackSelectionConfig> profileGetter, boolean listInverted) {
++            Pack.Position position = listInverted ? this.opposite() : this;
++            if (position == BOTTOM) {
++                int i;
++                for (i = 0; i < items.size(); i++) {
++                    PackSelectionConfig packSelectionConfig = profileGetter.apply(items.get(i));
++                    if (!packSelectionConfig.fixedPosition() || packSelectionConfig.defaultPosition() != this) {
++                        break;
++                    }
++                }
++
++                items.add(i, item);
++                return i;
++            } else {
++                int j;
++                for (j = items.size() - 1; j >= 0; j--) {
++                    PackSelectionConfig packSelectionConfig2 = profileGetter.apply(items.get(j));
++                    if (!packSelectionConfig2.fixedPosition() || packSelectionConfig2.defaultPosition() != this) {
++                        break;
++                    }
++                }
++
++                items.add(j + 1, item);
++                return j + 1;
++            }
++        }
++
++        public Pack.Position opposite() {
++            return this == TOP ? BOTTOM : TOP;
++        }
++    }
++
++    public interface ResourcesSupplier {
++        PackResources openPrimary(PackLocationInfo info);
++
++        PackResources openFull(PackLocationInfo info, Pack.Metadata metadata);
++    }
++}
+diff --git a/src/main/java/net/minecraft/server/packs/repository/PackRepository.java b/src/main/java/net/minecraft/server/packs/repository/PackRepository.java
+index 99a3a04de15112e2515c4a1ef9bcb00dc1b6c226..ddf3d1726c2c5dd7db1c6999429388aa90cb8f8f 100644
+--- a/src/main/java/net/minecraft/server/packs/repository/PackRepository.java
++++ b/src/main/java/net/minecraft/server/packs/repository/PackRepository.java
+@@ -13,7 +13,6 @@ import java.util.Set;
+ import java.util.stream.Collectors;
+ import java.util.stream.Stream;
+ import javax.annotation.Nullable;
+-import net.minecraft.Util;
+ import net.minecraft.server.packs.PackResources;
+ import net.minecraft.world.flag.FeatureFlagSet;
+ 
+@@ -40,10 +39,13 @@ public class PackRepository {
+     }
+ 
+     private Map<String, Pack> discoverAvailable() {
+-        Map<String, Pack> map = Maps.newTreeMap();
++        // NeoForge: sort packs within a source by name, between sources according to source order
++        Map<String, Pack> map = Maps.newLinkedHashMap();
+ 
+         for (RepositorySource repositorySource : this.sources) {
+-            repositorySource.loadPacks(profile -> map.put(profile.getId(), profile));
++            Map<String, Pack> sourceMap = Maps.newTreeMap();
++            repositorySource.loadPacks(profile -> profile.streamSelfAndChildren().forEach(p -> sourceMap.put(p.getId(), p)));
++            map.putAll(sourceMap);
+         }
+ 
+         return ImmutableMap.copyOf(map);
+@@ -78,11 +80,15 @@ public class PackRepository {
+     }
+ 
+     private List<Pack> rebuildSelected(Collection<String> enabledNames) {
+-        List<Pack> list = this.getAvailablePacks(enabledNames).collect(Util.toMutableList());
++        // NeoForge: expand selected roots into self+children and drop root entries that are children of another selected pack
++        List<Pack> list = net.neoforged.neoforge.resource.ResourcePackLoader.expandAndRemoveRootChildren(
++            this.getAvailablePacks(enabledNames), this.available.values()
++        );
+ 
+         for (Pack pack : this.available.values()) {
+             if (pack.isRequired() && !list.contains(pack)) {
+-                pack.getDefaultPosition().insert(list, pack, Pack::selectionConfig, false);
++                int i = pack.getDefaultPosition().insert(list, pack, Pack::selectionConfig, false);
++                list.addAll(i + 1, pack.getChildren());
+             }
+         }
+ 
+@@ -94,7 +100,8 @@ public class PackRepository {
+     }
+ 
+     public Collection<String> getAvailableIds() {
+-        return this.available.keySet();
++        // NeoForge: hide child/hidden packs from UI-facing id lists
++        return this.available.values().stream().filter(p -> !p.isHidden()).map(Pack::getId).collect(ImmutableSet.toImmutableSet());
+     }
+ 
+     public Collection<Pack> getAvailablePacks() {
+@@ -102,7 +109,7 @@ public class PackRepository {
+     }
+ 
+     public Collection<String> getSelectedIds() {
+-        return this.selected.stream().map(Pack::getId).collect(ImmutableSet.toImmutableSet());
++        return this.selected.stream().filter(p -> !p.isHidden()).map(Pack::getId).collect(ImmutableSet.toImmutableSet());
+     }
+ 
+     public FeatureFlagSet getRequestedFeatureFlags() {

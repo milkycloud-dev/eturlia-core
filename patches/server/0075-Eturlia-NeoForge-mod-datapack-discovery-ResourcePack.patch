@@ -1,0 +1,108 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Fri, 7 Aug 2026 06:16:32 +0000
+Subject: [PATCH] Eturlia: NeoForge mod datapack discovery (ResourcePackLoader)
+
+Wire populatePackRepository into ServerPacksSource and enable mod packs
+in configurePackRepository/DataPackConfig.addModPacks so Lithostitched
+template_list (and Terralith/Incendium) datapacks actually load.
+
+diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
+index 86c2f8887f3e8c73e570d02a9df9150a9b693d02..3ddbf6ab14941919237f562a4bad2a039ab576c0 100644
+--- a/src/main/java/net/minecraft/server/MinecraftServer.java
++++ b/src/main/java/net/minecraft/server/MinecraftServer.java
+@@ -2565,12 +2565,15 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+ 
+     public static WorldDataConfiguration configurePackRepository(PackRepository resourcePackManager, WorldDataConfiguration dataConfiguration, boolean initMode, boolean safeMode) {
+         DataPackConfig datapackconfiguration = dataConfiguration.dataPacks();
++        // NeoForge: ensure mod datapacks are known/enabled
++        DataPackConfig.DEFAULT.addModPacks(net.neoforged.neoforge.common.CommonHooks.getModDataPacks());
++        datapackconfiguration.addModPacks(net.neoforged.neoforge.common.CommonHooks.getModDataPacks());
+         FeatureFlagSet featureflagset = initMode ? FeatureFlagSet.of() : dataConfiguration.enabledFeatures();
+         FeatureFlagSet featureflagset1 = initMode ? FeatureFlags.REGISTRY.allFlags() : dataConfiguration.enabledFeatures();
+ 
+         resourcePackManager.reload();
+         if (safeMode) {
+-            return MinecraftServer.configureRepositoryWithSelection(resourcePackManager, List.of("vanilla"), featureflagset, false);
++            return MinecraftServer.configureRepositoryWithSelection(resourcePackManager, net.neoforged.neoforge.common.CommonHooks.getModDataPacksWithVanilla(), featureflagset, false);
+         } else {
+             Set<String> set = Sets.newLinkedHashSet();
+             Iterator iterator = datapackconfiguration.getEnabled().iterator();
+@@ -2616,6 +2619,8 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+                 set.add("vanilla");
+             }
+ 
++            net.neoforged.neoforge.resource.ResourcePackLoader.reorderNewlyDiscoveredPacks(set, datapackconfiguration.getEnabled(), resourcePackManager);
++
+             return MinecraftServer.configureRepositoryWithSelection(resourcePackManager, set, featureflagset, true);
+         }
+     }
+diff --git a/src/main/java/net/minecraft/server/packs/repository/ServerPacksSource.java b/src/main/java/net/minecraft/server/packs/repository/ServerPacksSource.java
+index 396ec10a76bdadbf5be2f0e15e88eed47619004d..ca38f51fb3d95fbd497ee261308a298afc322e72 100644
+--- a/src/main/java/net/minecraft/server/packs/repository/ServerPacksSource.java
++++ b/src/main/java/net/minecraft/server/packs/repository/ServerPacksSource.java
+@@ -83,13 +83,18 @@ public class ServerPacksSource extends BuiltInPackSource {
+     }
+ 
+     public static PackRepository createPackRepository(Path dataPacksPath, DirectoryValidator symlinkFinder) {
+-        return new PackRepository(
++        // NeoForge: register mod jar datapacks (ResourcePackLoader) so lithostitched/terralith data loads
++        final PackRepository packRepository = new PackRepository(
+             new ServerPacksSource(symlinkFinder), new FolderRepositorySource(dataPacksPath, PackType.SERVER_DATA, PackSource.WORLD, symlinkFinder)
+         );
++        net.neoforged.neoforge.resource.ResourcePackLoader.populatePackRepository(packRepository, PackType.SERVER_DATA, false);
++        return packRepository;
+     }
+ 
+     public static PackRepository createVanillaTrustedRepository() {
+-        return new PackRepository(new ServerPacksSource(new DirectoryValidator(path -> true)));
++        final PackRepository packRepository = new PackRepository(new ServerPacksSource(new DirectoryValidator(path -> true)));
++        net.neoforged.neoforge.resource.ResourcePackLoader.populatePackRepository(packRepository, PackType.SERVER_DATA, true);
++        return packRepository;
+     }
+ 
+     public static PackRepository createPackRepository(LevelStorageSource.LevelStorageAccess session) {
+diff --git a/src/main/java/net/minecraft/world/level/DataPackConfig.java b/src/main/java/net/minecraft/world/level/DataPackConfig.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..a59c56344d0837d78c3df5c2c45b007b1920a323
+--- /dev/null
++++ b/src/main/java/net/minecraft/world/level/DataPackConfig.java
+@@ -0,0 +1,38 @@
++package net.minecraft.world.level;
++
++import com.google.common.collect.ImmutableList;
++import com.mojang.serialization.Codec;
++import com.mojang.serialization.codecs.RecordCodecBuilder;
++import java.util.List;
++
++public class DataPackConfig {
++    public static final DataPackConfig DEFAULT = new DataPackConfig(ImmutableList.of("vanilla"), ImmutableList.of());
++    public static final Codec<DataPackConfig> CODEC = RecordCodecBuilder.create(
++        instance -> instance.group(
++                    Codec.STRING.listOf().fieldOf("Enabled").forGetter(settings -> settings.enabled),
++                    Codec.STRING.listOf().fieldOf("Disabled").forGetter(settings -> settings.disabled)
++                )
++                .apply(instance, DataPackConfig::new)
++    );
++    // NeoForge: mutable so addModPacks can append mod datapacks at boot
++    private final List<String> enabled;
++    private final List<String> disabled;
++
++    public DataPackConfig(List<String> enabled, List<String> disabled) {
++        this.enabled = com.google.common.collect.Lists.newArrayList(enabled); // NeoForge
++        this.disabled = ImmutableList.copyOf(disabled);
++    }
++
++    public List<String> getEnabled() {
++        return this.enabled;
++    }
++
++    public List<String> getDisabled() {
++        return this.disabled;
++    }
++
++    // NeoForge: enable mod jar datapacks (lithostitched template_list, Terralith, …)
++    public void addModPacks(List<String> modPacks) {
++        enabled.addAll(modPacks.stream().filter(p -> !enabled.contains(p)).collect(java.util.stream.Collectors.toList()));
++    }
++}

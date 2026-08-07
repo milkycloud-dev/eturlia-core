@@ -181,6 +181,8 @@ public final class Main {
         command.add("-Dnet.kyori.adventure.text.warnWhenLegacyFormattingDetected=true");
         command.add("-Dio.papermc.paper.suppress.sout.nags=true");
         command.add("-Dpaper.maxChatCommandInputSize=32767");
+        // Terralith sets JAVA_17 first; force JAVA_21 so Lithostitched/NeoForge classfile 65 mixins apply cleanly.
+        command.add("-Dmixin.env.compatLevel=JAVA_21");
         // NeoForge %highlightForge paints INFO green by default — swap in Eturlia's calm palette
         // unless the operator opts into full/off via -Deturlia.console.color=
         Path calmLog4j = installEturliaLog4jConfig(outputDir);
