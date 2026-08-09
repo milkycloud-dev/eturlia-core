@@ -137,7 +137,7 @@ index 1029e3df718b5bd15056c59615097d2d0d60eb1c..eabd0e8cf3bb1976d5c032f093842d50
          return this.forgeFluidTypeOnEyes;
      }
 diff --git a/src/main/java/net/minecraft/world/entity/LivingEntity.java b/src/main/java/net/minecraft/world/entity/LivingEntity.java
-index cf2ba18d6ac95961059e01093f018c5fe2530049..45d9e115ba10e4a309e220ed0430413b6d1fac2e 100644
+index cf2ba18d6ac95961059e01093f018c5fe2530049..ed67735907e3f0fe55030b14192dd59812a27eed 100644
 --- a/src/main/java/net/minecraft/world/entity/LivingEntity.java
 +++ b/src/main/java/net/minecraft/world/entity/LivingEntity.java
 @@ -1809,7 +1809,7 @@ public abstract class LivingEntity extends Entity implements Attackable {
@@ -153,6 +153,7 @@ index cf2ba18d6ac95961059e01093f018c5fe2530049..45d9e115ba10e4a309e220ed0430413b
      // Paper start
      protected boolean clearEquipmentSlots = true;
      protected Set<EquipmentSlot> clearedEquipmentSlots = new java.util.HashSet<>();
+-    protected org.bukkit.event.entity.EntityDeathEvent dropAllDeathLoot(ServerLevel world, DamageSource damageSource) {
 +
 +    // Eturlia: vanilla/NeoForge void signature for Farm & Charm / Let's Do mixins (@Inject ...;)V).
 +    // Anchor only — the Paper body lives in paperDropAllDeathLoot below, which calls this so the
@@ -160,13 +161,12 @@ index cf2ba18d6ac95961059e01093f018c5fe2530049..45d9e115ba10e4a309e220ed0430413b
 +    protected void dropAllDeathLoot(ServerLevel world, DamageSource damageSource) {
 +    }
 +
--    protected org.bukkit.event.entity.EntityDeathEvent dropAllDeathLoot(ServerLevel world, DamageSource damageSource) {
 +    protected org.bukkit.event.entity.EntityDeathEvent paperDropAllDeathLoot(ServerLevel world, DamageSource damageSource) {
 +        this.dropAllDeathLoot(world, damageSource); // Eturlia: run the vanilla-shaped anchor for mod mixins
          // Paper end
          boolean flag = this.lastHurtByPlayerTime > 0;
  
-@@ -2931,7 +2937,8 @@ public abstract class LivingEntity extends Entity implements Attackable {
+@@ -2931,7 +2939,8 @@ public abstract class LivingEntity extends Entity implements Attackable {
              double d1;
              float f;
  

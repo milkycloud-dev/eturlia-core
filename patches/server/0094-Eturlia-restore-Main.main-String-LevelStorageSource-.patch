@@ -9,7 +9,7 @@ validateAndCreateAccess(String). Bridge OptionSet through ThreadLocal and keep
 MinecraftServer.spin inside the String[] body for libjf INVOKE_ASSIGN.
 
 diff --git a/src/main/java/net/minecraft/server/Main.java b/src/main/java/net/minecraft/server/Main.java
-index bb183cc65ca18937dd56a6dd00bd48385d901219..6879d3717ba10cd965e83cfa81123922ed757c47 100644
+index bb183cc65ca18937dd56a6dd00bd48385d901219..f1baba4b35f167c56c1912e89fe02d51004bf3e9 100644
 --- a/src/main/java/net/minecraft/server/Main.java
 +++ b/src/main/java/net/minecraft/server/Main.java
 @@ -73,10 +73,41 @@ public class Main {
@@ -55,7 +55,7 @@ index bb183cc65ca18937dd56a6dd00bd48385d901219..6879d3717ba10cd965e83cfa81123922
          io.papermc.paper.util.LogManagerShutdownThread.hook(); // Paper
          SharedConstants.tryDetectVersion();
          /* CraftBukkit start - Replace everything
-@@ -209,7 +230,8 @@ public class Main {
+@@ -209,7 +240,8 @@ public class Main {
              // CraftBukkit start
              String s = (String) Optional.ofNullable((String) optionset.valueOf("world")).orElse(dedicatedserversettings.getProperties().levelName);
              LevelStorageSource convertable = LevelStorageSource.createDefault(file.toPath());
