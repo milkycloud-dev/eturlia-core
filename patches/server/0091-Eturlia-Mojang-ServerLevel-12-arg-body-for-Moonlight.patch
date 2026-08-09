@@ -8,7 +8,7 @@ WrapOperation finds ServerChunkCache. Bukkit extras via ThreadLocal.
 DefaultAttributes NeoForge attribute view retained.
 
 diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
-index 8f49231f4cb1230df4c5d450335d28e2e314e989..53f5f54a413150474799dca6f1e14dcf94bd9e59 100644
+index 8f49231f4cb1230df4c5d450335d28e2e314e989..f00d66161370de54ae00a4270919f5d2807d3fa8 100644
 --- a/src/main/java/net/minecraft/server/MinecraftServer.java
 +++ b/src/main/java/net/minecraft/server/MinecraftServer.java
 @@ -722,7 +722,15 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
@@ -98,18 +98,18 @@ index 62097f2b55768c77d4a178030058a18f7c6ac36e..3b014ecb43d9c55ea3b2a3e4b26c0987
          this.generator = gen;
          this.world = new CraftWorld((ServerLevel) this, gen, biomeProvider, env);
 diff --git a/src/main/java/org/bukkit/craftbukkit/CraftServer.java b/src/main/java/org/bukkit/craftbukkit/CraftServer.java
-index dee23b4b96b7f2c6af54a6affe385b183479f8cc..7ba0402717c7186af32b0ad08d0120a31c1b86c8 100644
+index dee23b4b96b7f2c6af54a6affe385b183479f8cc..0c5e9082e44dcd3ed4f5fa8787025283daed5978 100644
 --- a/src/main/java/org/bukkit/craftbukkit/CraftServer.java
 +++ b/src/main/java/org/bukkit/craftbukkit/CraftServer.java
 @@ -1464,8 +1464,14 @@ public final class CraftServer implements Server {
          if (creator.keepSpawnLoaded() == net.kyori.adventure.util.TriState.FALSE) { // Paper
              worlddata.getGameRules().getRule(GameRules.RULE_SPAWN_CHUNK_RADIUS).set(0, null);
          }
+-        ServerLevel internal = (ServerLevel) new ServerLevel(this.console, this.console.executor, worldSession, worlddata, worldKey, worlddimension, this.getServer().progressListenerFactory.create(worlddata.getGameRules().getInt(GameRules.RULE_SPAWN_CHUNK_RADIUS)),
+-                worlddata.isDebugWorld(), j, creator.environment() == Environment.NORMAL ? list : ImmutableList.of(), true, this.console.overworld().getRandomSequences(), creator.environment(), generator, biomeProvider);
 +        net.minecraft.world.level.Level.ETURLIA$LEVEL_CTOR_EXTRAS.set(new net.minecraft.world.level.Level.EturliaLevelCtorExtras(generator, biomeProvider, creator.environment(), spigotConfig -> this.console.paperConfigurations.createWorldConfig(io.papermc.paper.configuration.PaperConfigurations.createWorldContextMap(worldSession.levelDirectory.path(), worlddata.getLevelName(), worldKey.location(), spigotConfig, this.console.registryAccess(), worlddata.getGameRules())), this.console.executor));
 +        final ServerLevel internal;
 +        try { // Eturlia: plugin world creation can throw and the server keeps running — never leak the extras
--        ServerLevel internal = (ServerLevel) new ServerLevel(this.console, this.console.executor, worldSession, worlddata, worldKey, worlddimension, this.getServer().progressListenerFactory.create(worlddata.getGameRules().getInt(GameRules.RULE_SPAWN_CHUNK_RADIUS)),
--                worlddata.isDebugWorld(), j, creator.environment() == Environment.NORMAL ? list : ImmutableList.of(), true, this.console.overworld().getRandomSequences(), creator.environment(), generator, biomeProvider);
 +        internal = (ServerLevel) new ServerLevel(this.console, this.console.executor, worldSession, worlddata, worldKey, worlddimension, this.getServer().progressListenerFactory.create(worlddata.getGameRules().getInt(GameRules.RULE_SPAWN_CHUNK_RADIUS)),
 +                worlddata.isDebugWorld(), j, creator.environment() == Environment.NORMAL ? list : ImmutableList.of(), true, this.console.overworld().getRandomSequences());
 +        } finally {

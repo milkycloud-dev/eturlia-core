@@ -259,6 +259,10 @@ gradle.projectsEvaluated {
                             || n.contains("nightconfig")
                             || n.startsWith("toml-")
                             || n.startsWith("core-3.") // nightconfig core
+                            // log4j: the console noise filter installs a real Filter on Paper's
+                            // console appender, so eturlia-core needs the API + core at compile time.
+                            || n.startsWith("log4j-api-")
+                            || n.startsWith("log4j-core-")
                 }
             },
             // Bootstrap copies (known versions) as a fallback if runtimeClasspath filter misses them
@@ -274,7 +278,13 @@ gradle.projectsEvaluated {
     val compileEturliaServerTemplates = server.tasks.register("compileEturliaServerTemplates", JavaCompile::class.java) {
         description = "Compile Eturlia server template classes"
         source(eturliaServerTemplateSources)
-        classpath = files(serverArchive.flatMap { it.archiveFile }, server.layout.buildDirectory.dir("eturlia/core-classes"))
+        // log4j is needed here too: EturliaServer calls EturliaNoiseFilter, and javac must load
+        // that class's supertype (log4j's AbstractFilter) to verify the call.
+        classpath = files(
+            serverArchive.flatMap { it.archiveFile },
+            server.layout.buildDirectory.dir("eturlia/core-classes"),
+            runtimeClasspath.map { cfg -> cfg.files.filter { it.name.startsWith("log4j-") } },
+        )
         destinationDirectory.set(server.layout.buildDirectory.dir("eturlia/server-template-classes"))
         options.release.set(21)
         dependsOn(compileEturliaCore)

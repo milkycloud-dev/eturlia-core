@@ -144,6 +144,99 @@ public final class EturliaConsole {
         return name != null && name.startsWith(ETURLIA_LOGGER_PREFIX);
     }
 
+    // ------------------------------------------------------------------ noise sink
+    //
+    // EturliaNoiseFilter moves third-party stack traces off the console. They go to their own file
+    // rather than through java.util.logging: on this stack JUL can be bridged to log4j, and routing
+    // suppressed log4j events back through log4j would recurse. A separate handle also keeps them
+    // from interleaving with the JUL FileHandler that owns eturlia.log.
+
+    private static final Object NOISE_LOCK = new Object();
+    private static volatile java.io.Writer noiseWriter;
+    private static volatile Path noiseFile;
+    private static final ThreadLocal<Boolean> INSIDE = ThreadLocal.withInitial(() -> Boolean.FALSE);
+
+    /** Path of the suppressed-noise log, or {@code null} before the first write. */
+    public static Path getNoiseFile() {
+        return noiseFile;
+    }
+
+    /** One console line from Eturlia itself (used for install banners). */
+    public static void info(String message) {
+        System.out.println(dim() + "[Eturlia] " + message + reset());
+    }
+
+    /** Appends a single suppressed line (typically one stack frame). */
+    public static void appendDiagnostic(String logger, String line) {
+        write(logger, line, null);
+    }
+
+    /** Appends a suppressed message together with its full stack trace. */
+    public static void appendThrowable(String logger, String message, Throwable thrown) {
+        write(logger, message, thrown);
+    }
+
+    private static void write(String logger, String message, Throwable thrown) {
+        if (Boolean.TRUE.equals(INSIDE.get())) {
+            return; // a logging failure must not re-enter the filter that called us
+        }
+        INSIDE.set(Boolean.TRUE);
+        try {
+            java.io.Writer w = writer();
+            if (w == null) {
+                return;
+            }
+            StringBuilder sb = new StringBuilder(256);
+            sb.append(TIMESTAMP.format(java.time.LocalDateTime.now())).append(' ');
+            if (logger != null && !logger.isEmpty()) {
+                sb.append('[').append(logger).append("] ");
+            }
+            if (message != null) {
+                sb.append(message);
+            }
+            sb.append(System.lineSeparator());
+            if (thrown != null) {
+                java.io.StringWriter trace = new java.io.StringWriter();
+                thrown.printStackTrace(new java.io.PrintWriter(trace));
+                sb.append(trace);
+            }
+            synchronized (NOISE_LOCK) {
+                w.write(sb.toString());
+                w.flush();
+            }
+        } catch (IOException | RuntimeException ignored) {
+            // Dropping a suppressed line is strictly better than failing the caller's log call.
+        } finally {
+            INSIDE.set(Boolean.FALSE);
+        }
+    }
+
+    private static java.io.Writer writer() throws IOException {
+        java.io.Writer w = noiseWriter;
+        if (w != null) {
+            return w;
+        }
+        synchronized (NOISE_LOCK) {
+            if (noiseWriter == null) {
+                Path base = logFile != null
+                        ? logFile.getParent()
+                        : Path.of("logs").toAbsolutePath().normalize();
+                Files.createDirectories(base);
+                Path target = base.resolve("eturlia-noise.log");
+                noiseWriter = Files.newBufferedWriter(target,
+                        java.nio.charset.StandardCharsets.UTF_8,
+                        java.nio.file.StandardOpenOption.CREATE,
+                        java.nio.file.StandardOpenOption.APPEND);
+                noiseFile = target;
+            }
+            return noiseWriter;
+        }
+    }
+
+    /** DateTimeFormatter, not SimpleDateFormat: this is written from every server thread. */
+    private static final java.time.format.DateTimeFormatter TIMESTAMP =
+            java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS", java.util.Locale.ROOT);
+
     private static void noteDiagnostic() {
         SUPPRESSED.incrementAndGet();
         if (logFile != null && POINTER_PRINTED.compareAndSet(false, true)) {

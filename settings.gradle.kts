@@ -48,10 +48,14 @@ gradle.lifecycle.beforeProject {
     val mcVersion = providers.gradleProperty("mcVersion").get().trim()
     val foliaVersionChannel = providers.gradleProperty("channel").get().trim()
     val foliaBuildNumber = providers.environmentVariable("BUILD_NUMBER").orNull?.trim()?.toInt()
+    // Bukkit's version string has a fixed shape: <mc>-R<revision>[-<qualifier>]. Plugins parse it,
+    // and a value like "1.21.1.local-SNAPSHOT" makes them throw — EssentialsX died on exactly that
+    // with "Unknown-Version is not in valid version format. e.g. 1.8.8-R0.1", which disabled the
+    // plugin and left every command it registers (help, list, ...) dead in the command map.
     val versionString = if (foliaBuildNumber == null) {
-        "$mcVersion.local-SNAPSHOT"
+        "$mcVersion-R0.1-SNAPSHOT"
     } else {
-        "$mcVersion.build.$foliaBuildNumber-${foliaVersionChannel.lowercase()}"
+        "$mcVersion-R0.1-$foliaBuildNumber-${foliaVersionChannel.lowercase()}"
     }
     version = versionString
 }

@@ -122,7 +122,7 @@ index fce44d988f0c65c65f258151ffde8c5a117615ac..d516c113cac1bdb9a8606c941d1f341b
      }
  }
 diff --git a/src/main/java/net/minecraft/world/entity/ai/goal/TemptGoal.java b/src/main/java/net/minecraft/world/entity/ai/goal/TemptGoal.java
-index 13f8c2cb42334ba3b573ca44ace1d3df76e41ff7..49a1c2756b4d115f226cdba013bfd6fb77bbc552 100644
+index 13f8c2cb42334ba3b573ca44ace1d3df76e41ff7..a7b0c0a3b8fa0f4b38c93f85bcea793e6f1bc0a1 100644
 --- a/src/main/java/net/minecraft/world/entity/ai/goal/TemptGoal.java
 +++ b/src/main/java/net/minecraft/world/entity/ai/goal/TemptGoal.java
 @@ -6,6 +6,7 @@ import javax.annotation.Nullable;

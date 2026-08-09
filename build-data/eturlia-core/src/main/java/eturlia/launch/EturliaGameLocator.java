@@ -136,6 +136,23 @@ final class EturliaGameLocator implements IModFileCandidateLocator {
         return new ModFileInfo(file, wrapper, wrapper::setFile, List.of());
     }
 
+    /** MANIFEST and signature entries — the only META-INF content a secondary jar must not add. */
+    private static boolean isManifestOrSignature(String path) {
+        if (path.equals("META-INF") || path.equals("META-INF/")) {
+            return true;
+        }
+        if (!path.startsWith("META-INF/")) {
+            return false;
+        }
+        String name = path.substring("META-INF/".length());
+        if (name.indexOf('/') >= 0) {
+            return false; // nested data such as META-INF/maven/... is safe to keep
+        }
+        String upper = name.toUpperCase(java.util.Locale.ROOT);
+        return upper.equals("MANIFEST.MF") || upper.endsWith(".SF")
+                || upper.endsWith(".RSA") || upper.endsWith(".DSA") || upper.endsWith(".EC");
+    }
+
     private static boolean includeFoliaEntry(String relativePath, Path basePath) {
         String path = relativePath.startsWith("/") ? relativePath.substring(1) : relativePath;
         // Locale.ROOT: a default-locale toLowerCase() maps 'I' to a dotless 'ı' under tr_TR,
@@ -172,7 +189,12 @@ final class EturliaGameLocator implements IModFileCandidateLocator {
         // Also avoid split packages: AT owns io.papermc.paper.brigadier (TagParse, etc.);
         // PaperBrigadier from the API jar is injected into the AT jar at launch.
         if (baseName.contains("folia-api")) {
-            if (path.startsWith("META-INF/") || path.equals("META-INF")) {
+            // Drop only the manifest and signatures, never the whole META-INF: Bukkit reads its
+            // own version from META-INF/maven/dev.folia/folia-api/pom.properties, and throwing
+            // that away makes getBukkitVersion() return "Unknown-Version". EssentialsX then dies
+            // with "Unknown-Version is not in valid version format", which disables the plugin and
+            // leaves every command it registered (help, list, ...) dead in the command map.
+            if (isManifestOrSignature(path)) {
                 return false;
             }
             if (path.startsWith("io/papermc/paper/brigadier/")

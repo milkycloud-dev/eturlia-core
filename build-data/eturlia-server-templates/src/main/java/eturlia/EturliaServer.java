@@ -237,6 +237,9 @@ public final class EturliaServer {
         // Before anything else logs: route Eturlia's own warnings to logs/eturlia.log so the
         // console shows the banner and a few clean status lines instead of a wall of red.
         eturlia.core.logging.EturliaConsole.install(cs.gameDir);
+        // Third-party stack-trace spam (mod datapack parse errors, Folia watchdog dumps) is what
+        // actually fills the console; that noise comes through log4j, not java.util.logging.
+        eturlia.core.logging.EturliaNoiseFilter.install();
 
         cs.logBanner();
         cs.installEventBus();
