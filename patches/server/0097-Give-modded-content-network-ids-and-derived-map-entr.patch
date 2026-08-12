@@ -41,139 +41,13 @@ index f1baba4b35f167c56c1912e89fe02d51004bf3e9..d615aedbc59e67d6c4d624a9c57cc789
              Path path1 = Paths.get("server.properties");
              DedicatedServerSettings dedicatedserversettings = new DedicatedServerSettings(optionset); // CraftBukkit - CLI argument support
 diff --git a/src/main/java/net/minecraft/world/entity/ai/village/poi/PoiTypes.java b/src/main/java/net/minecraft/world/entity/ai/village/poi/PoiTypes.java
-new file mode 100644
-index 0000000000000000000000000000000000000000..8b8fb97bf49dc7b1906301ab029e1035f5f1a86f
---- /dev/null
+index faf3e38d00695e2b9189753e36608410a8825b35..8b8fb97bf49dc7b1906301ab029e1035f5f1a86f 100644
+--- a/src/main/java/net/minecraft/world/entity/ai/village/poi/PoiTypes.java
 +++ b/src/main/java/net/minecraft/world/entity/ai/village/poi/PoiTypes.java
-@@ -0,0 +1,153 @@
-+package net.minecraft.world.entity.ai.village.poi;
-+
-+import com.google.common.collect.ImmutableList;
-+import com.google.common.collect.ImmutableSet;
-+import com.google.common.collect.Maps;
-+import java.util.Locale;
-+import java.util.Map;
-+import java.util.Optional;
-+import java.util.Set;
-+import net.minecraft.Util;
-+import net.minecraft.core.Holder;
-+import net.minecraft.core.Registry;
-+import net.minecraft.core.registries.Registries;
-+import net.minecraft.resources.ResourceKey;
-+import net.minecraft.resources.ResourceLocation;
-+import net.minecraft.world.level.block.BedBlock;
-+import net.minecraft.world.level.block.Block;
-+import net.minecraft.world.level.block.Blocks;
-+import net.minecraft.world.level.block.state.BlockState;
-+import net.minecraft.world.level.block.state.properties.BedPart;
-+
-+public class PoiTypes {
-+    public static final ResourceKey<PoiType> ARMORER = createKey("armorer");
-+    public static final ResourceKey<PoiType> BUTCHER = createKey("butcher");
-+    public static final ResourceKey<PoiType> CARTOGRAPHER = createKey("cartographer");
-+    public static final ResourceKey<PoiType> CLERIC = createKey("cleric");
-+    public static final ResourceKey<PoiType> FARMER = createKey("farmer");
-+    public static final ResourceKey<PoiType> FISHERMAN = createKey("fisherman");
-+    public static final ResourceKey<PoiType> FLETCHER = createKey("fletcher");
-+    public static final ResourceKey<PoiType> LEATHERWORKER = createKey("leatherworker");
-+    public static final ResourceKey<PoiType> LIBRARIAN = createKey("librarian");
-+    public static final ResourceKey<PoiType> MASON = createKey("mason");
-+    public static final ResourceKey<PoiType> SHEPHERD = createKey("shepherd");
-+    public static final ResourceKey<PoiType> TOOLSMITH = createKey("toolsmith");
-+    public static final ResourceKey<PoiType> WEAPONSMITH = createKey("weaponsmith");
-+    public static final ResourceKey<PoiType> HOME = createKey("home");
-+    public static final ResourceKey<PoiType> MEETING = createKey("meeting");
-+    public static final ResourceKey<PoiType> BEEHIVE = createKey("beehive");
-+    public static final ResourceKey<PoiType> BEE_NEST = createKey("bee_nest");
-+    public static final ResourceKey<PoiType> NETHER_PORTAL = createKey("nether_portal");
-+    public static final ResourceKey<PoiType> LODESTONE = createKey("lodestone");
-+    public static final ResourceKey<PoiType> LIGHTNING_ROD = createKey("lightning_rod");
-+    private static final Set<BlockState> BEDS = ImmutableList.of(
-+            Blocks.RED_BED,
-+            Blocks.BLACK_BED,
-+            Blocks.BLUE_BED,
-+            Blocks.BROWN_BED,
-+            Blocks.CYAN_BED,
-+            Blocks.GRAY_BED,
-+            Blocks.GREEN_BED,
-+            Blocks.LIGHT_BLUE_BED,
-+            Blocks.LIGHT_GRAY_BED,
-+            Blocks.LIME_BED,
-+            Blocks.MAGENTA_BED,
-+            Blocks.ORANGE_BED,
-+            Blocks.PINK_BED,
-+            Blocks.PURPLE_BED,
-+            Blocks.WHITE_BED,
-+            Blocks.YELLOW_BED
-+        )
-+        .stream()
-+        .flatMap(block -> block.getStateDefinition().getPossibleStates().stream())
-+        .filter(blockState -> blockState.getValue(BedBlock.PART) == BedPart.HEAD)
-+        .collect(ImmutableSet.toImmutableSet());
-+    private static final Set<BlockState> CAULDRONS = ImmutableList.of(Blocks.CAULDRON, Blocks.LAVA_CAULDRON, Blocks.WATER_CAULDRON, Blocks.POWDER_SNOW_CAULDRON)
-+        .stream()
-+        .flatMap(block -> block.getStateDefinition().getPossibleStates().stream())
-+        .collect(ImmutableSet.toImmutableSet());
-+    private static final Map<BlockState, Holder<PoiType>> TYPE_BY_STATE = Maps.newHashMap();
-+
-+    private static Set<BlockState> getBlockStates(Block block) {
-+        return ImmutableSet.copyOf(block.getStateDefinition().getPossibleStates());
-+    }
-+
-+    private static ResourceKey<PoiType> createKey(String id) {
-+        return ResourceKey.create(Registries.POINT_OF_INTEREST_TYPE, ResourceLocation.withDefaultNamespace(id));
-+    }
-+
-+    private static PoiType register(Registry<PoiType> registry, ResourceKey<PoiType> key, Set<BlockState> states, int ticketCount, int searchDistance) {
-+        PoiType poiType = new PoiType(states, ticketCount, searchDistance);
-+        Registry.register(registry, key, poiType);
-+        registerBlockStates(registry.getHolderOrThrow(key), states);
-+        return poiType;
-+    }
-+
-+    private static void registerBlockStates(Holder<PoiType> poiTypeEntry, Set<BlockState> states) {
-+        states.forEach(
-+            state -> {
-+                Holder<PoiType> holder2 = TYPE_BY_STATE.put(state, poiTypeEntry);
-+                if (holder2 != null) {
-+                    throw (IllegalStateException)Util.pauseInIde(
-+                        new IllegalStateException(String.format(Locale.ROOT, "%s is defined in more than one PoI type", state))
-+                    );
-+                }
-+            }
-+        );
-+    }
-+
-+    public static Optional<Holder<PoiType>> forState(BlockState state) {
-+        return Optional.ofNullable(TYPE_BY_STATE.get(state));
-+    }
-+
-+    public static boolean hasPoi(BlockState state) {
-+        return TYPE_BY_STATE.containsKey(state);
-+    }
-+
-+    public static PoiType bootstrap(Registry<PoiType> registry) {
-+        register(registry, ARMORER, getBlockStates(Blocks.BLAST_FURNACE), 1, 1);
-+        register(registry, BUTCHER, getBlockStates(Blocks.SMOKER), 1, 1);
-+        register(registry, CARTOGRAPHER, getBlockStates(Blocks.CARTOGRAPHY_TABLE), 1, 1);
-+        register(registry, CLERIC, getBlockStates(Blocks.BREWING_STAND), 1, 1);
-+        register(registry, FARMER, getBlockStates(Blocks.COMPOSTER), 1, 1);
-+        register(registry, FISHERMAN, getBlockStates(Blocks.BARREL), 1, 1);
-+        register(registry, FLETCHER, getBlockStates(Blocks.FLETCHING_TABLE), 1, 1);
-+        register(registry, LEATHERWORKER, CAULDRONS, 1, 1);
-+        register(registry, LIBRARIAN, getBlockStates(Blocks.LECTERN), 1, 1);
-+        register(registry, MASON, getBlockStates(Blocks.STONECUTTER), 1, 1);
-+        register(registry, SHEPHERD, getBlockStates(Blocks.LOOM), 1, 1);
-+        register(registry, TOOLSMITH, getBlockStates(Blocks.SMITHING_TABLE), 1, 1);
-+        register(registry, WEAPONSMITH, getBlockStates(Blocks.GRINDSTONE), 1, 1);
-+        register(registry, HOME, BEDS, 1, 1);
-+        register(registry, MEETING, getBlockStates(Blocks.BELL), 32, 6);
-+        register(registry, BEEHIVE, getBlockStates(Blocks.BEEHIVE), 0, 1);
-+        register(registry, BEE_NEST, getBlockStates(Blocks.BEE_NEST), 0, 1);
-+        register(registry, NETHER_PORTAL, getBlockStates(Blocks.NETHER_PORTAL), 0, 1);
-+        register(registry, LODESTONE, getBlockStates(Blocks.LODESTONE), 0, 1);
-+        return register(registry, LIGHTNING_ROD, getBlockStates(Blocks.LIGHTNING_ROD), 0, 1);
-+    }
+@@ -126,4 +126,28 @@ public class PoiTypes {
+         register(registry, LODESTONE, getBlockStates(Blocks.LODESTONE), 0, 1);
+         return register(registry, LIGHTNING_ROD, getBlockStates(Blocks.LIGHTNING_ROD), 0, 1);
+     }
 +
 +    // Eturlia start - modded points of interest are missing from TYPE_BY_STATE
 +    /**
@@ -198,7 +72,7 @@ index 0000000000000000000000000000000000000000..8b8fb97bf49dc7b1906301ab029e1035
 +        return added;
 +    }
 +    // Eturlia end
-+}
+ }
 diff --git a/src/main/java/net/minecraft/world/item/Item.java b/src/main/java/net/minecraft/world/item/Item.java
 index cdc1d162baf6393d0e1e1c5f8482e4c34fc2536c..14060552b1432d8c4f178b52933b3e188f78e499 100644
 --- a/src/main/java/net/minecraft/world/item/Item.java
@@ -269,105 +143,14 @@ index dab36c16927f6e62769067a1739a5c527fb777b8..dc70b0ffaee8c7dba5597d3bca56173d
 +    // Eturlia end
  }
 diff --git a/src/main/java/net/minecraft/world/level/chunk/LinearPalette.java b/src/main/java/net/minecraft/world/level/chunk/LinearPalette.java
-new file mode 100644
-index 0000000000000000000000000000000000000000..bad8687e2220e12dec1931b694d9d37649a0a399
---- /dev/null
+index f4c3f2a49b8d023b8ef67529eba30cf31467d8bf..bad8687e2220e12dec1931b694d9d37649a0a399 100644
+--- a/src/main/java/net/minecraft/world/level/chunk/LinearPalette.java
 +++ b/src/main/java/net/minecraft/world/level/chunk/LinearPalette.java
-@@ -0,0 +1,149 @@
-+package net.minecraft.world.level.chunk;
-+
-+import java.util.List;
-+import java.util.function.Predicate;
-+import net.minecraft.core.IdMap;
-+import net.minecraft.network.FriendlyByteBuf;
-+import net.minecraft.network.VarInt;
-+import org.apache.commons.lang3.Validate;
-+
-+public class LinearPalette<T> implements Palette<T> {
-+    private final IdMap<T> registry;
-+    private final T[] values;
-+    private final PaletteResize<T> resizeHandler;
-+    private final int bits;
-+    private int size;
-+
-+    private LinearPalette(IdMap<T> idList, int bits, PaletteResize<T> listener, List<T> list) {
-+        this.registry = idList;
-+        this.values = (T[])(new Object[1 << bits]);
-+        this.bits = bits;
-+        this.resizeHandler = listener;
-+        Validate.isTrue(list.size() <= this.values.length, "Can't initialize LinearPalette of size %d with %d entries", this.values.length, list.size());
-+
-+        for (int i = 0; i < list.size(); i++) {
-+            this.values[i] = list.get(i);
-+        }
-+
-+        this.size = list.size();
-+    }
-+
-+    private LinearPalette(IdMap<T> idList, T[] array, PaletteResize<T> listener, int indexBits, int size) {
-+        this.registry = idList;
-+        this.values = array;
-+        this.resizeHandler = listener;
-+        this.bits = indexBits;
-+        this.size = size;
-+    }
-+
-+    public static <A> Palette<A> create(int bits, IdMap<A> idList, PaletteResize<A> listener, List<A> list) {
-+        return new LinearPalette<>(idList, bits, listener, list);
-+    }
-+
-+    @Override
-+    public int idFor(T object) {
-+        for (int i = 0; i < this.size; i++) {
-+            if (this.values[i] == object) {
-+                return i;
-+            }
-+        }
-+
-+        int j = this.size;
-+        if (j < this.values.length) {
-+            this.values[j] = object;
-+            this.size++;
-+            return j;
-+        } else {
-+            return this.resizeHandler.onResize(this.bits + 1, object);
-+        }
-+    }
-+
-+    @Override
-+    public boolean maybeHas(Predicate<T> predicate) {
-+        for (int i = 0; i < this.size; i++) {
-+            if (predicate.test(this.values[i])) {
-+                return true;
-+            }
-+        }
-+
-+        return false;
-+    }
-+
-+    @Override
-+    public T valueFor(int id) {
-+        if (id >= 0 && id < this.size) {
-+            return this.values[id];
-+        } else {
-+            throw new MissingPaletteEntryException(id);
-+        }
-+    }
-+
-+    @Override
-+    public void read(FriendlyByteBuf buf) {
-+        this.size = buf.readVarInt();
-+
-+        for (int i = 0; i < this.size; i++) {
-+            this.values[i] = this.registry.byIdOrThrow(buf.readVarInt());
-+        }
-+    }
-+
-+    @Override
-+    public void write(FriendlyByteBuf buf) {
-+        buf.writeVarInt(this.size);
-+
-+        for (int i = 0; i < this.size; i++) {
+@@ -92,7 +92,14 @@ public class LinearPalette<T> implements Palette<T> {
+         buf.writeVarInt(this.size);
+ 
+         for (int i = 0; i < this.size; i++) {
+-            buf.writeVarInt(this.registry.getId(this.values[i]));
 +            // Eturlia start - a -1 means the value never got a network id, and the client
 +            // would fail this chunk with an unattributable "No value with id -1". Name it here.
 +            int eturliaId = this.registry.getId(this.values[i]);
@@ -376,29 +159,13 @@ index 0000000000000000000000000000000000000000..bad8687e2220e12dec1931b694d9d376
 +            }
 +            buf.writeVarInt(eturliaId);
 +            // Eturlia end
-+        }
-+    }
-+
-+    @Override
-+    public int getSerializedSize() {
-+        int i = VarInt.getByteSize(this.getSize());
-+
-+        for (int j = 0; j < this.getSize(); j++) {
-+            i += VarInt.getByteSize(this.registry.getId(this.values[j]));
-+        }
-+
-+        return i;
-+    }
-+
-+    @Override
-+    public int getSize() {
-+        return this.size;
-+    }
-+
-+    @Override
-+    public Palette<T> copy() {
-+        return new LinearPalette<>(this.registry, (T[])((Object[])this.values.clone()), this.resizeHandler, this.bits, this.size);
-+    }
+         }
+     }
+ 
+@@ -116,4 +123,27 @@ public class LinearPalette<T> implements Palette<T> {
+     public Palette<T> copy() {
+         return new LinearPalette<>(this.registry, (T[])((Object[])this.values.clone()), this.resizeHandler, this.bits, this.size);
+     }
 +
 +    // Eturlia start - one line per distinct unmapped entry, then stay quiet.
 +    private static final java.util.Set<String> eturlia$reportedUnmapped =
@@ -422,4 +189,4 @@ index 0000000000000000000000000000000000000000..bad8687e2220e12dec1931b694d9d376
 +        }
 +    }
 +    // Eturlia end
-+}
+ }
