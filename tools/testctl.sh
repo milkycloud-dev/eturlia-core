@@ -63,7 +63,7 @@ case "${1:-status}" in
     cd "$TEST_DIR" || exit 1
     require_free_memory
     echo "[start] launching via start.sh in screen session ${SESSION}"
-    screen -dmS "$SESSION" bash -c "cd $TEST_DIR && bash start.sh inscreen"
+    screen -dmS "$SESSION" -L -Logfile /home/user/milky/eturlia_new/logs/test_stdout.log bash -c "cd $TEST_DIR && bash start.sh inscreen"
     sleep 3
     screen -ls | grep "\.${SESSION}\b" || { echo "[start] session did not come up"; exit 1; }
     ;;
