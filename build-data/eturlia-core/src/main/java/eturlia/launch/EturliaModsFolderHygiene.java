@@ -84,6 +84,12 @@ final class EturliaModsFolderHygiene {
                     + " Install the WorldEdit or FAWE Folia plugin in plugins/ instead.");
             return;
         }
+        if (isStateTableReplacement(lower)) {
+            skip(jar, mode, "it replaces the block-state tables Paper already replaced"
+                    + " (Blocks.<clinit> dies with \"index_table is null\"). Paper's own tables"
+                    + " already give you the memory saving this mod is for.");
+            return;
+        }
         if (isOriginalArclightSable(lower)) {
             skip(jar, mode, "Arclight sable AABB patch targets Arclight; Eturlia already has Folia bridges. Use arclight_sable_patch-*-eturlia-shim.jar if a modId placeholder is required.");
         }
@@ -104,6 +110,25 @@ final class EturliaModsFolderHygiene {
             return false;
         }
         return lower.contains("neoforge") || lower.contains("forge-") || lower.contains("fabric");
+    }
+
+    /**
+     * Mods that reimplement {@code StateHolder}'s neighbour tables.
+     *
+     * <p>Paper replaced those tables with {@code ZeroCollidingReferenceStateTable}, so a mod that
+     * swaps in its own is writing into a structure that no longer exists — the failure surfaces
+     * far from the cause, inside {@code Blocks}' static initialiser. There is nothing to patch on
+     * either side: both implementations are correct, and only one can own the table.</p>
+     */
+    private static boolean isStateTableReplacement(String lower) {
+        String extra = System.getProperty("eturlia.compat.quarantine", "");
+        for (String id : extra.split(",")) {
+            String trimmed = id.trim().toLowerCase(Locale.ROOT);
+            if (!trimmed.isEmpty() && lower.startsWith(trimmed)) {
+                return true;
+            }
+        }
+        return lower.startsWith("ferritecore");
     }
 
     private static boolean isOriginalArclightSable(String lower) {

@@ -1,0 +1,171 @@
+# Eturlia — what the core absorbs, and why
+
+Eturlia is Folia (Paper's regionised multithreading) with NeoForge's FML bolted on, running the
+**unmodified** NoteBuns production pack: 86 mods and 38 plugins, none of them patched.
+
+That last word is the whole design. Patching each mod does not scale past one pack update, so every
+fix below lives in the core and closes a *class* of failure rather than naming a mod. All of them
+are produced by one idempotent generator, [`scripts/apply_compat_layer.py`](../scripts/apply_compat_layer.py),
+run after `./gradlew applyPatches` and before the jar is built. Every plane has a switch, and
+`strict` restores stock Folia behaviour.
+
+## Where it stands
+
+| | |
+|---|---|
+| Boot | `Done (10.1s)` — 86 mods, 38 plugins |
+| Join | a player holds the world for **26 minutes** and counting, zero failed region ticks |
+| Errors in a 10-minute session with a player online | **1** (DecentHolograms, a Spigot-mapped plugin — see "Still open") |
+| Recipes lost at boot | **153 → 7** |
+
+## The failure classes, and what closes each
+
+### 1. Folia has no main thread, and mods keep asking for one
+
+`MinecraftServer.execute`, `executeBlocking` and `tell` all throw `UnsupportedOperationException`
+on Folia, because there is no single queue behind them. Mods do not know that. Supplementaries
+builds a chunk packet and calls `tell(...)` to send block-entity capabilities alongside it — the
+exception took the region tick with it, and **Folia answers a failed region tick by shutting the
+whole server down**, one second after the player joined.
+
+All three now share `MinecraftServer.eturlia$runAsMainThread`:
+
+* **inside a region tick** the task runs inline — that thread already owns the data the task is
+  about to touch, and it is the only choice that survives `ensureTickThread()`;
+* **anywhere else** (netty, plugin pools, the loader, and the bootstrap "Server thread", which is
+  a tick thread that owns no region) it goes on the global region's queue, where Folia itself puts
+  configuration-phase packets.
+
+Tasks are guarded: one that throws is logged, not fatal to its region.
+
+`eturlia.compat.folia-stubs=lenient` · also gives `MinecraftServer.getTickCount()` the global
+region's tick instead of throwing.
+
+### 2. NeoForge patches vanilla classes; our Folia copy does not have those patches
+
+NeoForge ships its own patched Minecraft. Every method it adds is missing here, and a mod that
+calls one dies with `NoSuchMethodError` inside whatever tick was running.
+
+| Missing | Who asked | Effect before |
+|---|---|---|
+| `LootContext.getQueriedLootTableId()` | Twilight Forest, on every block drop | region death |
+| `Entity.getCapability` / `ItemStack.getCapability` | Curios, first tick after a join | region death |
+| `Level.getCapability(BlockCapability, …)` | Supplementaries, per block entity per chunk sent | 270 errors per join |
+| `Item implements IItemExtension` | many | load failure |
+
+`LootContext` is a whole source file added to the tree — a new file under `src/main/java` shadows
+the decompiled vanilla one, which is also how `RecipeBookType` and `RecipeBookSettings` got here.
+`LootTable` names itself on the context before every roll, from `random_sequence` or from
+CraftBukkit's key.
+
+### 3. Modded recipes use NeoForge ingredient types
+
+A modded recipe writes `{"type":"neoforge:difference", …}` where vanilla expects an item or a tag,
+and the vanilla codec answers *"Not a json array"*. **153 recipes and 20 advancements were dropped
+at every boot** for that one reason: chest boats, hoppers, shulker boxes, trapped chests, minecarts,
+most of Twilight Forest's equipment.
+
+`Ingredient.codec()` now delegates to `CraftingHelper.makeIngredientCodec()`, which accepts every
+registered `IngredientType`. It needs `Value.MAP_CODEC`, `LIST_CODEC`, `LIST_CODEC_NONEMPTY`,
+`fromValues`, `getValues`, `getCustomIngredient` and `isCustom` — the class now exposes all of them.
+`MAP_CODEC_NONEMPTY` goes through `makeIngredientMapCodec()` so `SizedIngredient` and
+`FluidIngredient` read custom types inline too.
+
+One consequence had to be fixed with it: a custom ingredient can resolve to an empty stack, and
+`ItemStack.LIST_STREAM_CODEC` answers *"Empty ItemStack not allowed"* — which killed the join with
+`Failed to encode packet clientbound/minecraft:update_recipes`. `Ingredient.getItems()` now filters
+empty stacks out before they reach the wire.
+
+Remaining: 7 recipes, 6 of them one mod still writing the 1.20 result form (`item` where 1.21 wants
+`id`), and 20 Supplementaries advancements that reference items from mods this pack does not have.
+
+### 4. Bukkit enums cannot describe modded content
+
+`org.bukkit.EntityType`, `Material` and `Sound` are fixed sets. A modded entity, item or sound has
+no constant, and CraftBukkit's bridges threw — inside a region tick, which on Folia is a shutdown.
+
+* `CraftEntityType.minecraftToBukkit` answers `UNKNOWN` instead of throwing.
+* `EntityType.UNKNOWN` answers `getKey()` with `eturlia:unknown`. Listeners read the type of a
+  spawning entity and call `getKey()` without checking; throwing there aborts the whole event
+  dispatch, so every plugin registered after that one stops seeing spawns. **86 errors per five
+  minutes** came from this alone.
+* `CraftEntity.getEntity` wraps a modded entity as `CraftLivingEntity`, or as the new concrete
+  `CraftEntity.EturliaUnknownEntity` when it is not living.
+* `CraftSound.minecraftToBukkit` answers `null` for a modded sound. It is called while
+  `EntityDeathEvent` is being built, so throwing lost the mob's entire death — drops included.
+* `CraftMagicNumbers` no longer records `null` in its material maps. `Material.getMaterial()`
+  returns null for a modded item; storing that null made `ITEM_MATERIAL.getOrDefault(item, AIR)`
+  return the **stored null** — `getOrDefault` only substitutes for a missing key — so
+  `CraftItemStack.getType()` handed plugins a null `Material`.
+
+`eturlia.compat.bukkit-types=lenient`
+
+### 5. A vanilla tag on a modded server holds modded entries
+
+`CraftBlockTag.getValues()` mapped them through `minecraftToBukkit`, got `null`, and
+`Collectors.toUnmodifiableSet()` rejected it. WorldGuard reads tags from a **static initialiser**,
+so the failure killed `Materials` for the rest of the run — and the JVM discards the cause of an
+exception thrown inside a nested class initialisation (`ExceptionInInitializerError: Exception
+java.lang.NullPointerException [in thread "…"]`, no frames), which is why it took a while to find.
+
+All four tag classes now drop entries with no Bukkit counterpart, and `CraftServer.getTag` names
+the tags it cannot answer at all instead of returning a silent `null`.
+
+### 6. Mixins that fail must not take the class with them
+
+Mod mixin configs stop treating a failed injector as fatal; a still-failing mixin is identified by
+name, dropped from its config, and the class is transformed again from a pristine snapshot — losing
+one mixin instead of all of them. Worth not rediscovering:
+
+* `Mixins.getConfigs()` is **empty** by the time classes are transformed; use
+  `transformer.Config.allConfigs`.
+* Mixin's classes sit in a non-exported package: reach fields with `Unsafe`, and load classes with
+  **Mixin's own classloader** or you get a second copy with empty statics.
+* ModLauncher calls `processClassWithFlags`, not `processClass`, and on 11.0.3 it returns an **int**
+  of ASM writer flags — returning null NPEs inside the caller.
+* A failed mixin leaves the `ClassNode` half-written and the class then fails verification.
+
+`eturlia.compat.mixins=soft`
+
+### 7. Registries, enums and the handshake
+
+* Frozen registries reopen for late registration; orphaned intrusive holders are dropped
+  (`eturlia.compat.registries=lenient`).
+* `RecipeBookType` implements `IExtensibleEnum`, carries `@NetworkedEnum(CLIENTBOUND)` and a
+  `getExtensionInfo()`. Deliberately **not** `@ReservedConstructor`: FarmersDelight adds
+  `FARMERSDELIGHT_COOKING` through that very constructor.
+* `RecipeBookSettings` defaults every read, so a player whose data mentions a modded category loads.
+* CraftBukkit added a `ServerPlayer` parameter to `ServerConfigurationPacketListenerImpl`'s
+  constructor, which stopped badpackets' injector from matching. An overload does not help — a
+  mixin aimed at `<init>` applies to *every* constructor — so CraftBukkit's form became the static
+  factory `eturlia$create`, leaving exactly one constructor with vanilla's signature.
+* A mod's `VoxelShape` subclass finishes constructing before Paper's collision cache is built.
+* 36 modded `EntityDataSerializer`s get wire ids from NeoForge's registry, mirroring its order.
+
+### 8. Plugins on Folia
+
+The folia-supported gate is off and the legacy `BukkitScheduler` is driven from the global tick
+(`eturlia.compat.plugins=true`).
+
+## Still open
+
+| What | Where it stands |
+|---|---|
+| DecentHolograms, InvSee++ — `CraftPlayer.getHandle()` returning `EntityPlayer`, `org.bukkit.craftbukkit.v1_21_R1` | Spigot-mapped plugins. Paper's remapper is wired to mappings on disk but gated off: with `-Deturlia.compat.plugin-remap=true` the boot reaches "Remapping server…" and then the plugin system dies loading `io.papermc.paper.pluginremap.InsertManifestAttribute`, because `net.neoforged.art.api.Transformer` is not visible from the layer ModLauncher loads the server into. Details in `HANDOFF.md`. |
+| `NeoForge handleServerStarted failed` | `TickRegionScheduler.getCurrentRegion()` is null on the Server thread, so mods' `ServerStartedEvent` handlers are skipped. |
+| 7 recipes, 20 advancements | outdated mod JSON and references to absent mods; not core. |
+| Paper's `LibraryLoader` under ModLauncher | plugins declaring `libraries:` cannot resolve Maven. |
+| EssentialsX `ConcurrentModificationException` on the command map | a plugin iterating `knownCommands` while another thread registers; a concurrent backing map would close it. |
+
+## Verifying a build
+
+`tools/join_stable.sh <seconds>` is the whole loop: kill stale clients, start the headless client,
+wait for the login line, log the tester in past AuthMe, put it in creative, hold, then print
+`STABLE` / `DISCONNECT` / `REGION_DEATH` and a counted list of new server-side errors.
+
+Two harness facts that cost real time:
+
+* A **dead** tester sends nothing at all, so Netty's 30 s read timeout closes the connection and the
+  server reports `lost connection: Timed out` — which reads exactly like a server fault and is not
+  one. A dead player stays dead across rejoins. Hence creative.
+* `pkill -f <pattern>` kills your own shell when the pattern appears in its command line.

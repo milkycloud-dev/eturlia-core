@@ -1,0 +1,100 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: milkycloud-dev <uberlion1@gmail.com>
+Date: Tue, 11 Aug 2026 11:31:18 +0300
+Subject: [PATCH] Modded Property, NeoForge registry snapshot, Ingredient
+ inline codec
+
+
+diff --git a/src/main/java/net/minecraft/server/Main.java b/src/main/java/net/minecraft/server/Main.java
+index 29a90b3317f617956a64cbd945852d939e6d30ab..2a199a31833c6aba5141a50a2bd11e6a178ebab3 100644
+--- a/src/main/java/net/minecraft/server/Main.java
++++ b/src/main/java/net/minecraft/server/Main.java
+@@ -163,6 +163,18 @@ public class Main {
+             io.papermc.paper.plugin.PluginInitializerManager.load(optionset); // Paper
+             Bootstrap.bootStrap();
+             Bootstrap.validate();
++            // Eturlia start - NeoForge patches Bootstrap to do this; we call stock Bootstrap.
++            // Without the snapshot, a mod that fails to register makes NeoForge's rollback throw
++            // a NullPointerException that hides which mod actually failed.
++            try {
++                Class.forName("net.neoforged.neoforge.registries.GameData")
++                        .getMethod("vanillaSnapshot")
++                        .invoke(null);
++            } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
++                LOGGER.warn("NeoForge vanilla registry snapshot unavailable; "
++                        + "a mod registration failure will be reported as a NullPointerException", e);
++            }
++            // Eturlia end
+             // NeoForge: load mods after registries are bootstrapped (stock NF Main order)
+             try {
+                 Class.forName("net.neoforged.neoforge.server.loading.ServerModLoader")
+diff --git a/src/main/java/net/minecraft/world/item/crafting/Ingredient.java b/src/main/java/net/minecraft/world/item/crafting/Ingredient.java
+index 5afb43107cc7e7169e5a8377c1195a5d593dab28..72730d09fd2b30a4c71e47ae5c104f3f0a62c868 100644
+--- a/src/main/java/net/minecraft/world/item/crafting/Ingredient.java
++++ b/src/main/java/net/minecraft/world/item/crafting/Ingredient.java
+@@ -53,6 +53,22 @@ public final class Ingredient implements Predicate<ItemStack> {
+     public static final Codec<Ingredient> CODEC = Ingredient.codec(true);
+     public static final Codec<Ingredient> CODEC_NONEMPTY = Ingredient.codec(false);
+     // Eturlia end - custom ingredient types
++    // Eturlia start - NeoForge's SizedIngredient and FluidIngredient read an ingredient from the
++    // fields of the enclosing object rather than a nested one, and take this codec from here.
++    /**
++     * An ingredient read inline from the surrounding map, e.g. {@code {"item": "x", "count": 2}}.
++     *
++     * <p>Encoding requires exactly one entry: an inline ingredient has no room for a list.</p>
++     */
++    public static final com.mojang.serialization.MapCodec<Ingredient> MAP_CODEC_NONEMPTY =
++        Ingredient.Value.MAP_CODEC.flatXmap(
++            value -> DataResult.success(new Ingredient(new Ingredient.Value[]{value})),
++            ingredient -> ingredient.values.length == 1
++                ? DataResult.success(ingredient.values[0])
++                : DataResult.error(() -> "An inline ingredient must have exactly one entry, found "
++                        + ingredient.values.length));
++    // Eturlia end
++
+     // NeoForge: list codecs expected by CompoundIngredient / CraftingHelper (vanilla-backed shim until full custom-ingredient port)
+     public static final Codec<List<Ingredient>> LIST_CODEC = CODEC.listOf();
+     public static final Codec<List<Ingredient>> LIST_CODEC_NONEMPTY = CODEC_NONEMPTY.listOf().validate(list -> {
+diff --git a/src/main/java/net/minecraft/world/level/block/state/properties/Property.java b/src/main/java/net/minecraft/world/level/block/state/properties/Property.java
+index b9493e3762410aca8e683c32b5aef187c0bee082..d98d29d5a06fdafc627ca8f1641cb3262062b228 100644
+--- a/src/main/java/net/minecraft/world/level/block/state/properties/Property.java
++++ b/src/main/java/net/minecraft/world/level/block/state/properties/Property.java
+@@ -32,7 +32,37 @@ public abstract class Property<T extends Comparable<T>> {
+         return this.id;
+     }
+ 
+-    public abstract int getIdFor(final T value);
++    // Eturlia start - was abstract; mods define their own Property subclasses and were compiled
++    // against vanilla, where this method does not exist, so calling it threw AbstractMethodError.
++    /** Cached value ordering, built once from {@link #getPossibleValues()}. */
++    @Nullable
++    private volatile java.util.Map<T, Integer> eturlia$valueIds;
++
++    /**
++     * Index of {@code value} among this property's possible values.
++     *
++     * <p>Vanilla's subclasses override this with a direct computation. The default exists for
++     * properties added by mods: without it, Paper's state table cannot look them up at all.</p>
++     *
++     * @return the index, or {@code -1} if the value does not belong to this property
++     */
++    public int getIdFor(final T value) {
++        java.util.Map<T, Integer> ids = this.eturlia$valueIds;
++        if (ids == null) {
++            // getPossibleValues() is only safe to call once the subclass is constructed, which is
++            // why this is lazy rather than done in the constructor.
++            java.util.Map<T, Integer> built = new java.util.HashMap<>();
++            int index = 0;
++            for (T possible : this.getPossibleValues()) {
++                built.put(possible, index++);
++            }
++            this.eturlia$valueIds = ids = built;
++        }
++
++        Integer id = ids.get(value);
++        return id == null ? -1 : id;
++    }
++    // Eturlia end
+     // Paper end - optimise state lookup
+ 
+     protected Property(String name, Class<T> type) {
