@@ -263,6 +263,9 @@ gradle.projectsEvaluated {
                             // console appender, so eturlia-core needs the API + core at compile time.
                             || n.startsWith("log4j-api-")
                             || n.startsWith("log4j-core-")
+                            // mixin: EturliaMixinErrorHandler implements IMixinErrorHandler so a
+                            // mod's unusable mixin can be skipped instead of aborting the boot.
+                            || n.startsWith("sponge-mixin-")
                 }
             },
             // Bootstrap copies (known versions) as a fallback if runtimeClasspath filter misses them

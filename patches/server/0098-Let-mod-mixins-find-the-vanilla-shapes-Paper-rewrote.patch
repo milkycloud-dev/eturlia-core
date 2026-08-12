@@ -1,0 +1,288 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: milkycloud-dev <uberlion1@gmail.com>
+Date: Tue, 11 Aug 2026 11:06:52 +0300
+Subject: [PATCH] Let mod mixins find the vanilla shapes Paper rewrote
+
+
+diff --git a/src/main/java/io/papermc/paper/PaperBootstrap.java b/src/main/java/io/papermc/paper/PaperBootstrap.java
+index 8b3df5547f33ba0d1fe2badb417849516d5241d7..46e50a62ea863baa6df74aa1dab12390554ef693 100644
+--- a/src/main/java/io/papermc/paper/PaperBootstrap.java
++++ b/src/main/java/io/papermc/paper/PaperBootstrap.java
+@@ -20,7 +20,7 @@ public final class PaperBootstrap {
+ 
+         // ServerModLoader runs after Bootstrap.bootStrap() inside net.minecraft.server.Main
+         // (NeoForge registries require a completed Bootstrap).
+-        Main.main(options);
++        Main.eturlia$bootFromOptions(options);
+     }
+ 
+     private static List<String> getStartupVersionMessages() {
+diff --git a/src/main/java/net/minecraft/data/tags/TagsProvider.java b/src/main/java/net/minecraft/data/tags/TagsProvider.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..24e55194f9e4a53c358a4c806f74d791a08a41c4
+--- /dev/null
++++ b/src/main/java/net/minecraft/data/tags/TagsProvider.java
+@@ -0,0 +1,192 @@
++package net.minecraft.data.tags;
++
++import com.google.common.collect.Maps;
++import java.nio.file.Path;
++import java.util.List;
++import java.util.Locale;
++import java.util.Map;
++import java.util.Objects;
++import java.util.Optional;
++import java.util.concurrent.CompletableFuture;
++import java.util.function.Function;
++import java.util.function.Predicate;
++import java.util.stream.Collectors;
++import net.minecraft.Util;
++import net.minecraft.core.HolderLookup;
++import net.minecraft.core.Registry;
++import net.minecraft.data.CachedOutput;
++import net.minecraft.data.DataProvider;
++import net.minecraft.data.PackOutput;
++import net.minecraft.resources.ResourceKey;
++import net.minecraft.resources.ResourceLocation;
++import net.minecraft.tags.TagBuilder;
++import net.minecraft.tags.TagEntry;
++import net.minecraft.tags.TagFile;
++import net.minecraft.tags.TagKey;
++
++public abstract class TagsProvider<T> implements DataProvider {
++    // Eturlia start - NeoForge adds this for data generators; mods @Shadow it
++    /**
++     * NeoForge's data-generation helper.
++     *
++     * <p>Never used by a running server - data generation happens at build time - but mods
++     * such as puzzleslib shadow it, and a mixin that cannot resolve a shadowed field aborts
++     * the whole boot.</p>
++     */
++    protected net.neoforged.neoforge.common.data.ExistingFileHelper existingFileHelper;
++    // Eturlia end
++
++    protected final PackOutput.PathProvider pathProvider;
++    private final CompletableFuture<HolderLookup.Provider> lookupProvider;
++    private final CompletableFuture<Void> contentsDone = new CompletableFuture<>();
++    private final CompletableFuture<TagsProvider.TagLookup<T>> parentProvider;
++    protected final ResourceKey<? extends Registry<T>> registryKey;
++    private final Map<ResourceLocation, TagBuilder> builders = Maps.newLinkedHashMap();
++
++    protected TagsProvider(PackOutput output, ResourceKey<? extends Registry<T>> registryRef, CompletableFuture<HolderLookup.Provider> registryLookupFuture) {
++        this(output, registryRef, registryLookupFuture, CompletableFuture.completedFuture(TagsProvider.TagLookup.empty()));
++    }
++
++    protected TagsProvider(
++        PackOutput output,
++        ResourceKey<? extends Registry<T>> registryRef,
++        CompletableFuture<HolderLookup.Provider> registryLookupFuture,
++        CompletableFuture<TagsProvider.TagLookup<T>> parentTagLookupFuture
++    ) {
++        this.pathProvider = output.createRegistryTagsPathProvider(registryRef);
++        this.registryKey = registryRef;
++        this.parentProvider = parentTagLookupFuture;
++        this.lookupProvider = registryLookupFuture;
++    }
++
++    @Override
++    public final String getName() {
++        return "Tags for " + this.registryKey.location();
++    }
++
++    protected abstract void addTags(HolderLookup.Provider lookup);
++
++    @Override
++    public CompletableFuture<?> run(CachedOutput writer) {
++        record CombinedData<T>(HolderLookup.Provider contents, TagsProvider.TagLookup<T> parent) {
++        }
++
++        return this.createContentsProvider()
++            .thenApply(registryLookupFuture -> {
++                this.contentsDone.complete(null);
++                return (HolderLookup.Provider)registryLookupFuture;
++            })
++            .thenCombineAsync(this.parentProvider, (lookup, parent) -> new CombinedData<>(lookup, (TagsProvider.TagLookup<T>)parent), Util.backgroundExecutor())
++            .thenCompose(
++                info -> {
++                    HolderLookup.RegistryLookup<T> registryLookup = info.contents.lookupOrThrow(this.registryKey);
++                    Predicate<ResourceLocation> predicate = id -> registryLookup.get(ResourceKey.create(this.registryKey, id)).isPresent();
++                    Predicate<ResourceLocation> predicate2 = id -> this.builders.containsKey(id) || info.parent.contains(TagKey.create(this.registryKey, id));
++                    return CompletableFuture.allOf(
++                        this.builders
++                            .entrySet()
++                            .stream()
++                            .map(
++                                entry -> {
++                                    ResourceLocation resourceLocation = entry.getKey();
++                                    TagBuilder tagBuilder = entry.getValue();
++                                    List<TagEntry> list = tagBuilder.build();
++                                    List<TagEntry> list2 = list.stream().filter(tagEntry -> !tagEntry.verifyIfPresent(predicate, predicate2)).toList();
++                                    if (!list2.isEmpty()) {
++                                        throw new IllegalArgumentException(
++                                            String.format(
++                                                Locale.ROOT,
++                                                "Couldn't define tag %s as it is missing following references: %s",
++                                                resourceLocation,
++                                                list2.stream().map(Objects::toString).collect(Collectors.joining(","))
++                                            )
++                                        );
++                                    } else {
++                                        Path path = this.pathProvider.json(resourceLocation);
++                                        return DataProvider.saveStable(writer, info.contents, TagFile.CODEC, new TagFile(list, false), path);
++                                    }
++                                }
++                            )
++                            .toArray(CompletableFuture[]::new)
++                    );
++                }
++            );
++    }
++
++    protected TagsProvider.TagAppender<T> tag(TagKey<T> tag) {
++        TagBuilder tagBuilder = this.getOrCreateRawBuilder(tag);
++        return new TagsProvider.TagAppender<>(tagBuilder);
++    }
++
++    protected TagBuilder getOrCreateRawBuilder(TagKey<T> tag) {
++        return this.builders.computeIfAbsent(tag.location(), id -> TagBuilder.create());
++    }
++
++    public CompletableFuture<TagsProvider.TagLookup<T>> contentsGetter() {
++        return this.contentsDone.thenApply(void_ -> tag -> Optional.ofNullable(this.builders.get(tag.location())));
++    }
++
++    protected CompletableFuture<HolderLookup.Provider> createContentsProvider() {
++        return this.lookupProvider.thenApply(lookup -> {
++            this.builders.clear();
++            this.addTags(lookup);
++            return (HolderLookup.Provider)lookup;
++        });
++    }
++
++    protected static class TagAppender<T> {
++        private final TagBuilder builder;
++
++        protected TagAppender(TagBuilder builder) {
++            this.builder = builder;
++        }
++
++        public final TagsProvider.TagAppender<T> add(ResourceKey<T> key) {
++            this.builder.addElement(key.location());
++            return this;
++        }
++
++        @SafeVarargs
++        public final TagsProvider.TagAppender<T> add(ResourceKey<T>... keys) {
++            for (ResourceKey<T> resourceKey : keys) {
++                this.builder.addElement(resourceKey.location());
++            }
++
++            return this;
++        }
++
++        public final TagsProvider.TagAppender<T> addAll(List<ResourceKey<T>> keys) {
++            for (ResourceKey<T> resourceKey : keys) {
++                this.builder.addElement(resourceKey.location());
++            }
++
++            return this;
++        }
++
++        public TagsProvider.TagAppender<T> addOptional(ResourceLocation id) {
++            this.builder.addOptionalElement(id);
++            return this;
++        }
++
++        public TagsProvider.TagAppender<T> addTag(TagKey<T> identifiedTag) {
++            this.builder.addTag(identifiedTag.location());
++            return this;
++        }
++
++        public TagsProvider.TagAppender<T> addOptionalTag(ResourceLocation id) {
++            this.builder.addOptionalTag(id);
++            return this;
++        }
++    }
++
++    @FunctionalInterface
++    public interface TagLookup<T> extends Function<TagKey<T>, Optional<TagBuilder>> {
++        static <T> TagsProvider.TagLookup<T> empty() {
++            return tag -> Optional.empty();
++        }
++
++        default boolean contains(TagKey<T> tag) {
++            return this.apply(tag).isPresent();
++        }
++    }
++}
+diff --git a/src/main/java/net/minecraft/server/Main.java b/src/main/java/net/minecraft/server/Main.java
+index d615aedbc59e67d6c4d624a9c57cc7897dcdd0bf..29a90b3317f617956a64cbd945852d939e6d30ab 100644
+--- a/src/main/java/net/minecraft/server/Main.java
++++ b/src/main/java/net/minecraft/server/Main.java
+@@ -90,7 +90,16 @@ public class Main {
+     public Main() {}
+ 
+     @DontObfuscate
+-    public static void main(final OptionSet optionset) { // CraftBukkit / Paper entry
++    /**
++     * CraftBukkit/Paper entry point.
++     *
++     * <p>Deliberately <b>not</b> named {@code main}: mods target Mojang's
++     * {@code main(String[])} by name only, and a second overload makes that reference
++     * ambiguous - WorldWeaver's {@code world_folder.MainMixin} resolves to this method,
++     * finds no {@code validateAndCreateAccess} call in it, and fails its injection check
++     * hard enough to abort the boot.</p>
++     */
++    public static void eturlia$bootFromOptions(final OptionSet optionset) {
+         ETURLIA$OPTION_SET.set(optionset);
+         try {
+             main(new String[0]); // Eturlia: Mojang-shaped entry for mod mixins
+diff --git a/src/main/java/net/minecraft/world/entity/LivingEntity.java b/src/main/java/net/minecraft/world/entity/LivingEntity.java
+index ed67735907e3f0fe55030b14192dd59812a27eed..a861590054b2d3494dbcbbb7fc6c0a9e6600a893 100644
+--- a/src/main/java/net/minecraft/world/entity/LivingEntity.java
++++ b/src/main/java/net/minecraft/world/entity/LivingEntity.java
+@@ -1598,7 +1598,13 @@ public abstract class LivingEntity extends Entity implements Attackable {
+                     }
+                     // Paper end - Check distance in entity interactions
+ 
+-                    this.knockback(0.4000000059604645D, d0, d1, entity1, entity1 == null ? io.papermc.paper.event.entity.EntityKnockbackEvent.Cause.DAMAGE : io.papermc.paper.event.entity.EntityKnockbackEvent.Cause.ENTITY_ATTACK); // CraftBukkit // Paper - knockback events
++                    // Eturlia start - keep Mojang's call shape so mod injectors still find it
++                    this.eturlia$knockbackAttacker = entity1;
++                    this.eturlia$knockbackCause = entity1 == null
++                            ? io.papermc.paper.event.entity.EntityKnockbackEvent.Cause.DAMAGE
++                            : io.papermc.paper.event.entity.EntityKnockbackEvent.Cause.ENTITY_ATTACK;
++                    this.knockback(0.4000000059604645D, d0, d1); // CraftBukkit // Paper - knockback events
++                    // Eturlia end
+                     if (!flag) {
+                         this.indicateDamage(d0, d1);
+                     }
+@@ -1988,9 +1994,28 @@ public abstract class LivingEntity extends Entity implements Attackable {
+         loottable.getRandomItems(lootparams, this.getLootTableSeed(), this::spawnAtLocation);
+     }
+ 
++    // Eturlia start - carries the attacker/cause for the call in hurt, which uses Mojang's shape
++    /** Attacker for the next {@link #knockback(double, double, double)} call, consumed once. */
++    @Nullable
++    private Entity eturlia$knockbackAttacker;
++
++    /** Cause for the next {@link #knockback(double, double, double)} call, consumed once. */
++    @Nullable
++    private io.papermc.paper.event.entity.EntityKnockbackEvent.Cause eturlia$knockbackCause;
++    // Eturlia end
++
+     public void knockback(double strength, double x, double z) {
+         // CraftBukkit start - EntityKnockbackEvent
+-        this.knockback(strength, x, z, null, io.papermc.paper.event.entity.EntityKnockbackEvent.Cause.UNKNOWN); // Paper - knockback events
++        // Eturlia start - hurt() sets these immediately before calling, so Paper's event keeps
++        // the attacker and cause it had before the call was reshaped for mod injectors.
++        Entity eturliaAttacker = this.eturlia$knockbackAttacker;
++        io.papermc.paper.event.entity.EntityKnockbackEvent.Cause eturliaCause = this.eturlia$knockbackCause;
++        this.eturlia$knockbackAttacker = null;
++        this.eturlia$knockbackCause = null;
++        this.knockback(strength, x, z, eturliaAttacker, eturliaCause == null
++                ? io.papermc.paper.event.entity.EntityKnockbackEvent.Cause.UNKNOWN
++                : eturliaCause);
++        // Eturlia end
+     }
+ 
+     public void knockback(double d0, double d1, double d2, @Nullable Entity attacker, io.papermc.paper.event.entity.EntityKnockbackEvent.Cause cause) { // Paper - knockback events

@@ -1,0 +1,885 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Eturlia Build <eturlia-build@fourthserver.local>
+Date: Tue, 11 Aug 2026 09:01:19 +0300
+Subject: [PATCH] Eturlia: bundle pipeline order, Create canRiderInteract,
+ saved data, codec by type
+
+
+diff --git a/src/main/java/net/minecraft/network/Connection.java b/src/main/java/net/minecraft/network/Connection.java
+index e0ebfce6124a8beb8ff82d9c3552569d5c78649c..403ecccd46a360bd67201a0231da53e0da9c603b 100644
+--- a/src/main/java/net/minecraft/network/Connection.java
++++ b/src/main/java/net/minecraft/network/Connection.java
+@@ -414,7 +414,15 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+                 PacketBundleUnpacker packetbundleunpacker = new PacketBundleUnpacker(bundlerinfo);
+ 
+                 unconfiguredpipelinehandler_d = unconfiguredpipelinehandler_d.andThen((channelhandlercontext) -> {
+-                    channelhandlercontext.pipeline().addAfter("encoder", "unbundler", packetbundleunpacker);
++                    // Eturlia start - the unbundler has to see outbound packets before NeoForge's
++                    // splitter does. Both are installed with addAfter("encoder", ...), and outbound
++                    // traffic runs tail->head, so anchoring on the splitter (when NetworkFilters
++                    // injected one) is what puts the unbundler first.
++                    String anchor = channelhandlercontext.pipeline().get("neoforge:splitter") != null
++                            ? "neoforge:splitter"
++                            : "encoder";
++                    channelhandlercontext.pipeline().addAfter(anchor, "unbundler", packetbundleunpacker);
++                    // Eturlia end
+                 });
+             }
+ 
+diff --git a/src/main/java/net/minecraft/network/PacketEncoder.java b/src/main/java/net/minecraft/network/PacketEncoder.java
+index af3ec112e142a2c91c46882dad6180b18f39eec2..a9f631503a095493b8078633c9338deee6fa1fd0 100644
+--- a/src/main/java/net/minecraft/network/PacketEncoder.java
++++ b/src/main/java/net/minecraft/network/PacketEncoder.java
+@@ -69,4 +69,13 @@ public class PacketEncoder<T extends PacketListener> extends MessageToByteEncode
+         }
+     }
+     // Paper end
++
++    // Eturlia start - NeoForge needs the live protocol to pick a payload codec. Without this
++    // accessor its encoder path dies with
++    //   NoSuchMethodError: PacketEncoder.getProtocolInfo()
++    // which the client reports as "Internal Exception: SocketException: Connection reset".
++    public ProtocolInfo<T> getProtocolInfo() {
++        return this.protocolInfo;
++    }
++    // Eturlia end
+ }
+diff --git a/src/main/java/net/minecraft/network/RegistryFriendlyByteBuf.java b/src/main/java/net/minecraft/network/RegistryFriendlyByteBuf.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..e987d7b5658cab351fee80d0f809726b98db412f
+--- /dev/null
++++ b/src/main/java/net/minecraft/network/RegistryFriendlyByteBuf.java
+@@ -0,0 +1,41 @@
++package net.minecraft.network;
++
++import io.netty.buffer.ByteBuf;
++import java.util.function.Function;
++import net.minecraft.core.RegistryAccess;
++
++public class RegistryFriendlyByteBuf extends FriendlyByteBuf {
++    private final RegistryAccess registryAccess;
++    // Eturlia - NeoForge reads the connection type off the buffer when encoding.
++    private final net.neoforged.neoforge.network.connection.ConnectionType eturlia$connectionType;
++
++    public RegistryFriendlyByteBuf(ByteBuf buf, RegistryAccess registryManager) {
++        super(buf);
++        this.registryAccess = registryManager;
++        this.eturlia$connectionType = net.neoforged.neoforge.network.connection.ConnectionType.OTHER;
++    }
++
++    // Eturlia - NeoForge overload: keep the negotiated connection type with the buffer.
++    public RegistryFriendlyByteBuf(ByteBuf buf, RegistryAccess registryManager, net.neoforged.neoforge.network.connection.ConnectionType connectionType) {
++        super(buf);
++        this.registryAccess = registryManager;
++        this.eturlia$connectionType = connectionType;
++    }
++
++    public net.neoforged.neoforge.network.connection.ConnectionType getConnectionType() {
++        return this.eturlia$connectionType;
++    }
++
++    public RegistryAccess registryAccess() {
++        return this.registryAccess;
++    }
++
++    public static Function<ByteBuf, RegistryFriendlyByteBuf> decorator(RegistryAccess registryManager) {
++        return buf -> new RegistryFriendlyByteBuf(buf, registryManager);
++    }
++
++    // Eturlia - NeoForge overload used once the connection type is known.
++    public static Function<ByteBuf, RegistryFriendlyByteBuf> decorator(RegistryAccess registries, net.neoforged.neoforge.network.connection.ConnectionType connectionType) {
++        return buf -> new RegistryFriendlyByteBuf(buf, registries, connectionType);
++    }
++}
+diff --git a/src/main/java/net/minecraft/network/protocol/PacketFlow.java b/src/main/java/net/minecraft/network/protocol/PacketFlow.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..6680413aa348d811913a881d9261cee3d314d340
+--- /dev/null
++++ b/src/main/java/net/minecraft/network/protocol/PacketFlow.java
+@@ -0,0 +1,29 @@
++package net.minecraft.network.protocol;
++
++public enum PacketFlow {
++    SERVERBOUND("serverbound"),
++    CLIENTBOUND("clientbound");
++
++    private final String id;
++
++    private PacketFlow(final String name) {
++        this.id = name;
++    }
++
++    public PacketFlow getOpposite() {
++        return this == CLIENTBOUND ? SERVERBOUND : CLIENTBOUND;
++    }
++
++    public String id() {
++        return this.id;
++    }
++
++    // Eturlia - NeoForge queries the direction while syncing registries
++    public boolean isClientbound() {
++        return this == CLIENTBOUND;
++    }
++
++    public boolean isServerbound() {
++        return this == SERVERBOUND;
++    }
++}
+diff --git a/src/main/java/net/minecraft/network/protocol/common/ServerboundCustomPayloadPacket.java b/src/main/java/net/minecraft/network/protocol/common/ServerboundCustomPayloadPacket.java
+index fcbe7bf61d1bcf1fa6ba5df500be0543be317e23..011a60350627bd1d2172e5cf8d043c38e5598b28 100644
+--- a/src/main/java/net/minecraft/network/protocol/common/ServerboundCustomPayloadPacket.java
++++ b/src/main/java/net/minecraft/network/protocol/common/ServerboundCustomPayloadPacket.java
+@@ -15,8 +15,16 @@ public record ServerboundCustomPayloadPacket(CustomPacketPayload payload) implem
+     private static final int MAX_PAYLOAD_SIZE = 32767;
+     public static final StreamCodec<FriendlyByteBuf, ServerboundCustomPayloadPacket> STREAM_CODEC = CustomPacketPayload.codec((minecraftkey) -> {
+         return DiscardedPayload.codec(minecraftkey, 32767);
+-    }, java.util.Collections.emptyList(), net.minecraft.network.ConnectionProtocol.CONFIGURATION, net.minecraft.network.protocol.PacketFlow.SERVERBOUND) // Eturlia - NeoForge payload codecs
++    }, java.util.Collections.emptyList(), net.minecraft.network.ConnectionProtocol.PLAY, net.minecraft.network.protocol.PacketFlow.SERVERBOUND) // Eturlia - NeoForge payload codecs
+             .map(ServerboundCustomPayloadPacket::new, ServerboundCustomPayloadPacket::payload); // CraftBukkit - treat all packets the same
++    // Eturlia start - NeoForge payload codecs: the configuration phase needs its own
++    // registry view, otherwise play-phase mod payloads are decoded against the
++    // configuration channels and the connection dies in the netty decoder.
++    public static final StreamCodec<FriendlyByteBuf, ServerboundCustomPayloadPacket> CONFIG_STREAM_CODEC = CustomPacketPayload.codec((minecraftkey) -> {
++        return DiscardedPayload.codec(minecraftkey, 32767);
++    }, java.util.List.of(new CustomPacketPayload.TypeAndCodec<>(net.minecraft.network.protocol.common.custom.BrandPayload.TYPE, net.minecraft.network.protocol.common.custom.BrandPayload.STREAM_CODEC)), net.minecraft.network.ConnectionProtocol.CONFIGURATION, net.minecraft.network.protocol.PacketFlow.SERVERBOUND)
++            .map(ServerboundCustomPayloadPacket::new, ServerboundCustomPayloadPacket::payload);
++    // Eturlia end - NeoForge payload codecs
+ 
+     @Override
+     public PacketType<ServerboundCustomPayloadPacket> type() {
+diff --git a/src/main/java/net/minecraft/network/protocol/common/custom/CustomPacketPayload.java b/src/main/java/net/minecraft/network/protocol/common/custom/CustomPacketPayload.java
+index 14adde9c952fb9e301790720acd2cc7f994d0865..3dfadb48c8d1ef073cb813163915233dc2226077 100644
+--- a/src/main/java/net/minecraft/network/protocol/common/custom/CustomPacketPayload.java
++++ b/src/main/java/net/minecraft/network/protocol/common/custom/CustomPacketPayload.java
+@@ -11,6 +11,18 @@ import net.minecraft.network.codec.StreamMemberEncoder;
+ import net.minecraft.resources.ResourceLocation;
+ 
+ public interface CustomPacketPayload {
++
++    // Eturlia start - NeoForge wraps its payloads into packets through these helpers; they are
++    // default methods on this interface upstream, so its payload classes never declare them.
++    default net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket toVanillaClientbound() {
++        return new net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket(this);
++    }
++
++    default net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket toVanillaServerbound() {
++        return new net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket(this);
++    }
++    // Eturlia end - NeoForge payload helpers
++
+     CustomPacketPayload.Type<? extends CustomPacketPayload> type();
+ 
+     static <B extends ByteBuf, T extends CustomPacketPayload> StreamCodec<B, T> codec(StreamMemberEncoder<B, T> encoder, StreamDecoder<B, T> decoder) {
+@@ -34,7 +46,16 @@ public interface CustomPacketPayload {
+                 // the vanilla discard path, or NeoForge payloads are cast to DiscardedPayload and
+                 // the encoder kills the connection with an internal netty exception.
+                 if (streamCodec == null) {
+-                    streamCodec = net.neoforged.neoforge.network.registration.NetworkRegistry.getCodec(id, protocol, packetFlow);
++                    // The registry refuses unknown ids rather than returning null (it logs
++                    // "No registration for payload ..."), and CraftBukkit deliberately keeps the
++                    // known-type list empty so everything else becomes a DiscardedPayload for
++                    // plugins. Treat a refusal as "not mine" and let vanilla handle it —
++                    // otherwise minecraft:brand from a joining client kills the connection.
++                    try {
++                        streamCodec = net.neoforged.neoforge.network.registration.NetworkRegistry.getCodec(id, protocol, packetFlow);
++                    } catch (RuntimeException ignored) {
++                        streamCodec = null;
++                    }
+                 }
+                 // Eturlia end - NeoForge payload codecs
+                 return streamCodec != null ? streamCodec : unknownCodecFactory.create(id);
+@@ -43,8 +64,19 @@ public interface CustomPacketPayload {
+             private <T extends CustomPacketPayload> void writeCap(B value, CustomPacketPayload.Type<T> id, CustomPacketPayload payload) {
+                 value.writeResourceLocation(id.id());
+                 @SuppressWarnings("unchecked") // Eturlia - decompiler dropped this cast; the file only compiles now that it is patched
+-                StreamCodec<B, T> streamCodec = (StreamCodec<B, T>) this.findCodec(id.id);
+-                streamCodec.encode(value, (T)payload);
++                // Eturlia - choose the codec by what we are actually holding, not by id
++                // alone: Paper sends minecraft:register for plugin channels as a
++                // DiscardedPayload while the same id also resolves to NeoForge's typed codec.
++                StreamCodec<B, T> streamCodec = payload instanceof DiscardedPayload
++                        ? (StreamCodec<B, T>) unknownCodecFactory.create(id.id())
++                        : (StreamCodec<B, T>) this.findCodec(id.id);
++                // Eturlia - name the payload in the failure: netty otherwise reports only
++                // "Failed to encode packet clientbound/minecraft:custom_payload".
++                try {
++                    streamCodec.encode(value, (T)payload);
++                } catch (RuntimeException e) {
++                    throw new RuntimeException("Failed encoding custom payload " + id.id() + ": " + e, e);
++                }
+             }
+ 
+             @Override
+diff --git a/src/main/java/net/minecraft/network/protocol/configuration/ConfigurationProtocols.java b/src/main/java/net/minecraft/network/protocol/configuration/ConfigurationProtocols.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..ea256f1a33f2487ed3c71e8856acd9c09419d4b3
+--- /dev/null
++++ b/src/main/java/net/minecraft/network/protocol/configuration/ConfigurationProtocols.java
+@@ -0,0 +1,62 @@
++package net.minecraft.network.protocol.configuration;
++
++import net.minecraft.network.ConnectionProtocol;
++import net.minecraft.network.FriendlyByteBuf;
++import net.minecraft.network.ProtocolInfo;
++import net.minecraft.network.protocol.ProtocolInfoBuilder;
++import net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket;
++import net.minecraft.network.protocol.common.ClientboundCustomReportDetailsPacket;
++import net.minecraft.network.protocol.common.ClientboundDisconnectPacket;
++import net.minecraft.network.protocol.common.ClientboundKeepAlivePacket;
++import net.minecraft.network.protocol.common.ClientboundPingPacket;
++import net.minecraft.network.protocol.common.ClientboundResourcePackPopPacket;
++import net.minecraft.network.protocol.common.ClientboundResourcePackPushPacket;
++import net.minecraft.network.protocol.common.ClientboundServerLinksPacket;
++import net.minecraft.network.protocol.common.ClientboundStoreCookiePacket;
++import net.minecraft.network.protocol.common.ClientboundTransferPacket;
++import net.minecraft.network.protocol.common.ClientboundUpdateTagsPacket;
++import net.minecraft.network.protocol.common.CommonPacketTypes;
++import net.minecraft.network.protocol.common.ServerboundClientInformationPacket;
++import net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket;
++import net.minecraft.network.protocol.common.ServerboundKeepAlivePacket;
++import net.minecraft.network.protocol.common.ServerboundPongPacket;
++import net.minecraft.network.protocol.common.ServerboundResourcePackPacket;
++import net.minecraft.network.protocol.cookie.ClientboundCookieRequestPacket;
++import net.minecraft.network.protocol.cookie.CookiePacketTypes;
++import net.minecraft.network.protocol.cookie.ServerboundCookieResponsePacket;
++
++public class ConfigurationProtocols {
++    public static final ProtocolInfo.Unbound<ServerConfigurationPacketListener, FriendlyByteBuf> SERVERBOUND_TEMPLATE = ProtocolInfoBuilder.serverboundProtocol(
++        ConnectionProtocol.CONFIGURATION,
++        builder -> builder.addPacket(CommonPacketTypes.SERVERBOUND_CLIENT_INFORMATION, ServerboundClientInformationPacket.STREAM_CODEC)
++                .addPacket(CookiePacketTypes.SERVERBOUND_COOKIE_RESPONSE, ServerboundCookieResponsePacket.STREAM_CODEC)
++                .addPacket(CommonPacketTypes.SERVERBOUND_CUSTOM_PAYLOAD, ServerboundCustomPayloadPacket.CONFIG_STREAM_CODEC) // Eturlia - NeoForge payload codecs
++                .addPacket(ConfigurationPacketTypes.SERVERBOUND_FINISH_CONFIGURATION, ServerboundFinishConfigurationPacket.STREAM_CODEC)
++                .addPacket(CommonPacketTypes.SERVERBOUND_KEEP_ALIVE, ServerboundKeepAlivePacket.STREAM_CODEC)
++                .addPacket(CommonPacketTypes.SERVERBOUND_PONG, ServerboundPongPacket.STREAM_CODEC)
++                .addPacket(CommonPacketTypes.SERVERBOUND_RESOURCE_PACK, ServerboundResourcePackPacket.STREAM_CODEC)
++                .addPacket(ConfigurationPacketTypes.SERVERBOUND_SELECT_KNOWN_PACKS, ServerboundSelectKnownPacks.STREAM_CODEC)
++    );
++    public static final ProtocolInfo<ServerConfigurationPacketListener> SERVERBOUND = SERVERBOUND_TEMPLATE.bind(FriendlyByteBuf::new);
++    public static final ProtocolInfo.Unbound<ClientConfigurationPacketListener, FriendlyByteBuf> CLIENTBOUND_TEMPLATE = ProtocolInfoBuilder.clientboundProtocol(
++        ConnectionProtocol.CONFIGURATION,
++        builder -> builder.addPacket(CookiePacketTypes.CLIENTBOUND_COOKIE_REQUEST, ClientboundCookieRequestPacket.STREAM_CODEC)
++                .addPacket(CommonPacketTypes.CLIENTBOUND_CUSTOM_PAYLOAD, ClientboundCustomPayloadPacket.CONFIG_STREAM_CODEC)
++                .addPacket(CommonPacketTypes.CLIENTBOUND_DISCONNECT, ClientboundDisconnectPacket.STREAM_CODEC)
++                .addPacket(ConfigurationPacketTypes.CLIENTBOUND_FINISH_CONFIGURATION, ClientboundFinishConfigurationPacket.STREAM_CODEC)
++                .addPacket(CommonPacketTypes.CLIENTBOUND_KEEP_ALIVE, ClientboundKeepAlivePacket.STREAM_CODEC)
++                .addPacket(CommonPacketTypes.CLIENTBOUND_PING, ClientboundPingPacket.STREAM_CODEC)
++                .addPacket(ConfigurationPacketTypes.CLIENTBOUND_RESET_CHAT, ClientboundResetChatPacket.STREAM_CODEC)
++                .addPacket(ConfigurationPacketTypes.CLIENTBOUND_REGISTRY_DATA, ClientboundRegistryDataPacket.STREAM_CODEC)
++                .addPacket(CommonPacketTypes.CLIENTBOUND_RESOURCE_PACK_POP, ClientboundResourcePackPopPacket.STREAM_CODEC)
++                .addPacket(CommonPacketTypes.CLIENTBOUND_RESOURCE_PACK_PUSH, ClientboundResourcePackPushPacket.STREAM_CODEC)
++                .addPacket(CommonPacketTypes.CLIENTBOUND_STORE_COOKIE, ClientboundStoreCookiePacket.STREAM_CODEC)
++                .addPacket(CommonPacketTypes.CLIENTBOUND_TRANSFER, ClientboundTransferPacket.STREAM_CODEC)
++                .addPacket(ConfigurationPacketTypes.CLIENTBOUND_UPDATE_ENABLED_FEATURES, ClientboundUpdateEnabledFeaturesPacket.STREAM_CODEC)
++                .addPacket(CommonPacketTypes.CLIENTBOUND_UPDATE_TAGS, ClientboundUpdateTagsPacket.STREAM_CODEC)
++                .addPacket(ConfigurationPacketTypes.CLIENTBOUND_SELECT_KNOWN_PACKS, ClientboundSelectKnownPacks.STREAM_CODEC)
++                .addPacket(CommonPacketTypes.CLIENTBOUND_CUSTOM_REPORT_DETAILS, ClientboundCustomReportDetailsPacket.STREAM_CODEC)
++                .addPacket(CommonPacketTypes.CLIENTBOUND_SERVER_LINKS, ClientboundServerLinksPacket.STREAM_CODEC)
++    );
++    public static final ProtocolInfo<ClientConfigurationPacketListener> CLIENTBOUND = CLIENTBOUND_TEMPLATE.bind(FriendlyByteBuf::new);
++}
+diff --git a/src/main/java/net/minecraft/network/protocol/configuration/ServerConfigurationPacketListener.java b/src/main/java/net/minecraft/network/protocol/configuration/ServerConfigurationPacketListener.java
+index 7fc7c3a0f8c5dd849aaa7bfa30da51430d331eff..5b99339e08da8afa278ff4bb85432e3594e10c56 100644
+--- a/src/main/java/net/minecraft/network/protocol/configuration/ServerConfigurationPacketListener.java
++++ b/src/main/java/net/minecraft/network/protocol/configuration/ServerConfigurationPacketListener.java
+@@ -3,7 +3,7 @@ package net.minecraft.network.protocol.configuration;
+ import net.minecraft.network.ConnectionProtocol;
+ import net.minecraft.network.protocol.common.ServerCommonPacketListener;
+ 
+-public interface ServerConfigurationPacketListener extends ServerCommonPacketListener { // Eturlia - inherits ICommonPacketListener for the NeoForge handshake
++public interface ServerConfigurationPacketListener extends ServerCommonPacketListener, net.neoforged.neoforge.common.extensions.IServerConfigurationPacketListenerExtension { // Eturlia - NeoForge completes configuration tasks through this interface // Eturlia - inherits ICommonPacketListener for the NeoForge handshake
+     @Override
+     default ConnectionProtocol protocol() {
+         return ConnectionProtocol.CONFIGURATION;
+diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
+index f00d66161370de54ae00a4270919f5d2807d3fa8..449c2a8a8d2c017376d314d5561b17f5e9ed2b26 100644
+--- a/src/main/java/net/minecraft/server/MinecraftServer.java
++++ b/src/main/java/net/minecraft/server/MinecraftServer.java
+@@ -332,10 +332,17 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+ 
+     @Override
+     public void execute(Runnable runnable) {
+-        if (true) {
+-            throw new UnsupportedOperationException();
++        // Eturlia start - route to the global region instead of throwing.
++        // Folia throws here to catch code that assumes a main thread; on this hybrid the
++        // remaining callers are mods (NeoForge's payload handlers reach this through
++        // ServerCommonPacketListenerImpl.getMainThreadEventLoop()), and the global region is
++        // where Folia itself handles configuration-phase packets - see PacketUtils.
++        if (io.papermc.paper.threadedregions.RegionizedServer.getInstance() != null) {
++            io.papermc.paper.threadedregions.RegionizedServer.getInstance().addTask(runnable);
++            return;
+         }
+         super.execute(runnable);
++        // Eturlia end - route to the global region instead of throwing
+     }
+ 
+     @Override
+diff --git a/src/main/java/net/minecraft/server/network/ConfigurationTask.java b/src/main/java/net/minecraft/server/network/ConfigurationTask.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..835b813c9dcd18262174b8758de25be97014f627
+--- /dev/null
++++ b/src/main/java/net/minecraft/server/network/ConfigurationTask.java
+@@ -0,0 +1,22 @@
++package net.minecraft.server.network;
++
++import java.util.function.Consumer;
++import net.minecraft.network.protocol.Packet;
++
++public interface ConfigurationTask {
++    void start(Consumer<Packet<?>> sender);
++
++    ConfigurationTask.Type type();
++
++    public static record Type(String id) {
++        // Eturlia - NeoForge builds its task types from a ResourceLocation
++        public Type(net.minecraft.resources.ResourceLocation location) {
++            this(location.toString());
++        }
++
++        @Override
++        public String toString() {
++            return this.id;
++        }
++    }
++}
+diff --git a/src/main/java/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java b/src/main/java/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java
+index 6f0bcd09b400cbf8dfad7883a81e8fd618290922..c0a4b7cb81aecab62eb76016f87ebec5dc09bbac 100644
+--- a/src/main/java/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java
++++ b/src/main/java/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java
+@@ -100,11 +100,15 @@ public class ServerConfigurationPacketListenerImpl extends ServerCommonPacketLis
+     private void eturliaRunConfiguration() {
+         this.send(new ClientboundCustomPayloadPacket(new BrandPayload(this.server.getServerModName())));
+         ServerLinks serverlinks = this.server.serverLinks();
+-        // CraftBukkit start
+-        CraftServerLinks wrapper = new CraftServerLinks(serverlinks);
+-        PlayerLinksSendEvent event = new PlayerLinksSendEvent(this.player.getBukkitEntity(), wrapper);
+-        this.player.getBukkitEntity().getServer().getPluginManager().callEvent(event);
+-        serverlinks = wrapper.getServerLinks();
++        // CraftBukkit start - Eturlia: this body runs on the netty IO thread (see handlePong),
++        // and Paper rejects a synchronous event from there. Fire it only when the thread is
++        // allowed to; otherwise send the server's links unchanged.
++        if (org.bukkit.Bukkit.isPrimaryThread()) {
++            CraftServerLinks wrapper = new CraftServerLinks(serverlinks);
++            PlayerLinksSendEvent event = new PlayerLinksSendEvent(this.player.getBukkitEntity(), wrapper);
++            this.player.getBukkitEntity().getServer().getPluginManager().callEvent(event);
++            serverlinks = wrapper.getServerLinks();
++        }
+         // CraftBukkit end
+ 
+         if (!serverlinks.isEmpty()) {
+@@ -145,7 +149,13 @@ public class ServerConfigurationPacketListenerImpl extends ServerCommonPacketLis
+     public void handleCustomPayload(net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket packet) {
+         if (packet.payload() instanceof net.neoforged.neoforge.network.payload.ModdedNetworkQueryPayload moddedQuery) {
+             this.eturlia$connectionType = net.neoforged.neoforge.network.connection.ConnectionType.NEOFORGE;
+-            net.neoforged.neoforge.network.registration.NetworkRegistry.initializeNeoForgeConnection(this, moddedQuery.queries());
++            // A malformed query must cost that one connection, not the server: this runs on a
++            // region thread, where an escaping exception takes the whole process down.
++            try {
++                net.neoforged.neoforge.network.registration.NetworkRegistry.initializeNeoForgeConnection(this, moddedQuery.queries());
++            } catch (Exception e) {
++                eturlia$failNegotiation("modded network negotiation failed", e);
++            }
+             return;
+         }
+         super.handleCustomPayload(packet);
+@@ -157,18 +167,41 @@ public class ServerConfigurationPacketListenerImpl extends ServerCommonPacketLis
+         // startConfiguration() sends a ping with id 0; the pong tells us the client finished
+         // answering the modded query, so the real configuration can begin.
+         if (packet.getId() == 0) {
+-            if (!this.eturlia$connectionType.isNeoForge()
+-                    && !net.neoforged.neoforge.network.registration.NetworkRegistry.initializeOtherConnection(this)) {
++            try {
++                if (!this.eturlia$connectionType.isNeoForge()
++                        && !net.neoforged.neoforge.network.registration.NetworkRegistry.initializeOtherConnection(this)) {
++                    return;
++                }
++            } catch (Exception e) {
++                eturlia$failNegotiation("modded network setup failed", e);
+                 return;
+             }
+-            // CraftBukkit fires PlayerLinksSendEvent inside the configuration body and that event
+-            // is main-thread only, while handlePong() runs on a network/region thread. Hand the
+-            // work to the server task queue (the global region on Folia).
+-            this.server.execute(this::eturliaRunConfiguration);
++            // handlePong() runs straight on the netty IO thread, and the configuration body
++            // fires CraftBukkit's PlayerLinksSendEvent. On Folia MinecraftServer.execute() throws
++            // UnsupportedOperationException by design - there is no single main thread - so hand
++            // off the way Folia itself does for this listener (see PacketUtils).
++            // Synchronous on purpose: NeoForge answers the registry sync as soon as the
++            // tasks are sent, so deferring this to a later tick makes the client's reply
++            // arrive before the task list exists ("outside of the configuration phase").
++            // The guard keeps a failure to this one connection instead of the server.
++            try {
++                this.eturliaRunConfiguration();
++            } catch (Exception | LinkageError e) {
++                eturlia$failNegotiation("configuration failed", e);
++            }
+         }
+     }
+     // Eturlia end - NeoForge handshake
+ 
++    /** Drops one connection after a failed negotiation instead of letting it kill the server. */
++    private void eturlia$failNegotiation(String what, Throwable cause) {
++        // eturlia-core is not on this compile classpath; the console noise filter still routes
++        // the stack trace to logs/eturlia-noise.log and leaves one line on the console.
++        LOGGER.error("Eturlia: {} for {}", what, this.connection.getRemoteAddress(), cause);
++        this.disconnect(net.minecraft.network.chat.Component.literal(
++                "Eturlia: " + what + " — see the server log"));
++    }
++
+     @Override
+     public void handleClientInformation(ServerboundClientInformationPacket packet) {
+         this.clientInformation = packet.information();
+@@ -199,7 +232,7 @@ public class ServerConfigurationPacketListenerImpl extends ServerCommonPacketLis
+     public void handleConfigurationFinished(ServerboundFinishConfigurationPacket packet) {
+         PacketUtils.ensureRunningOnSameThread(packet, this, (BlockableEventLoop) this.server);
+         this.finishCurrentTask(JoinWorldTask.TYPE);
+-        this.connection.setupOutboundProtocol(GameProtocols.CLIENTBOUND_TEMPLATE.bind(RegistryFriendlyByteBuf.decorator(this.server.registryAccess())));
++        this.connection.setupOutboundProtocol(GameProtocols.CLIENTBOUND_TEMPLATE.bind(RegistryFriendlyByteBuf.decorator(this.server.registryAccess(), this.eturlia$connectionType))); // Eturlia - hand the negotiated type to the play protocol
+ 
+         try {
+             PlayerList playerlist = this.server.getPlayerList();
+@@ -302,7 +335,7 @@ public class ServerConfigurationPacketListenerImpl extends ServerCommonPacketLis
+         }
+     }
+ 
+-    private void finishCurrentTask(ConfigurationTask.Type key) {
++    public void finishCurrentTask(ConfigurationTask.Type key) { // Eturlia - NeoForge calls this via IServerConfigurationPacketListenerExtension
+         ConfigurationTask.Type configurationtask_a1 = this.currentTask != null ? this.currentTask.type() : null;
+ 
+         if (!key.equals(configurationtask_a1)) {
+diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
+index 458d8d8a787cb21633f143f46a7bc491ea43e1ff..abf83a03471e6526906f3bc7611e410e347fb2de 100644
+--- a/src/main/java/net/minecraft/world/entity/Entity.java
++++ b/src/main/java/net/minecraft/world/entity/Entity.java
+@@ -169,6 +169,12 @@ import org.bukkit.plugin.PluginManager;
+ 
+ public abstract class Entity extends net.neoforged.neoforge.attachment.AttachmentHolder implements SyncedDataHolder, Nameable, EntityAccess, CommandSource, ScoreHolder, ca.spottedleaf.moonrise.patches.chunk_system.entity.ChunkSystemEntity, ca.spottedleaf.moonrise.patches.entity_tracker.EntityTrackerEntity { // Paper - rewrite chunk system // Paper - optimise entity tracker // NeoForge - AttachmentHolder
+ 
++    // Eturlia - NeoForge IEntityExtension: a rider can be targeted separately from its
++    // vehicle. Create wraps this call inside ProjectileUtil.getEntityHitResult.
++    public boolean canRiderInteract() {
++        return false;
++    }
++
+     // CraftBukkit start
+     private static final int CURRENT_LEVEL = 2;
+     public boolean preserveMotion = true; // Paper - Fix Entity Teleportation and cancel velocity if teleported; keep initial motion on first setPositionRotation
+diff --git a/src/main/java/net/minecraft/world/entity/projectile/ProjectileUtil.java b/src/main/java/net/minecraft/world/entity/projectile/ProjectileUtil.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..2940b8684d6e45984594cff004df6012b7863077
+--- /dev/null
++++ b/src/main/java/net/minecraft/world/entity/projectile/ProjectileUtil.java
+@@ -0,0 +1,162 @@
++package net.minecraft.world.entity.projectile;
++
++import java.util.Optional;
++import java.util.function.Predicate;
++import javax.annotation.Nullable;
++import net.minecraft.util.Mth;
++import net.minecraft.world.InteractionHand;
++import net.minecraft.world.entity.Entity;
++import net.minecraft.world.entity.LivingEntity;
++import net.minecraft.world.item.ArrowItem;
++import net.minecraft.world.item.Item;
++import net.minecraft.world.item.ItemStack;
++import net.minecraft.world.item.Items;
++import net.minecraft.world.level.ClipContext;
++import net.minecraft.world.level.Level;
++import net.minecraft.world.phys.AABB;
++import net.minecraft.world.phys.EntityHitResult;
++import net.minecraft.world.phys.HitResult;
++import net.minecraft.world.phys.Vec3;
++
++public final class ProjectileUtil {
++    private static final float DEFAULT_ENTITY_HIT_RESULT_MARGIN = 0.3F;
++
++    public static HitResult getHitResultOnMoveVector(Entity entity, Predicate<Entity> predicate) {
++        Vec3 vec3 = entity.getDeltaMovement();
++        Level level = entity.level();
++        Vec3 vec32 = entity.position();
++        return getHitResult(vec32, entity, predicate, vec3, level, 0.3F, ClipContext.Block.COLLIDER);
++    }
++
++    public static HitResult getHitResultOnMoveVector(Entity entity, Predicate<Entity> predicate, ClipContext.Block raycastShapeType) {
++        Vec3 vec3 = entity.getDeltaMovement();
++        Level level = entity.level();
++        Vec3 vec32 = entity.position();
++        return getHitResult(vec32, entity, predicate, vec3, level, 0.3F, raycastShapeType);
++    }
++
++    public static HitResult getHitResultOnViewVector(Entity entity, Predicate<Entity> predicate, double range) {
++        Vec3 vec3 = entity.getViewVector(0.0F).scale(range);
++        Level level = entity.level();
++        Vec3 vec32 = entity.getEyePosition();
++        return getHitResult(vec32, entity, predicate, vec3, level, 0.0F, ClipContext.Block.COLLIDER);
++    }
++
++    private static HitResult getHitResult(
++        Vec3 pos, Entity entity, Predicate<Entity> predicate, Vec3 velocity, Level world, float margin, ClipContext.Block raycastShapeType
++    ) {
++        Vec3 vec3 = pos.add(velocity);
++        HitResult hitResult = world.clip(new ClipContext(pos, vec3, raycastShapeType, ClipContext.Fluid.NONE, entity));
++        if (hitResult.getType() != HitResult.Type.MISS) {
++            vec3 = hitResult.getLocation();
++        }
++
++        HitResult hitResult2 = getEntityHitResult(world, entity, pos, vec3, entity.getBoundingBox().expandTowards(velocity).inflate(1.0), predicate, margin);
++        if (hitResult2 != null) {
++            hitResult = hitResult2;
++        }
++
++        return hitResult;
++    }
++
++    @Nullable
++    public static EntityHitResult getEntityHitResult(Entity entity, Vec3 min, Vec3 max, AABB box, Predicate<Entity> predicate, double maxDistance) {
++        Level level = entity.level();
++        double d = maxDistance;
++        Entity entity2 = null;
++        Vec3 vec3 = null;
++
++        for (Entity entity3 : level.getEntities(entity, box, predicate)) {
++            AABB aABB = entity3.getBoundingBox().inflate((double)entity3.getPickRadius());
++            Optional<Vec3> optional = aABB.clip(min, max);
++            if (aABB.contains(min)) {
++                if (d >= 0.0) {
++                    entity2 = entity3;
++                    vec3 = optional.orElse(min);
++                    d = 0.0;
++                }
++            } else if (optional.isPresent()) {
++                Vec3 vec32 = optional.get();
++                double e = min.distanceToSqr(vec32);
++                if (e < d || d == 0.0) {
++                    if (entity3.getRootVehicle() == entity.getRootVehicle() && !entity3.canRiderInteract()) { // Eturlia - NeoForge rider targeting; Create wraps this call
++                        if (d == 0.0) {
++                            entity2 = entity3;
++                            vec3 = vec32;
++                        }
++                    } else {
++                        entity2 = entity3;
++                        vec3 = vec32;
++                        d = e;
++                    }
++                }
++            }
++        }
++
++        return entity2 == null ? null : new EntityHitResult(entity2, vec3);
++    }
++
++    @Nullable
++    public static EntityHitResult getEntityHitResult(Level world, Entity entity, Vec3 min, Vec3 max, AABB box, Predicate<Entity> predicate) {
++        return getEntityHitResult(world, entity, min, max, box, predicate, 0.3F);
++    }
++
++    @Nullable
++    public static EntityHitResult getEntityHitResult(Level world, Entity entity, Vec3 min, Vec3 max, AABB box, Predicate<Entity> predicate, float margin) {
++        double d = Double.MAX_VALUE;
++        Entity entity2 = null;
++
++        for (Entity entity3 : world.getEntities(entity, box, predicate)) {
++            AABB aABB = entity3.getBoundingBox().inflate((double)margin);
++            Optional<Vec3> optional = aABB.clip(min, max);
++            if (optional.isPresent()) {
++                double e = min.distanceToSqr(optional.get());
++                if (e < d) {
++                    entity2 = entity3;
++                    d = e;
++                }
++            }
++        }
++
++        return entity2 == null ? null : new EntityHitResult(entity2);
++    }
++
++    public static void rotateTowardsMovement(Entity entity, float delta) {
++        Vec3 vec3 = entity.getDeltaMovement();
++        if (vec3.lengthSqr() != 0.0) {
++            double d = vec3.horizontalDistance();
++            entity.setYRot((float)(Mth.atan2(vec3.z, vec3.x) * 180.0F / (float)Math.PI) + 90.0F);
++            entity.setXRot((float)(Mth.atan2(d, vec3.y) * 180.0F / (float)Math.PI) - 90.0F);
++
++            while (entity.getXRot() - entity.xRotO < -180.0F) {
++                entity.xRotO -= 360.0F;
++            }
++
++            while (entity.getXRot() - entity.xRotO >= 180.0F) {
++                entity.xRotO += 360.0F;
++            }
++
++            while (entity.getYRot() - entity.yRotO < -180.0F) {
++                entity.yRotO -= 360.0F;
++            }
++
++            while (entity.getYRot() - entity.yRotO >= 180.0F) {
++                entity.yRotO += 360.0F;
++            }
++
++            entity.setXRot(Mth.lerp(delta, entity.xRotO, entity.getXRot()));
++            entity.setYRot(Mth.lerp(delta, entity.yRotO, entity.getYRot()));
++        }
++    }
++
++    public static InteractionHand getWeaponHoldingHand(LivingEntity entity, Item item) {
++        return entity.getMainHandItem().is(item) ? InteractionHand.MAIN_HAND : InteractionHand.OFF_HAND;
++    }
++
++    public static AbstractArrow getMobArrow(LivingEntity entity, ItemStack stack, float damageModifier, @Nullable ItemStack bow) {
++        ArrowItem arrowItem = (ArrowItem)(stack.getItem() instanceof ArrowItem ? stack.getItem() : Items.ARROW);
++        AbstractArrow abstractArrow = arrowItem.createArrow(entity.level(), stack, entity, bow);
++        abstractArrow.setBaseDamageFromMob(damageModifier);
++        return abstractArrow;
++    }
++}
+diff --git a/src/main/java/net/minecraft/world/flag/FeatureFlag.java b/src/main/java/net/minecraft/world/flag/FeatureFlag.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..d105e502ebe4e98966fdc0f68c541fe3dff305bb
+--- /dev/null
++++ b/src/main/java/net/minecraft/world/flag/FeatureFlag.java
+@@ -0,0 +1,18 @@
++package net.minecraft.world.flag;
++
++public class FeatureFlag {
++    public final FeatureFlagUniverse universe;
++    public final long mask;
++
++    FeatureFlag(FeatureFlagUniverse universe, int id) {
++        this.universe = universe;
++        this.mask = 1L << id;
++    }
++
++    // Eturlia - NeoForge asks each flag whether a mod contributed it while building the
++    // extensible-enum acknowledgement. Flags here all come from the vanilla builder, so this
++    // is always false; NeoForge upstream carries a wider mask system for modded flags.
++    public boolean isModded() {
++        return false;
++    }
++}
+diff --git a/src/main/java/net/minecraft/world/flag/FeatureFlagRegistry.java b/src/main/java/net/minecraft/world/flag/FeatureFlagRegistry.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..482a38eb41a77b49a16452a187d89c3458f00901
+--- /dev/null
++++ b/src/main/java/net/minecraft/world/flag/FeatureFlagRegistry.java
+@@ -0,0 +1,117 @@
++package net.minecraft.world.flag;
++
++import com.google.common.collect.Sets;
++import com.mojang.logging.LogUtils;
++import com.mojang.serialization.Codec;
++import com.mojang.serialization.DataResult;
++import java.util.Arrays;
++import java.util.HashSet;
++import java.util.LinkedHashMap;
++import java.util.List;
++import java.util.Map;
++import java.util.Set;
++import java.util.function.Consumer;
++import net.minecraft.resources.ResourceLocation;
++import org.slf4j.Logger;
++
++public class FeatureFlagRegistry {
++    private static final Logger LOGGER = LogUtils.getLogger();
++    private final FeatureFlagUniverse universe;
++    public final Map<ResourceLocation, FeatureFlag> names;
++    private final FeatureFlagSet allFlags;
++
++    // Eturlia - NeoForge reads the flag map through this accessor while acknowledging
++    // extensible enums; vanilla only exposes the `names` field.
++    public java.util.Map<ResourceLocation, FeatureFlag> getAllFlags() {
++        return this.names;
++    }
++
++
++    FeatureFlagRegistry(FeatureFlagUniverse universe, FeatureFlagSet featureSet, Map<ResourceLocation, FeatureFlag> featureFlags) {
++        this.universe = universe;
++        this.names = featureFlags;
++        this.allFlags = featureSet;
++    }
++
++    public boolean isSubset(FeatureFlagSet features) {
++        return features.isSubsetOf(this.allFlags);
++    }
++
++    public FeatureFlagSet allFlags() {
++        return this.allFlags;
++    }
++
++    public FeatureFlagSet fromNames(Iterable<ResourceLocation> features) {
++        return this.fromNames(features, feature -> LOGGER.warn("Unknown feature flag: {}", feature));
++    }
++
++    public FeatureFlagSet subset(FeatureFlag... features) {
++        return FeatureFlagSet.create(this.universe, Arrays.asList(features));
++    }
++
++    public FeatureFlagSet fromNames(Iterable<ResourceLocation> features, Consumer<ResourceLocation> unknownFlagConsumer) {
++        Set<FeatureFlag> set = Sets.newIdentityHashSet();
++
++        for (ResourceLocation resourceLocation : features) {
++            FeatureFlag featureFlag = this.names.get(resourceLocation);
++            if (featureFlag == null) {
++                unknownFlagConsumer.accept(resourceLocation);
++            } else {
++                set.add(featureFlag);
++            }
++        }
++
++        return FeatureFlagSet.create(this.universe, set);
++    }
++
++    public Set<ResourceLocation> toNames(FeatureFlagSet features) {
++        Set<ResourceLocation> set = new HashSet<>();
++        this.names.forEach((identifier, featureFlag) -> {
++            if (features.contains(featureFlag)) {
++                set.add(identifier);
++            }
++        });
++        return set;
++    }
++
++    public Codec<FeatureFlagSet> codec() {
++        return ResourceLocation.CODEC.listOf().comapFlatMap(featureIds -> {
++            Set<ResourceLocation> set = new HashSet<>();
++            FeatureFlagSet featureFlagSet = this.fromNames(featureIds, set::add);
++            return !set.isEmpty() ? DataResult.error(() -> "Unknown feature ids: " + set, featureFlagSet) : DataResult.success(featureFlagSet);
++        }, features -> List.copyOf(this.toNames(features)));
++    }
++
++    public static class Builder {
++        private final FeatureFlagUniverse universe;
++        private int id;
++        private final Map<ResourceLocation, FeatureFlag> flags = new LinkedHashMap<>();
++
++        public Builder(String universe) {
++            this.universe = new FeatureFlagUniverse(universe);
++        }
++
++        public FeatureFlag createVanilla(String feature) {
++            return this.create(ResourceLocation.withDefaultNamespace(feature));
++        }
++
++        public FeatureFlag create(ResourceLocation feature) {
++            if (this.id >= 64) {
++                throw new IllegalStateException("Too many feature flags");
++            } else {
++                FeatureFlag featureFlag = new FeatureFlag(this.universe, this.id++);
++                FeatureFlag featureFlag2 = this.flags.put(feature, featureFlag);
++                if (featureFlag2 != null) {
++                    throw new IllegalStateException("Duplicate feature flag " + feature);
++                } else {
++                    return featureFlag;
++                }
++            }
++        }
++
++        public FeatureFlagRegistry build() {
++            FeatureFlagSet featureFlagSet = FeatureFlagSet.create(this.universe, this.flags.values());
++            return new FeatureFlagRegistry(this.universe, featureFlagSet, Map.copyOf(this.flags));
++        }
++    }
++}
+diff --git a/src/main/java/net/minecraft/world/item/crafting/Ingredient.java b/src/main/java/net/minecraft/world/item/crafting/Ingredient.java
+index 26d7ac9df55fa6b3f07fd3021b520edc0a447fa7..5afb43107cc7e7169e5a8377c1195a5d593dab28 100644
+--- a/src/main/java/net/minecraft/world/item/crafting/Ingredient.java
++++ b/src/main/java/net/minecraft/world/item/crafting/Ingredient.java
+@@ -44,8 +44,15 @@ public final class Ingredient implements Predicate<ItemStack> {
+     // NeoForge: custom ingredient (CompoundIngredient / Create sequenced assembly)
+     @Nullable
+     private net.neoforged.neoforge.common.crafting.ICustomIngredient customIngredient = null;
++    // Eturlia start - custom ingredient types. The vanilla codec cannot read
++    // {"type":"neoforge:difference"} and friends, so every recipe using one (chest boats,
++    // hopper, shulker box, trapped chest, minecarts) failed to load and vanished from the game.
++    // TODO(Eturlia): CraftingHelper.makeIngredientCodec needs more NeoForge-only members on
++    // this class (Value.MAP_CODEC, getValues(), ...). Vanilla dispatch until that set is complete;
++    // recipes using neoforge:difference and friends stay unavailable meanwhile.
+     public static final Codec<Ingredient> CODEC = Ingredient.codec(true);
+     public static final Codec<Ingredient> CODEC_NONEMPTY = Ingredient.codec(false);
++    // Eturlia end - custom ingredient types
+     // NeoForge: list codecs expected by CompoundIngredient / CraftingHelper (vanilla-backed shim until full custom-ingredient port)
+     public static final Codec<List<Ingredient>> LIST_CODEC = CODEC.listOf();
+     public static final Codec<List<Ingredient>> LIST_CODEC_NONEMPTY = CODEC_NONEMPTY.listOf().validate(list -> {
+@@ -221,7 +228,10 @@ public final class Ingredient implements Predicate<ItemStack> {
+ 
+     public interface Value {
+ 
+-        Codec<Ingredient.Value> CODEC = Codec.xor(Ingredient.ItemValue.CODEC, Ingredient.TagValue.CODEC).xmap((either) -> {
++        // Eturlia start - NeoForge CraftingHelper needs Value.MAP_CODEC to build the
++        // custom-ingredient dispatch; without it recipe loading dies at bootstrap with
++        // NoSuchFieldError: Ingredient.MAP_CODEC
++        com.mojang.serialization.MapCodec<Ingredient.Value> MAP_CODEC = net.neoforged.neoforge.common.util.NeoForgeExtraCodecs.xor(Ingredient.ItemValue.MAP_CODEC, Ingredient.TagValue.MAP_CODEC).xmap((either) -> {
+             return (Ingredient.Value) either.map((recipeitemstack_stackprovider) -> {
+                 return recipeitemstack_stackprovider;
+             }, (recipeitemstack_b) -> {
+@@ -236,17 +246,21 @@ public final class Ingredient implements Predicate<ItemStack> {
+                 throw new UnsupportedOperationException("This is neither an item value nor a tag value.");
+             }
+         });
++        Codec<Ingredient.Value> CODEC = MAP_CODEC.codec();
++        // Eturlia end - NeoForge CraftingHelper
+ 
+         Collection<ItemStack> getItems();
+     }
+ 
+     private static record TagValue(TagKey<Item> tag) implements Ingredient.Value {
+ 
+-        static final Codec<Ingredient.TagValue> CODEC = RecordCodecBuilder.create((instance) -> {
++        // Eturlia - NeoForge CraftingHelper dispatches on MAP_CODEC
++        static final com.mojang.serialization.MapCodec<Ingredient.TagValue> MAP_CODEC = RecordCodecBuilder.mapCodec((instance) -> {
+             return instance.group(TagKey.codec(Registries.ITEM).fieldOf("tag").forGetter((recipeitemstack_b) -> {
+                 return recipeitemstack_b.tag;
+             })).apply(instance, Ingredient.TagValue::new);
+         });
++        static final Codec<Ingredient.TagValue> CODEC = MAP_CODEC.codec(); // Eturlia
+ 
+         public boolean equals(Object object) {
+             if (object instanceof Ingredient.TagValue recipeitemstack_b) {
+@@ -273,11 +287,13 @@ public final class Ingredient implements Predicate<ItemStack> {
+ 
+     public static record ItemValue(ItemStack item) implements Ingredient.Value {
+ 
+-        static final Codec<Ingredient.ItemValue> CODEC = RecordCodecBuilder.create((instance) -> {
++        // Eturlia - NeoForge CraftingHelper dispatches on MAP_CODEC
++        static final com.mojang.serialization.MapCodec<Ingredient.ItemValue> MAP_CODEC = RecordCodecBuilder.mapCodec((instance) -> {
+             return instance.group(ItemStack.SIMPLE_ITEM_CODEC.fieldOf("item").forGetter((recipeitemstack_stackprovider) -> {
+                 return recipeitemstack_stackprovider.item;
+             })).apply(instance, Ingredient.ItemValue::new);
+         });
++        static final Codec<Ingredient.ItemValue> CODEC = MAP_CODEC.codec(); // Eturlia
+ 
+         public boolean equals(Object object) {
+             if (!(object instanceof Ingredient.ItemValue recipeitemstack_stackprovider)) {
+diff --git a/src/main/java/net/minecraft/world/level/saveddata/SavedData.java b/src/main/java/net/minecraft/world/level/saveddata/SavedData.java
+index 6869144a2c1bb37d15f3fec622497b8d20ab2c68..5220063ab8b601d2000cf8ed1c8be39447275dfb 100644
+--- a/src/main/java/net/minecraft/world/level/saveddata/SavedData.java
++++ b/src/main/java/net/minecraft/world/level/saveddata/SavedData.java
+@@ -66,5 +66,9 @@ public abstract class SavedData {
+     public static record Factory<T extends SavedData>(
+         Supplier<T> constructor, BiFunction<CompoundTag, HolderLookup.Provider, T> deserializer, DataFixTypes type
+     ) {
++        // Eturlia - two-arg factory: mods register saved data without a vanilla DataFixTypes.
++        public Factory(Supplier<T> constructor, BiFunction<CompoundTag, HolderLookup.Provider, T> deserializer) {
++            this(constructor, deserializer, null);
++        }
+     }
+ }
+diff --git a/src/main/java/net/minecraft/world/level/storage/DimensionDataStorage.java b/src/main/java/net/minecraft/world/level/storage/DimensionDataStorage.java
+index 2c086f1d4cbfc29a759a77e5c5f9f39d177e81ba..badc128c19b299ecb832ab37d9d996828f578dda 100644
+--- a/src/main/java/net/minecraft/world/level/storage/DimensionDataStorage.java
++++ b/src/main/java/net/minecraft/world/level/storage/DimensionDataStorage.java
+@@ -107,7 +107,11 @@ public class DimensionDataStorage implements java.io.Closeable { // Paper - Writ
+             }
+ 
+             int i = NbtUtils.getDataVersion(compoundTag, 1343);
+-            var9 = dataFixTypes.update(this.fixerUpper, compoundTag, i, currentSaveVersion);
++            // Eturlia - modded saved data may carry no DataFixTypes (SavedData.Factory has a
++            // two-arg form for exactly that); skip the upgrade instead of dereferencing null.
++            var9 = dataFixTypes == null
++                ? compoundTag
++                : dataFixTypes.update(this.fixerUpper, compoundTag, i, currentSaveVersion);
+         }
+ 
+         return var9;

@@ -80,6 +80,12 @@ jobs:
       - name: Apply patches
         run: ./gradlew applyPatches --stacktrace
 
+      # The compatibility layer is generated on top of the patched sources rather than carried
+      # as patches: one idempotent script survives an upstream bump far better than forty hunks
+      # spread over CraftBukkit, Paper and Folia files. See docs/FIXES.md.
+      - name: Install the Eturlia compatibility layer
+        run: python3 scripts/apply_compat_layer.py
+
       # The jar is the deliverable: Folia + NeoForge FML nested inside a single
       # launcher jar. This step is what "the workflow builds the core" means.
       - name: Build Eturlia standalone jar

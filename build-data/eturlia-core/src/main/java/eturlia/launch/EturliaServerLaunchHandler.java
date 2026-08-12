@@ -114,6 +114,12 @@ public final class EturliaServerLaunchHandler extends CommonDevLaunchHandler {
         Module minecraft = gameLayer.findModule("minecraft")
                 .orElseThrow(() -> new IllegalStateException(
                         "Module 'minecraft' missing from game layer — Folia/NeoForge discovery failed"));
+        // Mixin applies as classes load, and the line below loads one. Compatibility has to be
+        // in place first, or the very first game class can still be failed by a mod's injector.
+        installMixinErrorHandler();
+        eturlia.core.compat.MixinCompat.install();
+        eturlia.core.compat.ModLoadingCompat.install();
+
         Class<?> craftMain = Class.forName(minecraft, "org.bukkit.craftbukkit.Main");
         if (craftMain == null) {
             throw new ClassNotFoundException("org.bukkit.craftbukkit.Main not in module minecraft");
@@ -193,5 +199,23 @@ public final class EturliaServerLaunchHandler extends CommonDevLaunchHandler {
             out.add(arg);
         }
         return out.toArray(new String[0]);
+    }
+
+    /**
+     * Registers {@link eturlia.core.mixin.EturliaMixinErrorHandler} with Mixin.
+     *
+     * <p>Must happen before any game class loads, because that is when mixins are applied.
+     * Registered reflectively: if Mixin is absent or changes this entry point, the server
+     * should still boot - it just loses the ability to survive a mod's broken mixin.</p>
+     */
+    private static void installMixinErrorHandler() {
+        try {
+            Class.forName("org.spongepowered.asm.mixin.Mixins")
+                    .getMethod("registerErrorHandlerClass", String.class)
+                    .invoke(null, "eturlia.core.mixin.EturliaMixinErrorHandler");
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+            System.err.println("[Eturlia] could not register the mixin error handler: " + e
+                    + " — a mod with an unusable mixin will abort the boot");
+        }
     }
 }
