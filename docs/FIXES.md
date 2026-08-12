@@ -245,6 +245,17 @@ Two more plugin-side classes closed with it: plugin bytecode that names the vers
 and Folia's schedulers clamp a delay of `0` instead of throwing, because Bukkit accepts what Folia
 refused and the plugin died on enable.
 
+### A modded block had no Material, and plugins never checked for null
+
+Every protection and logging plugin reads  out of  and
+ and uses it immediately: CoreProtect calls , WorldGuard hands it to a
+. A modded block has no Bukkit , so the first one a player
+touched took the handler down - and with it whatever protection that plugin was there to apply.
+Modded blocks now report : a plain solid block, so region protection and logging
+behave the way they would for any other block.  restores the
+null. This closed the last errors a player could produce by playing: WorldGuard, CoreProtect and the
+block-break packet all went quiet in the same run.
+
 ### Smaller, still ours
 
 * `BuiltInPackSource.fromName` — the one method NeoForge patches into that class. Without it, a mod
