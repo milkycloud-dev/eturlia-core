@@ -1,5 +1,15 @@
 # eturlia-core
 
+> **Это форк [eturnercus/Core](https://github.com/eturnercus/Core).** Общая история сохранена:
+> коммиты до `4e166a6` — оттуда. Репозиторий заведён отдельно, не кнопкой Fork, поэтому GitHub не
+> рисует связь автоматически — она заявлена здесь, в описании репозитория и в
+> [заявке в апстрим](https://github.com/eturnercus/Core/issues/31).
+>
+> Апстрим сам является форком [PaperMC/Folia](https://github.com/PaperMC/Folia) с загрузчиком
+> [neoforged/NeoForge](https://github.com/neoforged/NeoForge) 21.1.248; изменения поверх Folia
+> лежат в `patches/` как дерево патчей paperweight. Лицензии сохранены: `PATCHES-LICENSE`,
+> `folia-server/LICENCE.txt`, `folia-api/LICENCE.txt`.
+
 Серверное ядро Minecraft 1.21.1, в котором региональная многопоточность Folia и модлоадер
 NeoForge живут в одном jar. Собирается в `eturlia-1.21.1-neoforge-21.1.248.jar`, запускается как
 обычный сервер, читает `mods/` и `plugins/` одновременно.
