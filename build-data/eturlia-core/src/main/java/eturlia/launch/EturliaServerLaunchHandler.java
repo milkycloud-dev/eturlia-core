@@ -58,6 +58,23 @@ public final class EturliaServerLaunchHandler extends CommonDevLaunchHandler {
                 }
             }
         }
+        // Eturlia start - extra jars that must live in the game layer
+        // Paper's plugin remapper (io.papermc.paper.pluginremap.*) is inside the minecraft
+        // module, and it implements net.neoforged.art.api.Transformer. AutoRenamingTool sits on
+        // legacyClassPath, which the game layer's ModuleClassLoader cannot see, so the remapper
+        // died with NoClassDefFoundError the moment it was switched on - taking the whole plugin
+        // system with it. Union those jars into the minecraft module instead.
+        String extraProp = System.getProperty("eturlia.extraGameLayerJars");
+        if (extraProp != null && !extraProp.isBlank()) {
+            for (String part : extraProp.split(java.io.File.pathSeparator)) {
+                if (part.isBlank()) continue;
+                Path p = Path.of(part).toAbsolutePath().normalize();
+                if (java.nio.file.Files.isRegularFile(p)) {
+                    sparkJars.add(p);
+                }
+            }
+        }
+        // Eturlia end - extra jars that must live in the game layer
         System.out.println("[eturlia] FML game locator: folia=" + serverJar
                 + " api=" + apiJar + " neoforge=" + neoForgeJar
                 + " commons-lang2=" + commonsLang2 + " brigadier=" + brigadier

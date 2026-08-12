@@ -1,0 +1,334 @@
+# =============================================================================
+# Eturlia — главный конфиг ядра (config/eturlia.yml)
+# =============================================================================
+# Minecraft 1.21.1 · Folia (регионы) · NeoForge 21.1.248 · Java 21
+#
+# Этот файл — «панель управления» Eturlia: потоки, чанки, командный блоки,
+# безопасность регионов, консоль, LOD, watchdog-подсказки и ссылки на то,
+# что живёт в paper-global.yml / server.properties / spigot.yml / bukkit.yml.
+#
+# Порядок загрузки при старте:
+#   1) config/eturlia.yml  (этот файл; создаётся из встроенного шаблона)
+#   2) server.properties / spigot.yml / bukkit.yml
+#   3) config/paper-global.yml  (+ world defaults) — Folia стартует пулы потоков здесь
+#
+# Важно про потоки:
+#   Пулы Folia/Moonrise инициализируются ОДИН раз при загрузке paper-global.
+#   Значения из секций threads.* ниже применяются КАК OVERRIDE в тот момент
+#   (до TickRegions/ChunkSystem init), если sync-to-paper: true.
+#   Смена threads.* требует ПОЛНОГО рестарта сервера.
+#
+# Документация Paper/Folia: https://docs.papermc.io/
+# =============================================================================
+
+_version: 2
+
+# -----------------------------------------------------------------------------
+# Общие
+# -----------------------------------------------------------------------------
+general:
+  # Печатать сводку эффективных настроек (потоки, дистанции, command blocks) в лог при старте.
+  log-effective-settings: true
+  # Если true — значения threads.* / chunk-system.* из этого файла подставляются
+  # в GlobalConfiguration Paper ПЕРЕД созданием пулов (удобно править всё в одном месте).
+  # Если false — правьте config/paper-global.yml напрямую; eturlia.yml только документирует.
+  sync-to-paper: true
+  # Если true — gameplay.command-blocks.enabled / view-distance / simulation-distance
+  # перекрывают server.properties через хуки Eturlia (без правки файла на диске).
+  sync-to-server-properties: true
+
+# -----------------------------------------------------------------------------
+# ПОТОКИ ЯДРА — что куда и почему
+# -----------------------------------------------------------------------------
+# Folia режет мир на регионы. Каждый region tick thread тикает СВОЙ набор чанков.
+# Отдельно: IO-потоки читают/пишут region-файлы; worker-потоки — генерация/light/heavy tasks.
+#
+# Формулы Paper/Folia при значении -1 (auto):
+#   region-tick-threads:
+#     raw = availableProcessors() / 2
+#     если raw <= 4 → 1, иначе raw / 4
+#   chunk worker-threads:
+#     raw = availableProcessors() / 2
+#     если raw <= 4 → (raw<=3 ? 1 : 2), иначе raw / 2
+#     ещё можно задать -DPaper.WorkerThreadCount=N
+#   chunk io-threads: -1 → 1
+#
+# Практические ориентиры (CPU логических ядер → region / workers / io):
+#   4 ядра  →  1 / 1–2 / 1     (слабый VPS; не раздувайте)
+#   8 ядер  →  2 / 2–4 / 1–2
+#   12–16   →  3–4 / 4–6 / 2
+#   24+     →  4–8 / 6–12 / 2–4 (упираетесь в диск/мирген раньше, чем в CPU)
+#
+# Почему нельзя «поставить потоков = числу ядер»:
+#   Region threads держат мир; лишние → больше context-switch и contention.
+#   Worker threads делят CPU с region ticks и GC; перебор → лаги тика.
+#   IO threads > 4 редко помогают на одном NVMe и одном мире.
+# -----------------------------------------------------------------------------
+threads:
+  # Число Region Scheduler Thread (тикеры регионов Folia).
+  # -1 = auto по формуле выше. 0 и меньше тоже = auto.
+  region-tick-threads: 16
+
+  # Сдвиг сетки регионов: размер ячейки = 2^grid-exponent чанков по стороне.
+  # 2 → 4×4 чанка на ячейку (дефолт Folia). 3 → 8×8 (крупнее регионы, меньше границ).
+  # Больше exponent = меньше region-границ, но тяжелее один тик региона.
+  region-grid-exponent: 2
+
+  # Moonrise chunk worker pool (генерация, lighting, тяжёлые chunk tasks).
+  # -1 = auto. Перекрывает -DPaper.WorkerThreadCount, если sync-to-paper и значение >= 1.
+  chunk-worker-threads: 8
+
+  # Потоки чтения/записи region-файлов (.mca).
+  # -1 = 1 поток. 2–4 на быстрых дисках при многих игроках/прегене.
+  chunk-io-threads: 3
+
+  # Параллельная генерация чанков: default | true | false
+  # default/true = использовать worker pool; false = осторожнее на слабых CPU.
+  chunk-gen-parallelism: default
+
+  # Пул чата Paper (не region threads!). -1 = не трогать дефолты Paper.
+  chat-executor-core-size: -1
+  chat-executor-max-size: -1
+
+  # Netty I/O (сеть). Живёт в spigot.yml → settings.netty-threads (дефолт 4).
+  # Здесь только подсказка/лог; реальный ключ — spigot.yml, чтобы не дублировать Paper.
+  netty-threads-hint: 4
+
+# -----------------------------------------------------------------------------
+# ЧАНКИ: прорисовка, симуляция, выгрузка, автосейв
+# -----------------------------------------------------------------------------
+# view-distance     — сколько чанков ОТПРАВЛЯЕМ клиенту (сеть + RAM).
+# simulation-distance — где тикают энтити/редстоун/random ticks (CPU).
+# Обычно simulation-distance <= view-distance.
+#
+# Выгрузка на Folia/Moonrise:
+#   Нет «старого» player-chunk-map unload pipeline 1-в-1.
+#   Тикеты + ChunkHolderManager.processUnloads(); cooldown UNLOAD_COOLDOWN ≈ 5с.
+#   bukkit.yml → chunk-gc.period-in-ticks влияет на plugin ticket timeout.
+#   paper-world → chunks.delay-chunk-unloads-by есть в конфиге, но на Folia
+#   основной путь — Moonrise (см. docs Paper/Folia).
+# -----------------------------------------------------------------------------
+chunks:
+  # Перекрыть server.properties view-distance (-1 = не перекрывать).
+  view-distance: -1
+  # Перекрыть server.properties simulation-distance (-1 = не перекрывать).
+  simulation-distance: -1
+
+  # Подсказки (реальные ключи в paper-global / paper-world):
+  # paper-global chunk-loading-basic.player-max-chunk-send-rate (дефолт 75.0)
+  # paper-global chunk-loading-basic.player-max-chunk-load-rate (дефолт 100.0)
+  # paper-global chunk-loading-basic.player-max-chunk-generate-rate (-1 = без лимита)
+  player-max-chunk-send-rate: -1.0
+  player-max-chunk-load-rate: -1.0
+  player-max-chunk-generate-rate: -1.0
+
+  # Одновременные load/generate на игрока (0 = auto Paper, -1 = не лимитировать).
+  # -2 в eturlia = «не трогать paper-global».
+  player-max-concurrent-chunk-loads: -2
+  player-max-concurrent-chunk-generates: -2
+
+  # Автосейв игроков: paper-global player-auto-save.rate (-1 = как bukkit ticks-per.autosave).
+  player-auto-save-rate: -1
+  player-auto-save-max-per-tick: -1
+
+  # Логировать при старте краткую справку по unload/ticket модели Folia.
+  explain-unload-on-startup: true
+
+# -----------------------------------------------------------------------------
+# КОМАНДНЫЕ БЛОКИ
+# -----------------------------------------------------------------------------
+# Vanilla gate: server.properties → enable-command-block=false по умолчанию.
+# Без этого BaseCommandBlock не исполняет команды; пакеты редактирования отшибаются.
+#
+# Дополнительно (paper-world-defaults / paper-world.yml):
+#   command-blocks.permissions-level (дефолт 2)
+#   command-blocks.force-follow-perm-level (дефолт true)
+# spigot.yml → commands.silent-commandblock-console
+# commands.yml → command-block-overrides
+#
+# Folia: исполнение на region thread чанка с блоком (TickThread.ensureTickThread).
+# -----------------------------------------------------------------------------
+gameplay:
+  command-blocks:
+    # null/omit = брать server.properties; true/false = override Eturlia.
+    enabled: null
+    # Только документация/лог — реальные ключи в paper-world:
+    permissions-level-hint: 2
+    force-follow-perm-level-hint: true
+    silent-console-hint: false
+
+# -----------------------------------------------------------------------------
+# FOLIA REGION SAFETY (моды NeoForge)
+# -----------------------------------------------------------------------------
+# Моды под single-thread NeoForge часто трогают мир не с того region thread.
+region:
+  # STRICT = отклонять опасные cross-region вызовы
+  # WARN   = логировать (дефолт)
+  # OFF    = выключить guard
+  # Эквивалент -Deturlia.region.guard=...
+  guard: WARN
+
+  # STRICT|WARN|PERMISSIVE — валидация событий RegionAwareEventBus
+  # Эквивалент -Deturlia.event.validation=...
+  event-validation: WARN
+
+# -----------------------------------------------------------------------------
+# КОНСОЛЬ / ЛОГИ
+# -----------------------------------------------------------------------------
+console:
+  # calm = INFO без зелёной подсветки NeoForge; WARN/ERROR цветные
+  # full = старое пёстрое поведение
+  # off  = без ANSI
+  # Эквивалент -Deturlia.console.color=...
+  color: calm
+
+# -----------------------------------------------------------------------------
+# WATCHDOG / ДИАГНОСТИКА
+# -----------------------------------------------------------------------------
+# Реальные таймеры Folia Watchdog — config/paper-global.yml → watchdog.*
+# early-warning-delay / early-warning-every (мс).
+# При прегене/первом старте мира увеличьте delay, иначе шумные ERROR в логе.
+watchdog:
+  # -1 = не трогать paper-global; иначе мс
+  early-warning-delay-ms: -1
+  early-warning-every-ms: -1
+  # Печатать подсказку куда смотреть при «region has not responded»
+  log-hints: true
+
+# -----------------------------------------------------------------------------
+# SPARK (bundled)
+# -----------------------------------------------------------------------------
+# Реальные ключи: paper-global → spark.enabled / spark.enable-immediately
+# Не кладите spark-neoforge.jar в mods/ — конфликт с bundled spark.
+spark:
+  # -1/omit = не трогать; 0=false, 1=true
+  enabled: -1
+  enable-immediately: -1
+
+# -----------------------------------------------------------------------------
+# LOD (Distant Horizons / Voxy) — см. также eturlia-lod.properties
+# -----------------------------------------------------------------------------
+lod:
+  # Все ключи ниже применяются только при enabled: true — они транслируются в
+  # системные свойства eturlia.lod.* , которые читает ClientLodConfig.
+  enabled: false
+  # CLIENT_ONLY | SERVER_ASSISTED | DISABLED
+  mode: DISABLED
+  max-render-distance: -1
+  dh-server-component: false
+  voxy-support: false
+  # C2ME конфликтует с Folia chunk system — при обнаружении будет SEVERE в логе.
+
+# -----------------------------------------------------------------------------
+# JVM ДОЧЕРНЕГО ПРОЦЕССА
+# -----------------------------------------------------------------------------
+# Jar — обёртка: она стартует ВТОРУЮ JVM, в которой и живёт сервер. Эти ключи
+# читает лаунчер (до старта сервера) и превращает в флаги дочерней JVM.
+# Флаги, которые вы передали самой обёртке (java -Xmx... -jar), тоже проходят;
+# значения отсюда добавляются после них, поэтому перекрывают.
+#
+# Пусто/0/auto = не задавать, оставить как есть.
+# -----------------------------------------------------------------------------
+jvm:
+  # -Xmx дочерней JVM. Примеры: 8G, 12288M. Пусто = не задавать.
+  heap-max: ""
+  # -Xms дочерней JVM. Обычно равен heap-max, чтобы куча не росла рывками.
+  heap-min: ""
+  # Потоки Moonrise chunk worker pool в дочерней JVM (-DPaper.WorkerThreadCount).
+  # 0 или меньше = не задавать (тогда работает threads.chunk-worker-threads
+  # через paper-global, если sync-to-paper: true).
+  worker-threads: 0
+  # Потоки chunk I/O в дочерней JVM (-DPaper.IOThreadCount). 0 = не задавать.
+  io-threads: 0
+  # Дополнительные аргументы дочерней JVM, через пробел.
+  # Пример: "-XX:+UseG1GC -XX:MaxGCPauseMillis=200"
+  extra-args: ""
+
+# -----------------------------------------------------------------------------
+# ЛОГИ И КОНСОЛЬ ЯДРА
+# -----------------------------------------------------------------------------
+# Своё логирование Eturlia (не Log4j2 сервера). Ошибки и преды всегда видны
+# в консоли, но строго одной строкой; полный текст со стектрейсом — в файл.
+# -----------------------------------------------------------------------------
+logging:
+  # Файл диагностики ядра, относительно рабочего каталога сервера.
+  file: logs/eturlia.log
+  # true  = преды/ошибки Eturlia печатаются в консоль (одной строкой)
+  # false = только в файл
+  console-errors: true
+
+# -----------------------------------------------------------------------------
+# CRASH-ОТЧЁТЫ С REGION-КОНТЕКСТОМ
+# -----------------------------------------------------------------------------
+crash:
+  # Каталог для отчётов Eturlia (отдельно от vanilla crash-reports/).
+  dir: eturlia-crash-reports
+  # Ставить обработчик необработанных исключений на потоках.
+  install-handler: true
+
+# -----------------------------------------------------------------------------
+# ПРОВЕРКА REGION-ПОТОКОВ (coremod-хуки)
+# -----------------------------------------------------------------------------
+validation:
+  # Проверять, что доступ к миру идёт с потока-владельца региона.
+  thread-validation: true
+  # true = нарушение бросает исключение; false = только пишет в лог.
+  strict: false
+
+# -----------------------------------------------------------------------------
+# ГИГИЕНА mods/
+# -----------------------------------------------------------------------------
+# Ядро может «мягко отключить» несовместимые jar'ы, переименовав их в
+# *.jar.eturlia-skipped (файл не удаляется).
+# -----------------------------------------------------------------------------
+hygiene:
+  # skip = переименовывать, warn = только сообщать, off = не сканировать
+  mods-folder: skip
+
+# -----------------------------------------------------------------------------
+# NEOFORGE / МОДЫ (подсказки)
+# -----------------------------------------------------------------------------
+neoforge:
+  # СПРАВОЧНО: каталог модов задаёт FML, этот ключ не применяется кодом.
+  mods-folder: mods
+  # Напоминание: оригинальный arclight_sable_patch = BLOCK; нужен eturlia-shim.
+  remind-sable-shim: true
+  # СПРАВОЧНО (не применяется кодом): не класть клиентские jars и spark-neoforge —
+  # см. docs/PACK_COMPAT_ASIC_2026-08.md
+  remind-pack-compat-doc: true
+
+
+# -----------------------------------------------------------------------------
+# МОДЫ / PACK GUARDS
+# -----------------------------------------------------------------------------
+mods:
+  # Применяется LithostitchedCompatGate (через eturlia.lithostitched.* system properties).
+  # lithostitched < min / *beta* → жёсткий отказ при старте.
+  # Ядро (0074): NeoForge prefixNamespace для datapack-реестров (template_list).
+  # Override: -Deturlia.lithostitched.allow-unsafe=true (не рекомендуется).
+  require-lithostitched-min: "1.7.13"
+  block-lithostitched-prerelease: true
+
+  # true  = мод из excludedMods (eturlia-supported.json) останавливает старт
+  # false = только предупреждение в лог
+  strict-loading: false
+
+# -----------------------------------------------------------------------------
+# КАРТА ФАЙЛОВ КОНФИГОВ (только справочник; не применяется кодом)
+# -----------------------------------------------------------------------------
+# server.properties          — порт, online-mode, enable-command-block, view/simulation-distance
+# bukkit.yml                 — ticks-per.autosave, chunk-gc, spawn-limits
+# spigot.yml                 — netty-threads, world-settings view-distance, silent-commandblock-console
+# config/paper-global.yml    — threaded-regions, chunk-system, watchdog, spark, chunk-loading-*, proxies
+# config/paper-world-defaults.yml / <world>/paper-world.yml — command-blocks, chunks.auto-save-*, anti-xray
+# commands.yml               — command-block-overrides
+# config/eturlia.yml         — ЭТОТ файл
+# eturlia-lod.properties     — детальный LOD (если нужен отдельно)
+# fml.toml / neoforge-*.toml — загрузчик NeoForge
+reference:
+  paper-global: config/paper-global.yml
+  paper-world-defaults: config/paper-world-defaults.yml
+  server-properties: server.properties
+  spigot: spigot.yml
+  bukkit: bukkit.yml
+  pack-compat-doc: docs/PACK_COMPAT_ASIC_2026-08.md
