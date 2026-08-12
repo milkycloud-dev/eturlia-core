@@ -169,3 +169,115 @@ Two harness facts that cost real time:
   server reports `lost connection: Timed out` — which reads exactly like a server fault and is not
   one. A dead player stays dead across rejoins. Hence creative.
 * `pkill -f <pattern>` kills your own shell when the pattern appears in its command line.
+
+---
+
+## 2026-08-12 — the session that made mods actually work, not just load
+
+The pack booted and players joined, but Create machinery did nothing, modded barrels crashed the
+End, the Twilight Forest portal kicked in a loop, and half the plugins were dead. Every one of those
+turned out to be a *class* of failure in the core. In order of how much they broke:
+
+### Level had to stop being a sealed ServerLevel
+
+Three separate assumptions in `Level` broke every mod that builds on it:
+
+* **`markAndNotifyBlock` did not exist.** Paper renamed it to `notifyAndUpdatePhysics`; mods still
+  call the vanilla name. Create calls it for every block it removes while assembling a contraption,
+  so no bearing, airship or train ever assembled — the blocks stayed, the contraption entity was
+  never spawned, and the block entity retried the same error forever. Added as a bridge.
+* **19 methods were `final`.** Moonrise seals them so the JIT can inline them. Create's
+  `SchematicLevel` and Ponder's `PonderLevel` override two of them, and a subclass that overrides a
+  final method cannot even be *defined*: `IncompatibleClassChangeError` at class load, before a line
+  of mod code runs. The seals are gone; the methods are untouched.
+* **`worldRegionData` cast `this` to `ServerLevel` in a field initialiser**, which runs inside
+  `Level`'s constructor. Create's `ContraptionWorld` is a `Level` that is not a `ServerLevel`, so
+  every contraption died with a `ClassCastException` at the moment of assembly — right after its
+  blocks had already been taken out of the world. A wrapper level now gets no region data (it has no
+  regions), and `getCurrentWorldData()` lends it the region it is being used from.
+
+`Level` also implements `ILevelExtension` now, which is what carries NeoForge's whole block
+capability API — the way one modded block asks the block beside it for its inventory. `Player`,
+`BlockEntity` and `ItemStack` got their extension interfaces the same way.
+
+### Being outside a region tick is not an error
+
+`Level.getCurrentWorldData()` returned `null` off a region thread, and every CraftBukkit-era field
+lives on it (`capturedTileEntities`, `captureBlockStates`, `captureTreeGeneration`). A console
+command, a plugin's async callback, or a mod's deferred "main thread" task therefore hit a null
+pointer: **3064** of them in one afternoon, all from one block-info packet. Off-region callers now
+get an empty scratch holder — nothing is captured outside a region tick, so "nothing" is the correct
+answer.
+
+Deferred tasks also stopped going to the global region by default. While a packet is being handled
+the thread knows which player sent it, and that player's chunk names the region that owns the blocks
+the task is about to touch. Queuing it there gives correct world data *and* one queue per player
+instead of one for the whole server — the difference a player feels as a Create machine that runs
+smoothly instead of stuttering.
+
+### CraftBukkit methods that mods never heard of
+
+* `Container` had seven abstract CraftBukkit methods. A modded chest implements the interface it
+  found in the vanilla jar, loads fine, and throws `AbstractMethodError` the first time someone opens
+  it — five End crashes in one afternoon from BCLib's barrels. They are `default` now.
+* `Portal.portalAsync` was abstract, so every modded portal (Twilight Forest, BetterEnd, the Aether)
+  killed the region the player was standing in, and the next login repeated it: the reported kick
+  loop. The default implementation asks the mod where it wants the entity to go and hands the move to
+  Folia's async teleport.
+* `CraftEntity.getEntity` wrapped modded projectiles in a plain wrapper, and CraftBukkit's own event
+  code casts those to `Projectile` unconditionally. Create's potato cannon took its region down on
+  first impact. Modded projectiles now get a real projectile wrapper; block-attached entities without
+  a Bukkit class skip the event instead of casting.
+* `SpawnEggItem` dereferenced `defaultType`, which NeoForge's lazy spawn eggs leave null. The NPE
+  fired on the creative-inventory packet, before the egg ever reached a hand — which is exactly what
+  "modded spawn eggs do not work" looked like.
+
+### The plugin remapper, and the plugins behind it
+
+AutoRenamingTool refuses a whole jar over one class it cannot parse, and TAB and DecentHolograms
+both ship adapters for future Minecraft versions compiled at a class-file version this JVM does not
+know. Paper answered a failed remap by dropping the plugin. Now the core strips the classes this JVM
+could never load and remaps again — both plugins load remapped, and DecentHolograms no longer throws
+`CraftPlayer.getHandle()` on every join and quit.
+
+Two more plugin-side classes closed with it: plugin bytecode that names the versioned
+`org.bukkit.craftbukkit.v1_21_R1` package is rewritten to the unversioned one at load (InvSee++),
+and Folia's schedulers clamp a delay of `0` instead of throwing, because Bukkit accepts what Folia
+refused and the plugin died on enable.
+
+### Smaller, still ours
+
+* `BuiltInPackSource.fromName` — the one method NeoForge patches into that class. Without it, a mod
+  that ships its own datapack (Selling Bin, Starcatcher) lost all of it during startup.
+* A failing vanilla command from the console reported `NullPointerException: command` and swallowed
+  the real cause, because Paper's exception wrapper wants a Bukkit `Command` and a vanilla command
+  has none.
+* The "modded entity, plugins see it as UNKNOWN" notice said itself once per entity type; with
+  ninety mods that is a console full of it. Five, then a summary.
+* With `-Deturlia.lithostitched.allow-unsafe=true` set, the Lithostitched gate prints one warning
+  line instead of a thirty-line refusal the operator has already answered.
+
+### What the tests say now
+
+`tools/logcheck.py` grades a boot: it groups every WARN/ERROR, hides the ones already judged benign
+(with the reason next to each pattern) and prints what is left. Run it after every start.
+
+| | |
+|---|---|
+| Boot | `Done (10.6s)` — 86 mods, **38 plugins enabled** |
+| Create contraption | assembles and lifts its blocks (`tools/modtest3.sh`) |
+| Modded blocks placed | Create shaft/cogwheel/casing/motor, Aeronautics propeller bearing, levitite |
+| Summons | vanilla, Alex's Mobs, Twilight Forest, Aeronautics `gust`, `simulated:honey_glue` |
+| AuthMe | register and login through the real client (`tools/clienttest2.sh`) |
+| Alarming lines in a boot | 2, both third-party (see below) |
+
+### Still open, and not ours
+
+* **ImageFrame** fails on enable: its shaded ClassGraph scan finds no `PlatformProvider` under
+  ModLauncher's module layer. Nothing in the core can make ClassGraph enumerate that layer.
+* **KartaAutoAnnouncer** ships a jar with no `config.yml` inside it and calls `saveDefaultConfig()`.
+  That is the plugin's own packaging bug.
+* **Metaclay** is not in this pack at all — Aeronautics 1.3.0 registers `levitite` and
+  `levitite_blend` instead. Nothing to fix; the item does not exist here.
+* `server.properties` has `view-distance=40`. A test client teleported into fresh terrain at that
+  distance stops sending packets long enough for the server to time it out. Lower it for testing.
