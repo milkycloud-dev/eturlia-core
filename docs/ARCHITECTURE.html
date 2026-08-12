@@ -1,0 +1,520 @@
+<title>Eturlia — архитектура и отчёт</title>
+<style>
+  :root{
+    --paper:#f3f5f2; --panel:#ffffff; --ink:#0f1a16; --muted:#5d6b66; --line:#dfe5e1;
+    --par:#1f9d6d;     /* параллельное */
+    --ser:#c0821f;     /* последовательное */
+    --bad:#c8433a;
+    --code:#eef2ef;
+    --mono:ui-monospace,"JetBrains Mono","Cascadia Mono","SF Mono",Consolas,monospace;
+    --sans:system-ui,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{--paper:#0b120f; --panel:#111a16; --ink:#e4ebe7; --muted:#8fa39b; --line:#1e2c26;
+          --par:#37c98f; --ser:#e2a53c; --bad:#e0574c; --code:#0f1714;}
+  }
+  :root[data-theme="dark"]{--paper:#0b120f; --panel:#111a16; --ink:#e4ebe7; --muted:#8fa39b; --line:#1e2c26;
+        --par:#37c98f; --ser:#e2a53c; --bad:#e0574c; --code:#0f1714;}
+  :root[data-theme="light"]{--paper:#f3f5f2; --panel:#ffffff; --ink:#0f1a16; --muted:#5d6b66; --line:#dfe5e1;
+        --par:#1f9d6d; --ser:#c0821f; --bad:#c8433a; --code:#eef2ef;}
+
+  body{background:var(--paper); color:var(--ink); font-family:var(--sans);
+       font-size:16.5px; line-height:1.62; margin:0; -webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1180px; margin:0 auto; padding:0 24px; display:grid; gap:0;
+        grid-template-columns:minmax(0,1fr);}
+  @media(min-width:1080px){ .wrap{grid-template-columns:210px minmax(0,1fr); gap:56px;} }
+  main{max-width:74ch; min-width:0;}
+  nav.toc{display:none;}
+  @media(min-width:1080px){
+    nav.toc{display:block; position:sticky; top:0; align-self:start; padding-top:96px; font-family:var(--mono);
+            font-size:12px; line-height:2.0;}
+    nav.toc a{display:block; color:var(--muted); text-decoration:none; border-left:2px solid var(--line);
+              padding-left:10px;}
+    nav.toc a:hover{color:var(--par); border-left-color:var(--par);}
+  }
+
+  header.hero{padding:88px 0 40px;}
+  .eyebrow{font-family:var(--mono); font-size:11.5px; letter-spacing:.16em; text-transform:uppercase;
+           color:var(--par); margin:0 0 18px;}
+  h1{font-family:var(--mono); font-size:clamp(32px,5.2vw,54px); line-height:1.04; letter-spacing:-.035em;
+     margin:0 0 18px; text-wrap:balance; font-weight:650;}
+  .lede{font-size:19px; color:var(--muted); max-width:62ch; margin:0;}
+
+  h2{font-family:var(--mono); font-size:23px; letter-spacing:-.02em; margin:64px 0 6px; text-wrap:balance;}
+  h2::before{content:attr(data-n); color:var(--par); margin-right:12px; font-size:14px; vertical-align:2px;}
+  h3{font-family:var(--mono); font-size:16px; letter-spacing:-.01em; margin:34px 0 6px; color:var(--ink);}
+  p{margin:14px 0;}
+  a{color:var(--par);}
+  strong{font-weight:650;}
+  code{font-family:var(--mono); font-size:.88em; background:var(--code); padding:1px 5px; border-radius:4px;}
+  pre{font-family:var(--mono); font-size:12.6px; line-height:1.65; background:var(--code); color:var(--ink);
+      border:1px solid var(--line); border-radius:10px; padding:16px 18px; overflow-x:auto; margin:20px 0;}
+  pre code{background:none; padding:0;}
+  hr{border:0; border-top:1px solid var(--line); margin:56px 0;}
+
+  .stats{display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:1px; background:var(--line);
+         border:1px solid var(--line); border-radius:12px; overflow:hidden; margin:34px 0;}
+  .stat{background:var(--panel); padding:18px 16px;}
+  .stat b{display:block; font-family:var(--mono); font-size:26px; letter-spacing:-.03em;
+          font-variant-numeric:tabular-nums; line-height:1.1;}
+  .stat span{display:block; font-size:12px; color:var(--muted); margin-top:6px; line-height:1.4;}
+  .stat.good b{color:var(--par);} .stat.warn b{color:var(--ser);}
+
+  figure{margin:34px 0; padding:0;}
+  figure.bleed{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:22px 20px 14px;}
+  figcaption{font-size:13px; color:var(--muted); margin-top:12px; font-family:var(--mono); line-height:1.5;}
+  .scroll{overflow-x:auto;}
+  svg{display:block; max-width:100%; height:auto;}
+  svg text{font-family:var(--mono); fill:var(--ink);}
+  .t-mut{fill:var(--muted);}
+
+  table{width:100%; border-collapse:collapse; margin:22px 0; font-size:14.5px;}
+  th,td{text-align:left; padding:9px 12px; border-bottom:1px solid var(--line); vertical-align:top;}
+  th{font-family:var(--mono); font-size:11.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--muted);}
+  td code{font-size:12.4px;}
+  .num{font-variant-numeric:tabular-nums; text-align:right;}
+
+  .pill{display:inline-block; font-family:var(--mono); font-size:11px; letter-spacing:.06em;
+        padding:2px 8px; border-radius:999px; border:1px solid currentColor; white-space:nowrap;}
+  .p-par{color:var(--par);} .p-ser{color:var(--ser);} .p-bad{color:var(--bad);}
+
+  .note{border-left:3px solid var(--par); background:var(--panel); padding:14px 18px; border-radius:0 10px 10px 0;
+        margin:24px 0; font-size:15px;}
+  .note.warn{border-left-color:var(--ser);}
+  .note.bad{border-left-color:var(--bad);}
+  footer{color:var(--muted); font-size:13px; padding:60px 0 80px; font-family:var(--mono);}
+</style>
+
+<div class="wrap">
+<nav class="toc">
+  <a href="#s1">01 · что это</a>
+  <a href="#s2">02 · загрузка</a>
+  <a href="#s3">03 · регионы</a>
+  <a href="#s4">04 · потоки</a>
+  <a href="#s5">05 · диспетчер</a>
+  <a href="#s6">06 · нагрузка</a>
+  <a href="#s7">07 · сущности</a>
+  <a href="#s8">08 · моды</a>
+  <a href="#s9">09 · плагины</a>
+  <a href="#s10">10 · что чинили</a>
+  <a href="#s11">11 · осталось</a>
+</nav>
+
+<main>
+<header class="hero">
+  <p class="eyebrow">Eturlia · Folia 1.21.1 + NeoForge 21.1.248</p>
+  <h1>Ядро, которое<br>переваривает моды<br>само</h1>
+  <p class="lede">Отчёт о том, что сделано в ядре, и разбор архитектуры: как мир режется на регионы,
+  что из этого действительно параллельно, как ведут себя моды и плагины, которые про Folia никогда
+  не слышали, и что показали замеры под нагрузкой.</p>
+</header>
+
+<div class="stats">
+  <div class="stat good"><b>20.00</b><span>TPS в покое, все регионы</span></div>
+  <div class="stat good"><b>23 мин</b><span>игрок в мире, 0 упавших тиков</span></div>
+  <div class="stat good"><b>153&nbsp;→&nbsp;7</b><span>потерянных рецептов</span></div>
+  <div class="stat good"><b>1</b><span>ошибка в консоли за сессию</span></div>
+  <div class="stat warn"><b>8.47</b><span>худший TPS региона на пике генерации</span></div>
+  <div class="stat good"><b>86 / 38</b><span>модов / плагинов, ни один не патчен</span></div>
+</div>
+
+<h2 id="s1" data-n="01">Что это такое</h2>
+<p>Одно jar-ядро, в котором одновременно живут два стека, которые обычно друг о друге не знают:</p>
+<table>
+  <tr><th>Слой</th><th>Что даёт</th><th>Чего ждёт от мира</th></tr>
+  <tr><td><b>Folia</b> (форк Paper)</td><td>мир режется на независимые тик-регионы, каждый крутится на своём потоке CPU</td><td>что весь код умеет работать без «главного потока»</td></tr>
+  <tr><td><b>NeoForge</b> 21.1.248</td><td>загрузка модов, RegisterEvent, жизненный цикл, миксины, датапаки</td><td>что сервер однопоточный, как в ванили</td></tr>
+</table>
+<p>Эти два ожидания противоречат друг другу. Проект существует ровно ради того, чтобы примирить их
+<b>в ядре</b>, не трогая моды. Критерий отбора любого исправления один: <i>если завтра поставить
+другой мод с той же ошибкой — он заработает без нового патча?</i> Если нет — это не исправление,
+а костыль под конкретный мод, и в ядро он не идёт.</p>
+
+<h2 id="s2" data-n="02">Как ядро поднимается</h2>
+<figure class="bleed"><div class="scroll">
+<svg viewBox="0 0 880 300" role="img" aria-label="Цепочка загрузки ядра">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+  <g font-size="12.5" color="var(--muted)">
+    <g>
+      <rect x="8" y="18" width="196" height="62" rx="8" fill="none" stroke="var(--line)"/>
+      <text x="22" y="42" font-size="13" font-weight="600">java -jar eturlia.jar</text>
+      <text x="22" y="62" class="t-mut">eturlia.launcher.Main</text>
+    </g>
+    <path d="M204 49 H248" stroke="var(--muted)" fill="none" marker-end="url(#ar)"/>
+    <g>
+      <rect x="250" y="8" width="240" height="82" rx="8" fill="none" stroke="var(--line)"/>
+      <text x="264" y="30" font-size="13" font-weight="600">распаковка вложенных jar</text>
+      <text x="264" y="50" class="t-mut">eturlia-libraries/ · 309 файлов</text>
+      <text x="264" y="70" class="t-mut">Folia · FML · NeoForge · runtime</text>
+    </g>
+    <path d="M490 49 H534" stroke="var(--muted)" fill="none" marker-end="url(#ar)"/>
+    <g>
+      <rect x="536" y="8" width="336" height="82" rx="8" fill="none" stroke="var(--line)"/>
+      <text x="550" y="30" font-size="13" font-weight="600">ModLauncher · FancyModLoader</text>
+      <text x="550" y="50" class="t-mut">скан mods/ · coremods · миксины</text>
+      <text x="550" y="70" class="t-mut">здесь же врезается слой совместимости</text>
+    </g>
+
+    <path d="M704 90 V126" stroke="var(--muted)" fill="none" marker-end="url(#ar)"/>
+    <g>
+      <rect x="536" y="128" width="336" height="70" rx="8" fill="none" stroke="var(--par)"/>
+      <text x="550" y="152" font-size="13" font-weight="600" fill="var(--par)">Folia · регионный сервер</text>
+      <text x="550" y="172" class="t-mut">регионы, чанки, сущности, плагины</text>
+    </g>
+    <path d="M536 163 H492" stroke="var(--muted)" fill="none" marker-end="url(#ar)"/>
+    <g>
+      <rect x="250" y="128" width="240" height="70" rx="8" fill="none" stroke="var(--line)"/>
+      <text x="264" y="152" font-size="13" font-weight="600">NeoForge-хуки в NMS</text>
+      <text x="264" y="172" class="t-mut">RegisterEvent · lifecycle · датапаки</text>
+    </g>
+
+    <g>
+      <rect x="8" y="212" width="864" height="72" rx="8" fill="none" stroke="var(--line)" stroke-dasharray="4 4"/>
+      <text x="22" y="236" font-size="13" font-weight="600">слой совместимости</text>
+      <text x="22" y="256" class="t-mut">scripts/apply_compat_layer.py — 16 планов, каждый выключается флагом JVM</text>
+      <text x="22" y="274" class="t-mut">накладывается на исходники между applyPatches и сборкой jar, идемпотентно</text>
+    </g>
+  </g>
+</svg>
+</div><figcaption>Лаунчер не «оборачивает» сервер — он распаковывает вложенные библиотеки и отдаёт управление ModLauncher, который и поднимает Folia. Слой совместимости живёт в исходниках, а не в рантайме.</figcaption></figure>
+
+<h2 id="s3" data-n="03">Регионы: что именно параллелится</h2>
+<p>Folia не «раскидывает мир по потокам» абстрактно. Она нарезает загруженные чанки на
+<b>регионы</b> — связные группы секций, — и каждый регион получает собственный тик со своим
+счётчиком TPS. Регионы <b>сливаются</b>, когда их области соприкасаются, и <b>делятся</b>, когда
+между ними исчезает связь.</p>
+
+<figure class="bleed"><div class="scroll">
+<svg viewBox="0 0 880 360" role="img" aria-label="Сетка чанков, разбитая на регионы">
+  <g font-size="11.5">
+    <!-- grid -->
+    <g stroke="var(--line)" fill="none">
+      <g id="g">
+      </g>
+    </g>
+    <!-- region A -->
+    <g>
+      <rect x="40" y="40" width="240" height="180" rx="6" fill="var(--par)" fill-opacity="0.12" stroke="var(--par)"/>
+      <text x="52" y="62" fill="var(--par)" font-weight="600">регион #1</text>
+      <text x="52" y="80" class="t-mut">Region Scheduler Thread #0</text>
+      <text x="52" y="98" class="t-mut">игрок · 14.3 MSPT</text>
+      <circle cx="150" cy="150" r="7" fill="var(--par)"/>
+    </g>
+    <!-- region B -->
+    <g>
+      <rect x="310" y="40" width="200" height="120" rx="6" fill="var(--par)" fill-opacity="0.12" stroke="var(--par)"/>
+      <text x="322" y="62" fill="var(--par)" font-weight="600">регион #2</text>
+      <text x="322" y="80" class="t-mut">Thread #1 · 0.25 MSPT</text>
+    </g>
+    <!-- region C -->
+    <g>
+      <rect x="310" y="180" width="200" height="140" rx="6" fill="var(--par)" fill-opacity="0.12" stroke="var(--par)"/>
+      <text x="322" y="202" fill="var(--par)" font-weight="600">регион #3</text>
+      <text x="322" y="220" class="t-mut">Thread #2 · 0.19 MSPT</text>
+    </g>
+    <!-- merging -->
+    <g>
+      <rect x="540" y="40" width="150" height="120" rx="6" fill="var(--par)" fill-opacity="0.06" stroke="var(--par)" stroke-dasharray="5 4"/>
+      <rect x="700" y="40" width="150" height="120" rx="6" fill="var(--par)" fill-opacity="0.06" stroke="var(--par)" stroke-dasharray="5 4"/>
+      <path d="M700 100 H690" stroke="var(--par)" fill="none"/>
+      <text x="552" y="180" class="t-mut">соприкоснулись — сольются в один</text>
+      <text x="552" y="198" class="t-mut">регион и один поток</text>
+    </g>
+    <!-- airship crossing -->
+    <g>
+      <path d="M250 250 L360 250 L400 275 L360 300 L250 300 Z" fill="var(--ser)" fill-opacity="0.18" stroke="var(--ser)"/>
+      <text x="262" y="272" fill="var(--ser)" font-weight="600">постройка через границу</text>
+      <text x="262" y="290" class="t-mut">аэронавтика, поезда, лифты</text>
+      <line x1="310" y1="235" x2="310" y2="330" stroke="var(--ser)" stroke-dasharray="3 3"/>
+    </g>
+    <g>
+      <rect x="540" y="210" width="310" height="110" rx="6" fill="none" stroke="var(--ser)"/>
+      <text x="554" y="234" fill="var(--ser)" font-weight="600">что происходит на границе</text>
+      <text x="554" y="256" class="t-mut">области, которые нужны друг другу,</text>
+      <text x="554" y="274" class="t-mut">оказываются в ОДНОМ регионе:</text>
+      <text x="554" y="292" class="t-mut">Folia сливает их, и вся постройка</text>
+      <text x="554" y="310" class="t-mut">тикает одним потоком</text>
+    </g>
+  </g>
+</svg>
+</div><figcaption>Границы регионов не совпадают с границами построек. Когда постройка занимает соседние области, эти области сливаются в один регион — поэтому «разорванной пополам» она не бывает; цена в том, что большой механизм всегда тикает одним потоком.</figcaption></figure>
+
+<div class="note">
+<b>Про аэронавтику и подобные механизмы.</b> Вопрос «что будет с постройкой между регионами»
+имеет структурный ответ: <b>её не может быть между регионами</b>. Регион — это множество секций,
+которые тикают вместе; как только две области начинают взаимодействовать, регионизатор их
+объединяет. Летящий корабль тянет за собой слияние регионов по маршруту и деление позади себя.
+Следствия, которые видно в замерах: нагрузка от большого механизма не размазывается по ядрам, а
+целиком ложится на один поток, и чем крупнее механизм, тем ближе он к однопоточной ванили.
+</div>
+
+<h2 id="s4" data-n="04">Карта потоков: что параллельно, а что нет</h2>
+<figure class="bleed"><div class="scroll">
+<svg viewBox="0 0 880 300" role="img" aria-label="Какие потоки параллельны">
+  <g font-size="12">
+    <text x="8" y="18" class="t-mut" font-size="11" letter-spacing="1.5">ПАРАЛЛЕЛЬНО</text>
+    <g>
+      <rect x="8" y="30" width="200" height="76" rx="8" fill="var(--par)" fill-opacity="0.1" stroke="var(--par)"/>
+      <text x="22" y="54" font-weight="600" fill="var(--par)">Region Scheduler Thread</text>
+      <text x="22" y="74" class="t-mut">по потоку на регион</text>
+      <text x="22" y="92" class="t-mut">блоки · сущности · чанки · пакеты</text>
+    </g>
+    <g>
+      <rect x="220" y="30" width="200" height="76" rx="8" fill="var(--par)" fill-opacity="0.1" stroke="var(--par)"/>
+      <text x="234" y="54" font-weight="600" fill="var(--par)">Folia Async Scheduler</text>
+      <text x="234" y="74" class="t-mut">плагинные async-задачи</text>
+    </g>
+    <g>
+      <rect x="432" y="30" width="200" height="76" rx="8" fill="var(--par)" fill-opacity="0.1" stroke="var(--par)"/>
+      <text x="446" y="54" font-weight="600" fill="var(--par)">Netty Epoll Server IO</text>
+      <text x="446" y="74" class="t-mut">сеть, кодеки пакетов</text>
+    </g>
+    <g>
+      <rect x="644" y="30" width="228" height="76" rx="8" fill="var(--par)" fill-opacity="0.1" stroke="var(--par)"/>
+      <text x="658" y="54" font-weight="600" fill="var(--par)">worker-пулы</text>
+      <text x="658" y="74" class="t-mut">генерация чанков, свет, ввод-вывод</text>
+    </g>
+
+    <text x="8" y="150" class="t-mut" font-size="11" letter-spacing="1.5">ПОСЛЕДОВАТЕЛЬНО — УЗКОЕ МЕСТО</text>
+    <g>
+      <rect x="8" y="162" width="412" height="76" rx="8" fill="var(--ser)" fill-opacity="0.1" stroke="var(--ser)"/>
+      <text x="22" y="186" font-weight="600" fill="var(--ser)">глобальный регион (RegionizedServer)</text>
+      <text x="22" y="206" class="t-mut">погода, время суток, конфигурационная фаза входа,</text>
+      <text x="22" y="224" class="t-mut">легаси BukkitScheduler, задачи без владельца-региона</text>
+    </g>
+    <g>
+      <rect x="432" y="162" width="440" height="76" rx="8" fill="var(--ser)" fill-opacity="0.1" stroke="var(--ser)"/>
+      <text x="446" y="186" font-weight="600" fill="var(--ser)">Server thread (загрузка)</text>
+      <text x="446" y="206" class="t-mut">старт мира, загрузка модов, реестры, датапаки —</text>
+      <text x="446" y="224" class="t-mut">однопоточно по построению; это те самые 10 секунд до Done</text>
+    </g>
+
+    <g>
+      <rect x="8" y="256" width="864" height="34" rx="8" fill="none" stroke="var(--bad)" stroke-dasharray="4 4"/>
+      <text x="22" y="278" fill="var(--bad)" font-size="12">главного потока в игровом цикле НЕТ вообще — код, который его ищет, попадает в диспетчер из раздела 05</text>
+    </g>
+  </g>
+</svg>
+</div><figcaption>Регионы, сеть и воркеры идут параллельно. Глобальный регион — единственная общая очередь в игровом цикле; всё, что туда попадает, снова становится однопоточным.</figcaption></figure>
+
+<h2 id="s5" data-n="05">Диспетчер: как ядро отвечает моду, который ищет главный поток</h2>
+<p>Folia на <code>MinecraftServer.execute/tell/executeBlocking</code> бросает
+<code>UnsupportedOperationException</code> — главного потока нет, отвечать нечем. Мод об этом не
+знает: Supplementaries строит пакет чанка и просит сервер дослать capabilities блок-энтити. Тик
+региона умирал вместе с исключением, а <b>Folia на упавший тик региона гасит весь сервер</b> —
+через секунду после входа игрока.</p>
+
+<figure class="bleed"><div class="scroll">
+<svg viewBox="0 0 880 260" role="img" aria-label="Дерево решений диспетчера">
+  <g font-size="12.5">
+    <g>
+      <rect x="300" y="8" width="280" height="46" rx="8" fill="none" stroke="var(--line)"/>
+      <text x="316" y="36" font-weight="600">мод зовёт execute / tell / executeBlocking</text>
+    </g>
+    <path d="M440 54 V84" stroke="var(--muted)" fill="none" marker-end="url(#ar)"/>
+    <g>
+      <rect x="290" y="86" width="300" height="46" rx="8" fill="none" stroke="var(--par)"/>
+      <text x="306" y="114" fill="var(--par)">мы внутри тика региона?</text>
+    </g>
+    <path d="M290 109 H150 V150" stroke="var(--muted)" fill="none" marker-end="url(#ar)"/>
+    <path d="M590 109 H730 V150" stroke="var(--muted)" fill="none" marker-end="url(#ar)"/>
+    <text x="196" y="102" class="t-mut" font-size="11">да</text>
+    <text x="700" y="102" class="t-mut" font-size="11">нет</text>
+    <g>
+      <rect x="20" y="152" width="264" height="86" rx="8" fill="var(--par)" fill-opacity="0.1" stroke="var(--par)"/>
+      <text x="34" y="176" font-weight="600" fill="var(--par)">выполнить ЗДЕСЬ, немедленно</text>
+      <text x="34" y="196" class="t-mut">этот поток уже владеет данными,</text>
+      <text x="34" y="214" class="t-mut">которые задача собирается трогать —</text>
+      <text x="34" y="232" class="t-mut">единственный вариант, переживающий</text>
+    </g>
+    <g>
+      <rect x="600" y="152" width="264" height="86" rx="8" fill="var(--ser)" fill-opacity="0.1" stroke="var(--ser)"/>
+      <text x="614" y="176" font-weight="600" fill="var(--ser)">в очередь глобального региона</text>
+      <text x="614" y="196" class="t-mut">netty, пулы плагинов, загрузчик,</text>
+      <text x="614" y="214" class="t-mut">и «Server thread», который тик-поток,</text>
+      <text x="614" y="232" class="t-mut">но не владеет ни одним регионом</text>
+    </g>
+    <text x="34" y="250" class="t-mut" font-size="11">ensureTickThread()</text>
+  </g>
+</svg>
+</div><figcaption>MinecraftServer.eturlia$runAsMainThread. Обе ветки оборачивают задачу в guard: упавшая пишется в лог и не убивает регион.</figcaption></figure>
+
+<p>Тонкость, которая стоила отдельной отладки: «Server thread» на старте — <b>тоже</b> тик-поток
+(<code>TickThread.isTickThread()</code> истинно), но регионом не владеет. Проверять нужно
+<code>TickRegionScheduler.getCurrentRegion() != null</code>, иначе события старта NeoForge
+получают null и падают.</p>
+
+<h2 id="s6" data-n="06">Замеры под нагрузкой</h2>
+<p>Тест: игрок в креативе, восемь телепортов по 900 блоков в несгенерированную местность каждые
+11 секунд — более грубая версия того, что делает летящий игрок, — затем 36 животных в одной точке.
+На каждом шаге снимался <code>/tps</code>.</p>
+
+<figure class="bleed"><div class="scroll">
+<svg viewBox="0 0 880 300" role="img" aria-label="TPS по шагам нагрузочного теста">
+  <g font-size="11.5">
+    <line x1="60" y1="20" x2="60" y2="230" stroke="var(--line)"/>
+    <line x1="60" y1="230" x2="860" y2="230" stroke="var(--line)"/>
+    <g class="t-mut">
+      <text x="24" y="24">20</text><line x1="56" y1="20" x2="860" y2="20" stroke="var(--line)" stroke-dasharray="2 4"/>
+      <text x="24" y="129">10</text><line x1="56" y1="125" x2="860" y2="125" stroke="var(--line)" stroke-dasharray="2 4"/>
+      <text x="30" y="234">0</text>
+    </g>
+    <text x="8" y="14" class="t-mut" font-size="10">TPS</text>
+
+    <!-- bars: pairs (lowest, median) per step -->
+    <g>
+      <!-- idle -->
+      <rect x="80" y="20" width="26" height="210" fill="var(--par)" fill-opacity="0.85"/>
+      <rect x="108" y="20" width="26" height="210" fill="var(--par)" fill-opacity="0.35"/>
+      <text x="82" y="248" class="t-mut">покой</text>
+      <text x="80" y="14" class="t-mut" font-size="10">20.0</text>
+
+      <!-- hop1 -->
+      <rect x="176" y="21" width="26" height="209" fill="var(--par)" fill-opacity="0.85"/>
+      <rect x="204" y="20" width="26" height="210" fill="var(--par)" fill-opacity="0.35"/>
+      <text x="176" y="248" class="t-mut">прыжок 1</text>
+      <text x="172" y="14" class="t-mut" font-size="10">19.87</text>
+
+      <!-- hop5 worst -->
+      <rect x="272" y="141" width="26" height="89" fill="var(--bad)" fill-opacity="0.85"/>
+      <rect x="300" y="117" width="26" height="113" fill="var(--ser)" fill-opacity="0.6"/>
+      <text x="270" y="248" class="t-mut">прыжок 5</text>
+      <text x="266" y="135" class="t-mut" font-size="10">8.47</text>
+      <text x="296" y="111" class="t-mut" font-size="10">10.78</text>
+
+      <!-- hop6 -->
+      <rect x="368" y="25" width="26" height="205" fill="var(--par)" fill-opacity="0.85"/>
+      <rect x="396" y="20" width="26" height="210" fill="var(--par)" fill-opacity="0.35"/>
+      <text x="366" y="248" class="t-mut">прыжок 6</text>
+      <text x="362" y="18" class="t-mut" font-size="10">19.49</text>
+
+      <!-- hop8 -->
+      <rect x="464" y="20" width="26" height="210" fill="var(--par)" fill-opacity="0.85"/>
+      <rect x="492" y="20" width="26" height="210" fill="var(--par)" fill-opacity="0.35"/>
+      <text x="462" y="248" class="t-mut">прыжок 8</text>
+
+      <!-- entities -->
+      <rect x="560" y="20" width="26" height="210" fill="var(--par)" fill-opacity="0.85"/>
+      <rect x="588" y="20" width="26" height="210" fill="var(--par)" fill-opacity="0.35"/>
+      <text x="552" y="248" class="t-mut">36 мобов</text>
+
+      <!-- after -->
+      <rect x="656" y="20" width="26" height="210" fill="var(--par)" fill-opacity="0.85"/>
+      <rect x="684" y="20" width="26" height="210" fill="var(--par)" fill-opacity="0.35"/>
+      <text x="648" y="248" class="t-mut">после</text>
+    </g>
+    <g transform="translate(760,30)">
+      <rect x="0" y="0" width="12" height="12" fill="var(--par)" fill-opacity="0.85"/>
+      <text x="18" y="11" class="t-mut">худший регион</text>
+      <rect x="0" y="22" width="12" height="12" fill="var(--par)" fill-opacity="0.35"/>
+      <text x="18" y="33" class="t-mut">медиана</text>
+    </g>
+    <text x="60" y="276" class="t-mut">0 упавших тиков региона за весь тест</text>
+  </g>
+</svg>
+</div><figcaption>Провал на пятом прыжке — момент, когда генерация местности идёт в нескольких регионах сразу. К шестому прыжку система вернулась к 19.5, к седьмому — к 20.00.</figcaption></figure>
+
+<table>
+  <tr><th>Шаг</th><th class="num">худший TPS</th><th class="num">медиана</th><th class="num">лучший</th><th>что видно</th></tr>
+  <tr><td>покой</td><td class="num">20.00</td><td class="num">20.00</td><td class="num">20.00</td><td>4.23 MSPT на самом нагруженном регионе</td></tr>
+  <tr><td>прыжок 1</td><td class="num">19.87</td><td class="num">20.00</td><td class="num">20.00</td><td><b>28.5% util / 14.30 MSPT</b> на регионе игрока, у соседей 0.41 и 0.34 MSPT</td></tr>
+  <tr><td>прыжок 5</td><td class="num" style="color:var(--bad)">8.47</td><td class="num">10.78</td><td class="num">21.11</td><td>пик генерации: 57 MSPT, просадка нескольких регионов</td></tr>
+  <tr><td>прыжок 6</td><td class="num">19.49</td><td class="num">20.00</td><td class="num">20.00</td><td>восстановление за один шаг</td></tr>
+  <tr><td>прыжки 7–8</td><td class="num">20.00</td><td class="num">20.00</td><td class="num">20.00</td><td>0.18 MSPT</td></tr>
+  <tr><td>36 животных</td><td class="num">20.00</td><td class="num">20.00</td><td class="num">20.00</td><td>0.15 MSPT — на фоне неотличимо от покоя</td></tr>
+</table>
+
+<div class="note">
+<b>Главный вывод замера.</b> На первом прыжке нагрузка от игрока — 14.30 MSPT — легла на
+<b>его</b> регион, а соседние остались на 0.4 MSPT и ровных 20.00 TPS. Это и есть работающая
+изоляция: один занятой игрок не роняет тик всему миру. Проседание на пятом прыжке — не отказ
+регионов, а исчерпание пула генерации чанков, общего для всех; оно рассасывается само.
+</div>
+
+<h3>Ограничение честности этих цифр</h3>
+<p>Тест — один игрок и 36 ванильных животных на 32-ядерной машине, где рядом крутится
+production-сервер. Это доказывает изоляцию регионов и отсутствие падений, но <b>не</b> заменяет
+нагрузку двадцати игроков в разных концах карты и не измеряет модовые механизмы Create под
+полной загрузкой.</p>
+
+<h2 id="s7" data-n="07">Сущности и животные</h2>
+<p>Сущность принадлежит региону, в котором она находится, и тикает его потоком. Пересечение
+границы — это передача владения, а не блокировка. Что из этого следовало чинить в ядре:</p>
+<table>
+  <tr><th>Симптом</th><th>Механизм</th><th>Ответ ядра</th></tr>
+  <tr><td>смерть региона на естественном спавне модового моба</td><td><code>CraftEntityType.minecraftToBukkit</code> бросал: Bukkit-перечисление не знает модовых сущностей</td><td>отвечает <code>UNKNOWN</code></td></tr>
+  <tr><td><code>AssertionError: Unknown entity class</code></td><td><code>CraftEntity</code> строит обёртку по типу Bukkit</td><td><code>CraftLivingEntity</code> либо новый конкретный <code>EturliaUnknownEntity</code></td></tr>
+  <tr><td>86 ошибок за 5 минут: <code>EntityType doesn't have key!</code></td><td>слушатель читает тип спавнящейся сущности и зовёт <code>getKey()</code> без проверки; бросок рвёт всю раздачу события</td><td><code>UNKNOWN</code> отвечает <code>eturlia:unknown</code></td></tr>
+  <tr><td>терялась смерть моба вместе с дропом</td><td><code>CraftSound.minecraftToBukkit</code> бросал на модовом звуке внутри построения <code>EntityDeathEvent</code></td><td>отвечает <code>null</code>, все читатели это переваривают</td></tr>
+  <tr><td>смерть региона на первом тике после входа</td><td>Curios спрашивает capabilities у каждого живого существа</td><td><code>Entity.getCapability</code> / <code>ItemStack.getCapability</code></td></tr>
+</table>
+
+<h2 id="s8" data-n="08">Моды, которые про Folia не знают</h2>
+<p>Никакой «автоматической параллелизации мода» не существует и существовать не может: ядро не
+переписывает чужой код. Что реально происходит — мод исполняется <b>тем потоком, который владеет
+данными</b>, и ядро гарантирует, что этот поток у него есть.</p>
+
+<h3>Три вещи, которые ядро делает за мод</h3>
+<table>
+  <tr><th>Ситуация</th><th>Что было</th><th>Что стало</th></tr>
+  <tr><td>мод планирует работу «на главный поток»</td><td>исключение → смерть региона → остановка сервера</td><td>диспетчер из раздела 05: выполнить на владеющем потоке или в глобальной очереди</td></tr>
+  <tr><td>инжектор миксина не находит цель</td><td>падение загрузки</td><td>сломанный миксин снимается по имени, класс собирается заново с чистой копии; остальные миксины применяются</td></tr>
+  <tr><td>мод зовёт метод, которого в нашей копии Minecraft нет</td><td><code>NoSuchMethodError</code> внутри тика</td><td>метод дописывается в ядро — NeoForge патчит свою копию Minecraft, мы Folia</td></tr>
+</table>
+
+<h3>Чего ядро не делает</h3>
+<p>Мод, который держит статическое изменяемое состояние и предполагает, что тикает один поток,
+на регионах будет race-иться. Ядро это <b>не</b> лечит и вылечить не может — оно только не даёт
+такому моду уронить сервер. Практический признак риска: мод трогает мир далеко от своего блока
+(радиус больше региона), либо ведёт глобальный список сущностей.</p>
+
+<h2 id="s9" data-n="09">Плагины: какие подходят</h2>
+<p>Штатная Folia не грузит плагин без пометки <code>folia-supported: true</code>. Здесь гейт снят
+(<code>eturlia.compat.plugins=true</code>), а легаси <code>BukkitScheduler</code> крутится от
+глобального тика. Что это значит на практике:</p>
+<table>
+  <tr><th></th><th>Категория</th><th>Как ведёт себя</th></tr>
+  <tr><td><span class="pill p-par">хорошо</span></td><td>помеченные <code>folia-supported</code></td><td>работают как задумано, региональные планировщики на месте</td></tr>
+  <tr><td><span class="pill p-par">хорошо</span></td><td>событийные без своего расписания — чат, права, экономика на БД</td><td>событие приходит на владеющем потоке, плагин отвечает синхронно</td></tr>
+  <tr><td><span class="pill p-ser">с оговоркой</span></td><td>на легаси <code>BukkitScheduler</code></td><td>задачи идут через глобальный тик — работают, но это общая очередь: тяжёлый таймер тормозит всех</td></tr>
+  <tr><td><span class="pill p-ser">с оговоркой</span></td><td>работающие с миром «широко» — регионы защиты, миро-эдиты</td><td>обращение к чанку чужого региона упирается в проверку потока; WorldGuard уже потребовал отдельного исправления в тегах</td></tr>
+  <tr><td><span class="pill p-bad">не работает</span></td><td>собранные под Spigot-маппинги (DecentHolograms, InvSee++)</td><td><code>NoSuchMethodError: CraftPlayer.getHandle()</code> — нужен ремаппер, он пока не поднимается</td></tr>
+  <tr><td><span class="pill p-bad">не работает</span></td><td>объявляющие <code>libraries:</code> в plugin.yml</td><td>Maven-резолвер Paper под ModLauncher не разрешает зависимости</td></tr>
+</table>
+
+<h2 id="s10" data-n="10">Что сделано в ядре</h2>
+<p>Восемь классов поломок. Каждый закрыт в ядре и переключается флагом; <code>strict</code>
+возвращает штатное поведение Folia.</p>
+<table>
+  <tr><th>#</th><th>Класс поломки</th><th>Эффект до</th><th>После</th></tr>
+  <tr><td>1</td><td>у Folia нет главного потока, а моды его ищут</td><td>смерть региона → остановка сервера через секунду после входа</td><td>диспетчер + guard</td></tr>
+  <tr><td>2</td><td>методы, которые NeoForge дописывает в ванильные классы</td><td><code>NoSuchMethodError</code> в тике; 270 ошибок на вход</td><td><code>LootContext.getQueriedLootTableId</code>, <code>Level/Entity/ItemStack.getCapability</code>, <code>Item implements IItemExtension</code></td></tr>
+  <tr><td>3</td><td>рецепты с типами ингредиентов NeoForge</td><td>153 рецепта не грузились</td><td>дисп-кодек NeoForge; 7 осталось (устаревший JSON модов)</td></tr>
+  <tr><td>4</td><td>перечисления Bukkit не описывают модовый контент</td><td>броски в тике: сущности, звуки, материалы</td><td><code>UNKNOWN</code>/<code>null</code>/<code>AIR</code> вместо исключения</td></tr>
+  <tr><td>5</td><td>ванильный тег на модовом сервере содержит модовые записи</td><td>NPE внутри статического инициализатора → WorldGuard мёртв весь запуск</td><td>теги отбрасывают записи без Bukkit-аналога</td></tr>
+  <tr><td>6</td><td>упавший миксин уносил класс целиком</td><td>отказ загрузки</td><td>снятие одного миксина, повтор с чистой копии</td></tr>
+  <tr><td>7</td><td>реестры, расширяемые перечисления, рукопожатие</td><td>клиент не входил</td><td><code>RecipeBookType</code>, поздняя регистрация, статическая фабрика для конструктора конфигурации</td></tr>
+  <tr><td>8</td><td>плагины на Folia</td><td>не грузились без пометки</td><td>гейт снят, легаси-планировщик от глобального тика</td></tr>
+</table>
+
+<h2 id="s11" data-n="11">Что осталось открытым</h2>
+<table>
+  <tr><th>Что</th><th>Состояние</th></tr>
+  <tr><td>ремаппер плагинов Spigot→Mojang</td><td>подключён к маппингам на диске, но выключен: при включении падает загрузка плагинов — <code>net.neoforged.art.api.Transformer</code> не виден слою, куда ModLauncher грузит сервер</td></tr>
+  <tr><td><code>ServerStartedEvent</code> у модов</td><td>не доходит: <code>getCurrentRegion()</code> == null на Server thread</td></tr>
+  <tr><td>7 рецептов и 20 достижений</td><td>устаревший JSON модов и ссылки на отсутствующие моды — не ядро</td></tr>
+  <tr><td><code>LibraryLoader</code> под ModLauncher</td><td>плагины с <code>libraries:</code> не резолвят Maven</td></tr>
+  <tr><td>консоль без <code>&gt;</code></td><td>оказалось не ядро: <code>start.sh</code> заворачивал вывод в <code>tee</code>, из-за чего fd 1 переставал быть tty и JLine не поднимал терминал. Убрано, лог теперь пишет сам screen</td></tr>
+</table>
+
+<hr>
+<footer>
+Замеры сняты на тестовом сервере 12.08.2026: Folia 1.21.1 + NeoForge 21.1.248, 86 модов, 38 плагинов,
+куча -Xms2G -Xmx8G, 32 ядра. Источник цифр — <code>/tps</code> самого сервера и его журналы.
+</footer>
+</main>
+</div>
