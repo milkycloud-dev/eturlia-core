@@ -2599,6 +2599,45 @@ def install_wrapper_level_compat():
     )
 
 
+def install_modded_material_bridge():
+    """A modded block answers plugins with a Material instead of null."""
+    print("modded material plane")
+    replace(
+        SERVER + "/org/bukkit/craftbukkit/util/CraftMagicNumbers.java",
+        """    public static Material getMaterial(Block block) {
+        return CraftMagicNumbers.BLOCK_MATERIAL.get(block);
+    }""",
+        """    public static Material getMaterial(Block block) {
+        // Eturlia start - a modded block has no Material, and plugins never check for null
+        // CoreProtect calls blockType.name() and WorldGuard compares the Material directly, both
+        // straight out of BlockPlaceEvent - so the first modded block a player places takes the
+        // event handler down with a NullPointerException, and with it whatever protection that
+        // plugin was there to apply. STONE is the least surprising stand-in: a plain solid block,
+        // so region protection and logging behave the way they would for any other block, and
+        // nothing is told that a modded block is empty air. -Deturlia.compat.bukkit-types=strict
+        // brings back the null.
+        Material material = CraftMagicNumbers.BLOCK_MATERIAL.get(block);
+        if (material == null && !"strict".equalsIgnoreCase(System.getProperty("eturlia.compat.bukkit-types", "lenient"))) {
+            if (ETURLIA_UNKNOWN_BLOCKS.add(block)) {
+                int seen = ETURLIA_UNKNOWN_BLOCKS.size();
+                if (seen <= 3) {
+                    org.bukkit.Bukkit.getLogger().info("Eturlia: " + BuiltInRegistries.BLOCK.getKey(block)
+                            + " is a modded block, so plugins see it as STONE");
+                } else if (seen == 4) {
+                    org.bukkit.Bukkit.getLogger().info("Eturlia: more modded blocks follow; plugins see all of them as STONE");
+                }
+            }
+            return Material.STONE;
+        }
+        return material;
+        // Eturlia end - a modded block has no Material, and plugins never check for null
+    }
+
+    private static final java.util.Set<Block> ETURLIA_UNKNOWN_BLOCKS = java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<>()); // Eturlia""",
+        "CraftMagicNumbers answers STONE for a modded block",
+    )
+
+
 def install_console_command_errors():
     """A failing vanilla command reports what went wrong instead of a NullPointerException."""
     print("console command error plane")
@@ -3143,6 +3182,7 @@ if __name__ == "__main__":
     install_wrapper_level_compat()
     install_off_region_world_data()
     install_console_command_errors()
+    install_modded_material_bridge()
     install_level_subclass_compat()
     install_level_is_subclassable()
     install_lenient_schedulers()
