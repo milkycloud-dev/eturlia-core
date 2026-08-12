@@ -161,6 +161,17 @@ public final class Main {
         command.add("-Dfml.gameLayerLibraries=");
         command.add("-DlibraryDirectory=" + outputDir);
         command.add("-DlegacyClassPath=" + legacyClassPathWithExtra);
+        // Eturlia - jars the game layer must own, not just see on legacyClassPath
+        String extraGameLayer = allLibs.stream()
+                .filter(p -> {
+                    String n = p.getFileName().toString().toLowerCase(Locale.ROOT);
+                    return n.startsWith("autorenamingtool-"); // srgutils is already its own JPMS module - unioning it into minecraft is a split package
+                })
+                .map(Path::toString)
+                .collect(Collectors.joining(File.pathSeparator));
+        if (!extraGameLayer.isEmpty()) {
+            command.add("-Deturlia.extraGameLayerJars=" + extraGameLayer);
+        }
         command.add("-Deturlia.serverJar=" + serverJar.toAbsolutePath().normalize());
         command.add("-Deturlia.neoforgeJar=" + neoForgeJar.toAbsolutePath().normalize());
         Path apiJar = findLib(allLibs, "folia-api-");

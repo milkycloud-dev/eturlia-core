@@ -1318,6 +1318,32 @@ def install_neoforge_patches():
     )
 
 
+def install_regionless_save():
+    """A thread that owns no region must not fail the event it is running."""
+    print("regionless save plane")
+    replace(
+        SERVER + "/ca/spottedleaf/moonrise/patches/chunk_system/scheduling/ChunkHolderManager.java",
+        """        final int regionShift = this.world.moonrise$getRegionChunkShift();
+        for (final LongIterator iterator = io.papermc.paper.threadedregions.TickRegionScheduler.getCurrentRegion().getOwnedSectionsUnsynchronised(); iterator.hasNext();) {""",
+        """        final int regionShift = this.world.moonrise$getRegionChunkShift();
+        // Eturlia start - a thread that owns no region has no sections to name
+        // NeoForge fires ServerStartedEvent on the "Server thread", which is a tick thread that
+        // owns no region, and a mod handler that touches the world lands here. The unguarded call
+        // NPE'd, FML reported the whole event as failed, and every mod waiting on it stayed
+        // half-initialised - Easy NPC printed "Server not initialized" once an hour for exactly
+        // that reason. There is nothing to save at that moment either: no region, no dirty chunks.
+        final io.papermc.paper.threadedregions.ThreadedRegionizer.ThreadedRegion<io.papermc.paper.threadedregions.TickRegions.TickRegionData, io.papermc.paper.threadedregions.TickRegions.TickRegionSectionData> eturlia$region =
+            io.papermc.paper.threadedregions.TickRegionScheduler.getCurrentRegion();
+        if (eturlia$region == null) {
+            return;
+        }
+        // Eturlia end - a thread that owns no region has no sections to name
+        for (final LongIterator iterator = eturlia$region.getOwnedSectionsUnsynchronised(); iterator.hasNext();) {""",
+        "ChunkHolderManager tolerates a thread with no owning region",
+        marker="eturlia$region",
+    )
+
+
 def install_main_thread_dispatch():
     """Folia has no main thread; mods keep asking it to run things anyway."""
     print("main-thread dispatch plane")
@@ -1729,6 +1755,7 @@ if __name__ == "__main__":
     install_neoforge_patches()
     install_custom_ingredients()
     install_material_maps()
+    install_regionless_save()
     install_main_thread_dispatch()
     install_shape_compat()
     install_quarantine()
