@@ -1318,6 +1318,256 @@ def install_neoforge_patches():
     )
 
 
+EXCEPTION_COLLECTOR = '''package net.minecraft.util;
+
+import javax.annotation.Nullable;
+
+public class ExceptionCollector<T extends Throwable> {
+    @Nullable
+    private T result;
+
+    public void add(T throwable) {
+        if (this.result == null) {
+            this.result = throwable;
+        } else if (this.result != throwable) {
+            // Eturlia - the same throwable can arrive twice
+            // Paper's plugin remapper reports one failure from several of its parallel tasks, and
+            // Throwable.addSuppressed(this) answers "Self-suppression not permitted". That
+            // IllegalArgumentException then replaced the real failure and aborted the whole plugin
+            // directory scan - the server came up with zero plugins and no usable diagnosis.
+            this.result.addSuppressed(throwable);
+        }
+    }
+
+    public void throwIfPresent() throws T {
+        if (this.result != null) {
+            throw this.result;
+        }
+    }
+}
+'''
+
+
+def install_reobf_server_jar():
+    """The remapper needs a real file for the server jar, not a union:// code source."""
+    print("reobf server jar plane")
+    replace(
+        SERVER + "/io/papermc/paper/pluginremap/ReobfServer.java",
+        """    private static Path serverJar() {
+        try {
+            return Path.of(ReobfServer.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+        } catch (final URISyntaxException ex) {
+            throw new RuntimeException(ex);
+        }
+    }""",
+        """    private static Path serverJar() {
+        // Eturlia start - the code source is a union:// path under ModLauncher
+        // securejarhandler hands out paths on its own filesystem, and AutoRenamingTool wants a
+        // java.io.File - Path.toFile() then answers "Path not associated with default file
+        // system", which surfaced as "Failed to remap server jar" and took the whole plugin
+        // directory scan with it. The launcher already knows where the real jar is.
+        final String configured = System.getProperty("eturlia.serverJar");
+        if (configured != null && !configured.isBlank()) {
+            final Path candidate = Path.of(configured);
+            if (Files.isRegularFile(candidate)) {
+                return candidate;
+            }
+        }
+        // Eturlia end - the code source is a union:// path under ModLauncher
+        try {
+            return Path.of(ReobfServer.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+        } catch (final URISyntaxException ex) {
+            throw new RuntimeException(ex);
+        }
+    }""",
+        "ReobfServer uses the real server jar path",
+    )
+
+
+def install_exception_collector():
+    """Collecting the same failure twice stops replacing it with a self-suppression error."""
+    print("exception collector plane")
+    path = SERVER + "/net/minecraft/util/ExceptionCollector.java"
+    if os.path.exists(path) and "the same throwable can arrive twice" in read(path):
+        print("  already applied: ExceptionCollector tolerates a repeated throwable")
+        return
+    write(path, EXCEPTION_COLLECTOR)
+    print("  ExceptionCollector tolerates a repeated throwable")
+
+
+def install_legacy_item_key():
+    """A recipe result written the 1.20 way (`item`) still reads on 1.21 (`id`)."""
+    print("legacy item key plane")
+    path = SERVER + "/net/minecraft/world/item/ItemStack.java"
+
+    replace(
+        path,
+        """    public static final Codec<ItemStack> CODEC = Codec.lazyInitialized(() -> {""",
+        """    // Eturlia start - accept the 1.20 spelling of the item field
+    // 1.21 renamed the field from "item" to "id". Mods that never updated their generated JSON
+    // fail with "No key id in MapLike[{\\"item\\":\\"...\\",\\"count\\":1}]" and the whole recipe is
+    // dropped. Reading either spelling costs nothing and writes back the current one.
+    private static com.mojang.serialization.MapCodec<Holder<Item>> eturlia$itemField() {
+        return Codec.mapEither(
+                ItemStack.ITEM_NON_AIR_CODEC.fieldOf("id"),
+                ItemStack.ITEM_NON_AIR_CODEC.fieldOf("item")
+        ).xmap(
+                (either) -> either.map(java.util.function.Function.identity(), java.util.function.Function.identity()),
+                com.mojang.datafixers.util.Either::left
+        );
+    }
+    // Eturlia end - accept the 1.20 spelling of the item field
+
+    public static final Codec<ItemStack> CODEC = Codec.lazyInitialized(() -> {""",
+        "ItemStack carries the legacy-key reader",
+    )
+
+    replace(
+        path,
+        """            return instance.group(ItemStack.ITEM_NON_AIR_CODEC.fieldOf("id").forGetter(ItemStack::getItemHolder), ExtraCodecs.intRange(1, 99).fieldOf("count").orElse(1).forGetter(ItemStack::getCount)""",
+        """            return instance.group(ItemStack.eturlia$itemField().forGetter(ItemStack::getItemHolder), ExtraCodecs.intRange(1, 99).fieldOf("count").orElse(1).forGetter(ItemStack::getCount)""",
+        "ItemStack.CODEC reads id or item",
+    )
+
+    replace(
+        path,
+        """            return instance.group(ItemStack.ITEM_NON_AIR_CODEC.fieldOf("id").forGetter(ItemStack::getItemHolder), DataComponentPatch.CODEC.optionalFieldOf("components", DataComponentPatch.EMPTY).forGetter((itemstack) -> {""",
+        """            return instance.group(ItemStack.eturlia$itemField().forGetter(ItemStack::getItemHolder), DataComponentPatch.CODEC.optionalFieldOf("components", DataComponentPatch.EMPTY).forGetter((itemstack) -> {""",
+        "ItemStack.SINGLE_ITEM_CODEC reads id or item",
+    )
+
+
+def install_library_downloader():
+    """A plugin that declares `libraries:` gets them even though Aether cannot start here."""
+    print("plugin library plane")
+    path = API + "/org/bukkit/plugin/java/LibraryLoader.java"
+
+    replace(
+        path,
+        """        // Eturlia: Maven resolver missing — allow paperLibraryPaths-only; fail clearly for libraries=
+        if (this.repository == null || this.session == null) {
+            if (paperLibraryPaths != null && desc.getLibraries().isEmpty()) {
+                // fall through to Paper path using only paperLibraryPaths
+            } else if (!desc.getLibraries().isEmpty()) {
+                throw new RuntimeException("[Eturlia] Cannot resolve libraries for plugin '"
+                        + desc.getName() + "': Maven RepositorySystem unavailable under ModLauncher/FML");
+            } else {
+                return null;
+            }
+        }""",
+        """        // Eturlia start - resolve the coordinates ourselves when Aether could not start
+        // Maven's ServiceLocator does not come up under ModLauncher, so `repository` is null and
+        // every plugin declaring `libraries:` used to be refused outright. The coordinates in a
+        // plugin.yml are ordinary Maven ones, and Maven Central serves them over plain HTTP at a
+        // path derived from the coordinate - which is all this needs. No transitive resolution:
+        // a library that needs its own dependencies has to list them, and the plugin will say so
+        // with a NoClassDefFoundError naming exactly what is missing.
+        java.util.List<java.nio.file.Path> eturliaDirectJars = java.util.Collections.emptyList();
+        if (this.repository == null || this.session == null) {
+            if (!desc.getLibraries().isEmpty()) {
+                eturliaDirectJars = this.eturlia$fetchLibraries(desc.getLibraries(), desc.getName());
+                if (eturliaDirectJars.isEmpty()) {
+                    throw new RuntimeException("[Eturlia] Cannot resolve libraries for plugin '"
+                            + desc.getName() + "': none of " + desc.getLibraries() + " could be fetched");
+                }
+            } else if (paperLibraryPaths == null) {
+                return null;
+            }
+        }
+        // Eturlia end - resolve the coordinates ourselves when Aether could not start""",
+        "LibraryLoader fetches declared libraries directly",
+    )
+
+    replace(
+        path,
+        """        DependencyResult result;
+        if (!dependencies.isEmpty()) try // Paper - plugin loader api""",
+        """        DependencyResult result;
+        if (this.repository == null || this.session == null) {
+            result = null; // Eturlia - already fetched above
+        } else if (!dependencies.isEmpty()) try // Paper - plugin loader api""",
+        "LibraryLoader skips Aether when it is not there",
+    )
+
+    replace(
+        path,
+        """        if (paperLibraryPaths != null) jarPaths.addAll(paperLibraryPaths);""",
+        """        if (paperLibraryPaths != null) jarPaths.addAll(paperLibraryPaths);
+        jarPaths.addAll(eturliaDirectJars); // Eturlia - whatever we fetched by hand""",
+        "LibraryLoader hands the fetched jars to the class loader",
+    )
+
+    replace(
+        path,
+        """    @Nullable
+    public ClassLoader createLoader(@NotNull PluginDescriptionFile desc)
+    {""",
+        """    // Eturlia start - a minimal Maven Central fetcher
+    /** Where a coordinate lands on disk, mirroring Maven's own layout so a second boot is free. */
+    private static java.nio.file.Path eturlia$cachePath(String group, String artifactId, String version, String fileName) {
+        return java.nio.file.Path.of("libraries")
+                .resolve(group.replace('.', java.io.File.separatorChar))
+                .resolve(artifactId)
+                .resolve(version)
+                .resolve(fileName);
+    }
+
+    /**
+     * Downloads each {@code groupId:artifactId:version} coordinate from Maven Central.
+     *
+     * <p>Longer Maven forms ({@code g:a:packaging:v}, {@code g:a:packaging:classifier:v}) are read
+     * as first / second / last and fetched as a jar; a classifier is honoured when present. What
+     * is not done is transitive resolution - Aether's job - so a coordinate whose own dependencies
+     * are missing will surface later as a NoClassDefFoundError naming the missing class.</p>
+     */
+    private java.util.List<java.nio.file.Path> eturlia$fetchLibraries(java.util.List<String> coordinates, String pluginName) {
+        String base = System.getProperty("eturlia.maven-central", "https://repo.maven.apache.org/maven2");
+        java.util.List<java.nio.file.Path> resolved = new ArrayList<>();
+        for (String coordinate : coordinates) {
+            String[] parts = coordinate.split(":");
+            if (parts.length < 3) {
+                logger.log(Level.SEVERE, "[Eturlia] " + pluginName + ": unreadable library coordinate '" + coordinate + "'");
+                continue;
+            }
+            String group = parts[0];
+            String artifactId = parts[1];
+            String version = parts[parts.length - 1];
+            String classifier = parts.length >= 5 ? "-" + parts[3] : "";
+            String fileName = artifactId + "-" + version + classifier + ".jar";
+            java.nio.file.Path target = LibraryLoader.eturlia$cachePath(group, artifactId, version, fileName);
+            if (java.nio.file.Files.isRegularFile(target)) {
+                resolved.add(target);
+                continue;
+            }
+            String url = base + "/" + group.replace('.', '/') + "/" + artifactId + "/" + version + "/" + fileName;
+            try {
+                java.nio.file.Files.createDirectories(target.getParent());
+                java.nio.file.Path temp = java.nio.file.Files.createTempFile(target.getParent(), fileName, ".part");
+                java.net.URLConnection connection = java.net.URI.create(url).toURL().openConnection();
+                connection.setConnectTimeout(20_000);
+                connection.setReadTimeout(120_000);
+                try (java.io.InputStream in = connection.getInputStream()) {
+                    java.nio.file.Files.copy(in, temp, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                }
+                java.nio.file.Files.move(temp, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                logger.log(Level.INFO, "[Eturlia] " + pluginName + ": fetched " + coordinate);
+                resolved.add(target);
+            } catch (Throwable failure) {
+                logger.log(Level.SEVERE, "[Eturlia] " + pluginName + ": could not fetch " + coordinate
+                        + " from " + url + " (" + failure + ")");
+            }
+        }
+        return resolved;
+    }
+    // Eturlia end - a minimal Maven Central fetcher
+
+    @Nullable
+    public ClassLoader createLoader(@NotNull PluginDescriptionFile desc)
+    {""",
+        "LibraryLoader carries the fetcher",
+    )
+
+
 def install_regionless_save():
     """A thread that owns no region must not fail the event it is running."""
     print("regionless save plane")
@@ -1755,6 +2005,10 @@ if __name__ == "__main__":
     install_neoforge_patches()
     install_custom_ingredients()
     install_material_maps()
+    install_reobf_server_jar()
+    install_exception_collector()
+    install_legacy_item_key()
+    install_library_downloader()
     install_regionless_save()
     install_main_thread_dispatch()
     install_shape_compat()
