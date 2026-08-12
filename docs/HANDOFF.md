@@ -276,3 +276,36 @@ A seven-minute session with a player in the world now produces **one** line: the
   80 GB on a 124 GB box, and a 20 GB test heap with pre-touch already got it OOM-killed once.
 - Kill gradle compiler workers after builds; they hold several GB.
 - Never write inside `/home/user/mineroot/NoteBuns`.
+
+---
+
+## 2026-08-12 evening — test harness, and how to check a boot
+
+**Grade a boot:** `python3 tools/logcheck.py` after every start. It groups every WARN/ERROR from
+`latest.log`, hides the groups already judged benign (each pattern carries the reason it is benign)
+and prints what is left under *ALARMING* and *unjudged*. Exit code 1 if anything alarming is there.
+`--all` shows the hidden ones too. Never open the whole log — 400 WARN/ERROR lines a boot is normal
+for this pack and almost all of it is mod chatter.
+
+**Drive mods without a player:** `tools/modtest3.sh <x> <z>` builds a Create bearing with a creative
+motor, powers it, and asserts with marker blocks — `/say` from the console prints the *translation
+key* rather than the text, so a marker block and the literal "Changed the block at x y z" line are
+the only reliable signal. A bearing assembles only with rotational force *and* redstone.
+
+**Drive the client:** `tools/clienttest2.sh register|login` starts the headless client, clicks
+through Simple Voice Chat's two-step setup wizard (it swallows every keystroke until it is gone),
+and types into chat with xdotool. `tools/xchat.sh "<line>" ...` types into an already running
+client. Both borrow the client's own `DISPLAY` and `XAUTHORITY` out of `/proc/<pid>/environ` —
+`xvfb-run -a` picks a free display and writes its own cookie, so nothing else can find the window.
+
+**Test account:** `EturliaTester`, AuthMe password **`Eturlia2026test`**. The AuthMe database was
+reset on 2026-08-12 (the old one was copied from production); the previous file is kept as
+`plugins/AuthMe/authme.db.bak-*`. Registration and login through the real client both pass.
+
+**Two harness traps that cost an hour each:**
+
+* Folia refuses entity selectors from the console — `Cannot getEntities asynchronously` — because
+  console commands run on the global region. Anything with `@e` has to be typed by a player.
+* A client teleported into ungenerated terrain with `view-distance=40` stops sending packets long
+  enough for the server to drop it as "Timed out". Pre-generate with `forceload` *before* the
+  teleport, and keep the test client's render distance low (`client/mc/options.txt`, set to 4).
