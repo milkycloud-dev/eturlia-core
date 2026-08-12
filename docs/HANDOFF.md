@@ -24,9 +24,12 @@ from the console, and `tools/join_stable.sh` sends `authme forcelogin EturliaTes
 line appears. `plugins/AuthMe/config.yml` has `restrictions.timeout: 0` so a slow client boot is
 not kicked mid-test.
 
-The last measured runs, with everything below applied: **STABLE 420s**, then **STABLE 900s** — and
-that second client was still in the world at **1578 s (26 minutes)** when it was killed to free the
-box. Zero failed region ticks in either. The whole 26-minute run produced three error lines:
+The last measured run, with everything below applied: the tester held the world for **1380 s
+(23 minutes)**, zero failed region ticks, and **zero error lines after the join** — the cleanest
+session so far. Boot recovers 146 of the 153 recipes that used to be dropped.
+
+Earlier runs on the same build: **STABLE 420s**, **STABLE 900s** (that client was still in the
+world at 1578 s when it was killed to free the box). Those produced three error lines:
 
 ```
 1 ERROR … PlayerJoinEvent to DecentHolograms — NoSuchMethodError: CraftPlayer.getHandle()
@@ -83,8 +86,12 @@ takes no damage except void, and still ticks and sends movement, which is what t
    third-party transformer failures on our classes too (the blame frame is a mod's, not mixin's),
    or give ART a module the game layer reads.
 
-2. **153 `RecipeManager` parse errors** (Twilight Forest, FarmersDelight) — recipes are lost.
-   Still looks like missing NeoForge codec extensions, same family as `LootContext` below.
+2. **7 `RecipeManager` parse errors left** of the original 153 — see `FIXES.md` §3. Six are one
+   mod still writing the 1.20 result form (`{"item": …}` where 1.21 wants `{"id": …}`), one is a
+   Create milling recipe missing `amount`. Both are outdated mod JSON rather than a missing core
+   codec; an `item`→`id` alias on `ItemStack`'s codec would close the first six if it turns out
+   other packs need it too. The 20 remaining advancement errors are Supplementaries referencing
+   items from mods this pack does not install.
 
 3. **`MixinCompat.contain()` rethrows on our own classes.** `thrownByAnotherTransformer(cause)` is
    written and compiled but not wired in: it was switched on, made no difference to what got
