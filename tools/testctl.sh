@@ -103,9 +103,12 @@ case "${1:-status}" in
   wait-ready)
     limit=${2:-300}
     log="$TEST_DIR/logs/latest.log"
+    # The previous boot leaves its own "Done (" in latest.log until the server rotates it;
+    # matching that reports ready while the server is still starting.
+    marker=$(mktemp); touch -d "90 seconds ago" "$marker"
     echo "[wait] up to ${limit}s for 'Done ('"
     for i in $(seq 1 "$limit"); do
-        if grep -q 'Done (' "$log" 2>/dev/null; then
+        if [ "$log" -nt "$marker" ] && grep -q 'Done (' "$log" 2>/dev/null; then
             grep -m1 'Done (' "$log"
             exit 0
         fi

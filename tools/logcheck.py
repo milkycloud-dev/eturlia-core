@@ -2,15 +2,18 @@
 """Grade one server run from latest.log: group every WARN/ERROR, hide the ones already judged
 benign, and print a short verdict. Run after every start - it is the test.
 
-  python3 tools/logcheck.py            # this run
-  python3 tools/logcheck.py --all      # do not hide the known-benign groups
+  python3 tools/logcheck.py            # this run: alarming lines, and what is new since last time
+  python3 tools/logcheck.py --seen     # also list the unjudged groups reported in an earlier run
+  python3 tools/logcheck.py --all      # hide nothing, and do not update the seen list
 """
 import collections
+import json
 import os
 import re
 import sys
 
 LOG = "/home/user/milky/eturlia_new/server/logs/latest.log"
+SEEN = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logcheck-seen.json")
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 LEVEL = re.compile(r"^\[[^\]]*\] \[([^/\]]+)/(WARN|ERROR|FATAL)\]")
 ETURLIA = re.compile(r"\[Eturlia\] (WARN|ERROR) ")
@@ -102,12 +105,34 @@ def main():
     else:
         print("--- ALARMING: none")
 
-    if groups:
-        print("--- unjudged (%d kinds, worth a look):" % len(groups))
-        for k, count in groups.most_common(20):
+    # Groups seen in an earlier run are counted, not reprinted. The unjudged list is ~40 kinds of
+    # mod chatter every boot, and reading it again costs more than it is worth; what matters after
+    # a change is what is new since last time.
+    seen = set()
+    if not show_all and os.path.exists(SEEN):
+        with open(SEEN, encoding="utf-8") as handle:
+            seen = set(json.load(handle))
+
+    fresh = [(k, c) for k, c in groups.most_common() if k not in seen]
+    if fresh:
+        print("--- unjudged, NEW since last run (%d kinds):" % len(fresh))
+        for k, count in fresh[:20]:
             print("  x%-5d %s" % (count, sample[k]))
+        if len(groups) > len(fresh):
+            print("  (+%d kinds seen before - tools/logcheck.py --seen to list them)" % (len(groups) - len(fresh)))
+    elif groups:
+        print("--- unjudged: %d kinds, all seen before (--seen to list)" % len(groups))
     else:
         print("--- unjudged: none")
+
+    if "--seen" in sys.argv:
+        for k, count in groups.most_common(40):
+            if k in seen:
+                print("  x%-5d %s" % (count, sample[k]))
+
+    if not show_all:
+        with open(SEEN, "w", encoding="utf-8") as handle:
+            json.dump(sorted(seen | set(groups)), handle)
 
     return 1 if alarming else 0
 

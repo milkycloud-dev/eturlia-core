@@ -292,3 +292,82 @@ block-break packet all went quiet in the same run.
   `levitite_blend` instead. Nothing to fix; the item does not exist here.
 * `server.properties` has `view-distance=40`. A test client teleported into fresh terrain at that
   distance stops sending packets long enough for the server to time it out. Lower it for testing.
+
+---
+
+## 2026-08-13 — the levels mods build for themselves
+
+The pack was past "everything loads" and into "nothing a mod does actually works": Create machines
+assembled and then sat there, an Aeronautics airship never became physical, and inside a contraption
+nothing modded worked at all. Three findings, all one shape - the core assumed every Level, every
+ChunkHolder and every implementor of a vanilla interface was one of its own.
+
+### A Level that is not a ServerLevel
+
+`Level`'s constructor demanded a set of CraftBukkit extras that only `MinecraftServer` ever sets,
+and cast `this` to `ServerLevel` to build the Bukkit world. Anything else was refused outright:
+
+```
+IllegalStateException: Eturlia Level ctor extras missing; ServerLevel must set ETURLIA$LEVEL_CTOR_EXTRAS
+  at BlockEntity tick, world:16,87,16   (a Create mechanical bearing)
+```
+
+Create's contraption world is a `Level`. So is its schematic world, and so is the plot sublevel that
+Create Aeronautics puts a physics airship in. Every one of them threw inside its own constructor,
+once per tick, forever - the bearing assembled, its blocks came out of the world, and then nothing
+moved and nothing could be taken apart again. That single exception is most of "the machine does
+nothing", "the airship never becomes physical" and "I cannot even remove it".
+
+A guest level now gets the plain answers: no Bukkit world, no generator, and the main world's
+configuration, which is what Paper reads off a level on nearly every call.
+
+### Everything a mod cannot bind to, found without running the server
+
+Two failures look identical from in-game - the mod silently does nothing, or the region that touched
+it dies - and both are visible in the bytecode:
+
+* a mod overrides a method Paper sealed with `final`: `IncompatibleClassChangeError` at class load,
+  before a line of mod code runs
+* a mod implements a vanilla interface that CraftBukkit has since added an abstract method to:
+  `AbstractMethodError` the first time anything calls it
+
+`tools/finalscan.py` reads the compiled core against all 87 mod jars (nested jarjar included) and
+lists them. It found **22** sealed-method overrides and **259** unimplemented interface methods.
+Everything that a dedicated server actually loads is now fixed:
+
+| what | who needed it |
+|---|---|
+| `ChunkHolder` unsealed | sable's `PlotChunkHolder` - the Aeronautics sublevel, and the `simulated:assemble` packet that died with it |
+| `Entity`, `LivingEntity` unsealed | sable's contraption-relative entities, Brewery's Beer Elemental |
+| `HangingEntity` unsealed | Create's Blueprint, Aeronautics' Diagram |
+| `DefaultDispenseItemBehavior` unsealed | Farmer's Delight cutting board |
+| `Merchant.getCraftMerchant()` default | 132 modded NPCs |
+| `Recipe.toBukkitRecipe()` default | 50 modded recipes, and every plugin that walks `Bukkit.recipeIterator()` |
+| `BlockGetter.getBlockStateIfLoaded` / `getFluidIfLoaded` defaults | 26 wrapper levels (CreativeCore, citadel, sable) |
+| `LevelAccessor.getMinecraftWorld()` default | 12 more of the same |
+| `LevelReader.getChunkIfLoadedImmediately` default | sable's `EmbeddedPlotLevelAccessor` |
+
+What the scan still reports is datagen and client-only (`RecipeProvider`, `TagsProvider`,
+`DataProvider`, `RecipeOutput`, `PlaceRecipe`) - classes a dedicated server never loads.
+
+A modded recipe has no Bukkit shape, so `toBukkitRecipe` describes what it can: a shapeless recipe
+with the real result and no ingredients. If even the result cannot be read it returns null, and
+`RecipeIterator` skips those instead of handing a plugin a null recipe.
+
+### A block entity that is not there
+
+`CraftBlockStates` threw `IllegalStateException: Tile is null, asynchronous access?` for a modded
+block whose stand-in Material happens to be one with a block entity. Nothing asynchronous had
+happened; there was simply no block entity. It took WorldGuard's and CoreProtect's handlers down 89
+times in one minute of ordinary play. With no block entity there, the plain state is the answer.
+
+### Not ours, and not broken
+
+* **Damage and the void.** The log of the reported session has `eturnercus was slain by Spider` and
+  `was blown up by Creeper` a minute after `/god` and `/ungod`. Damage works. Both reports are
+  consistent with being inside a contraption sublevel, which did not tick at all until the Level
+  constructor above was fixed.
+* **The trail behind the player** is PPC_Wings' `flutter` effect, switched on for two UUIDs in
+  `plugins/PPC_Wings/players.yml`. Both are off now. Nothing in the core draws it.
+* **ProtocolLib** fails reflecting into `CraftParticle.minecraftToBukkit`; that is ProtocolLib
+  against this Paper version, not the core.
