@@ -2457,6 +2457,307 @@ def install_quiet_startup():
     )
 
 
+# every class tools/finalscan.py caught a mod subclassing
+SUBCLASSED_BY_MODS = [
+    # path under the server sources, the class declaration to comment above, why it is here
+    ("net/minecraft/server/level/ChunkHolder.java", "public class ChunkHolder",
+     "sable's PlotChunkHolder (Create Aeronautics sublevels) overrides getTickingChunk"),
+    ("net/minecraft/world/entity/Entity.java", "public abstract class Entity",
+     "sable overrides getEyePosition and setRemoved for contraption-relative entities"),
+    ("net/minecraft/world/entity/LivingEntity.java", "public abstract class LivingEntity",
+     "Brewery's BeerElemental overrides getDimensions"),
+    ("net/minecraft/world/entity/decoration/HangingEntity.java", "public abstract class HangingEntity",
+     "Create's Blueprint and Aeronautics' Diagram override recalculateBoundingBox"),
+    ("net/minecraft/core/dispenser/DefaultDispenseItemBehavior.java",
+     "public class DefaultDispenseItemBehavior",
+     "Farmer's Delight overrides dispense for the cutting board"),
+]
+
+
+def install_subclassable_core():
+    """Un-seal the core classes mods subclass. Found statically, not one crash report at a time.
+
+    Paper and Moonrise mark methods `final` so the JIT can inline them. A subclass that overrides a
+    final method cannot be *defined* - IncompatibleClassChangeError at class load, before a line of
+    the mod runs, and whatever asked for that class dies with it. `tools/finalscan.py` reads the
+    compiled core against every mod jar and lists exactly which classes are affected; this plane
+    drops the seal on each of them. The methods themselves are untouched.
+    """
+    print("subclassable core plane")
+    head = re.compile(r"^(\s+)(public|protected)( static)? final (.*)$")
+    for relative, declaration, reason in SUBCLASSED_BY_MODS:
+        path = SERVER + "/" + relative
+        if not os.path.exists(path):
+            # Paper only ships the files it patches; the rest are compiled straight from the
+            # decompiled vanilla sources. Bring the file in first, then treat it like any other.
+            vanilla = MC_DEV + "/" + relative
+            if not os.path.exists(vanilla):
+                print("  skipped (no source to start from): %s" % relative)
+                continue
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(vanilla, encoding="utf-8") as handle:
+                source = handle.read()
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(source)
+            print("  imported vanilla %s" % relative.rsplit("/", 1)[-1])
+        with open(path, encoding="utf-8") as handle:
+            lines = handle.read().split("\n")
+
+        changed = 0
+        for index, line in enumerate(lines):
+            match = head.match(line)
+            if match is None:
+                continue
+            rest = match.group(4)
+            open_paren = rest.find("(")
+            if open_paren < 0:
+                continue  # a field, not a method
+            equals = rest.find("=")
+            if equals != -1 and equals < open_paren:
+                continue  # a field whose initialiser happens to call something
+            lines[index] = "%s%s%s %s" % (match.group(1), match.group(2), match.group(3) or "", rest)
+            changed += 1
+
+        name = relative.rsplit("/", 1)[-1][: -len(".java")]
+        if changed == 0:
+            print("  already applied: %s is overridable" % name)
+            continue
+
+        for index, line in enumerate(lines):
+            if line.startswith(declaration):
+                lines.insert(index, "// Eturlia - the seal on these methods is gone so mods can subclass %s: %s.\n"
+                                    "// A subclass that overrides a final method cannot be defined at all.\n"
+                                    "// tools/finalscan.py lists every class in the pack that needs this." % (name, reason))
+                break
+
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("\n".join(lines))
+        print("  %s: %d methods are overridable again" % (name, changed))
+
+
+def install_guest_level_ctor():
+    """A Level that is not a ServerLevel has to be constructible. Create builds one per contraption.
+
+    Level's constructor was written for the only Level Paper has ever had: a ServerLevel, with a
+    Bukkit world, a generator and an environment handed in through a ThreadLocal that only
+    MinecraftServer sets. Anything else was refused outright.
+
+    Create's contraption world is a Level. So is its schematic world, and so is sable's plot level -
+    the sublevel Create Aeronautics puts a physics airship in. Every one of them threw
+    IllegalStateException inside its own constructor, once per tick, forever: the bearing assembled,
+    the blocks came out of the world, and then nothing moved and nothing could be taken apart again.
+
+    A guest level now gets the plain answers - no Bukkit world, no generator - and the main world's
+    configuration, which is what Paper actually reads off a level on nearly every call.
+    """
+    print("guest level plane")
+    replace(
+        SERVER + "/net/minecraft/world/level/Level.java",
+        """        EturliaLevelCtorExtras eturliaExtras = ETURLIA$LEVEL_CTOR_EXTRAS.get();
+        if (eturliaExtras == null) {
+            throw new IllegalStateException("Eturlia Level ctor extras missing; ServerLevel must set ETURLIA$LEVEL_CTOR_EXTRAS");
+        }
+        org.bukkit.generator.ChunkGenerator gen = eturliaExtras.gen;
+        org.bukkit.generator.BiomeProvider biomeProvider = eturliaExtras.biomeProvider;
+        org.bukkit.World.Environment env = eturliaExtras.env;
+        java.util.function.Function<org.spigotmc.SpigotWorldConfig, io.papermc.paper.configuration.WorldConfiguration> paperWorldConfigCreator = eturliaExtras.paperWorldConfigCreator;
+        java.util.concurrent.Executor executor = eturliaExtras.executor;
+        this.spigotConfig = new org.spigotmc.SpigotWorldConfig(((net.minecraft.world.level.storage.ServerLevelData) worlddatamutable).getLevelName()); // Spigot // Eturlia: ServerLevelData (FakeServerLevel ReadOly)
+        this.paperConfig = paperWorldConfigCreator.apply(this.spigotConfig); // Paper - create paper world config
+        this.generator = gen;
+        this.world = new CraftWorld((ServerLevel) this, gen, biomeProvider, env);""",
+        """        // Eturlia start - a Level that is not a ServerLevel is still a Level
+        EturliaLevelCtorExtras eturliaExtras = ETURLIA$LEVEL_CTOR_EXTRAS.get();
+        java.util.concurrent.Executor executor;
+        if (eturliaExtras != null) {
+            org.bukkit.generator.ChunkGenerator gen = eturliaExtras.gen;
+            org.bukkit.generator.BiomeProvider biomeProvider = eturliaExtras.biomeProvider;
+            org.bukkit.World.Environment env = eturliaExtras.env;
+            executor = eturliaExtras.executor;
+            this.spigotConfig = new org.spigotmc.SpigotWorldConfig(((net.minecraft.world.level.storage.ServerLevelData) worlddatamutable).getLevelName()); // Spigot // Eturlia: ServerLevelData (FakeServerLevel ReadOly)
+            this.paperConfig = eturliaExtras.paperWorldConfigCreator.apply(this.spigotConfig); // Paper - create paper world config
+            this.generator = gen;
+            this.world = new CraftWorld((ServerLevel) this, gen, biomeProvider, env);
+        } else {
+            // A mod's own level: Create's contraption and schematic worlds, sable's plot sublevels.
+            // Nobody set the extras because the caller is not MinecraftServer, and there is no
+            // Bukkit world to build - the level exists inside one. Refusing to construct threw once
+            // per tick out of the contraption's block entity, which is what "the machine assembles
+            // and then does nothing, and I cannot even remove it" looked like from in-game.
+            net.minecraft.server.MinecraftServer eturliaServer = net.minecraft.server.MinecraftServer.getServer();
+            ServerLevel eturliaMainLevel = eturliaServer == null ? null : eturliaServer.overworld();
+            executor = eturliaServer != null ? eturliaServer : Runnable::run;
+            this.spigotConfig = eturliaMainLevel != null ? eturliaMainLevel.spigotConfig : new org.spigotmc.SpigotWorldConfig("world");
+            this.paperConfig = eturliaMainLevel != null ? eturliaMainLevel.paperConfig() : null;
+            this.generator = null;
+            this.world = null;
+        }
+        // Eturlia end - a Level that is not a ServerLevel is still a Level""",
+        "Level's constructor accepts a level a mod built",
+    )
+
+
+def install_missing_interface_defaults():
+    """CraftBukkit and Paper bolt abstract methods onto vanilla interfaces; mods never heard of them.
+
+    A modded class implements the interface it found in the vanilla jar, loads without complaint,
+    and throws AbstractMethodError the first time anything calls the method that was added here.
+    tools/finalscan.py finds these the same way it finds the final overrides; each one below is a
+    method with a real implementor count in this pack (132 modded merchants, 50 modded recipes, 26
+    fake levels). Giving each a `default` costs vanilla nothing - every vanilla class still
+    overrides it - and turns a dead region into the answer the method was always going to give.
+    """
+    print("interface default plane")
+
+    replace(
+        SERVER + "/net/minecraft/world/level/BlockGetter.java",
+        "    @Nullable BlockState getBlockStateIfLoaded(BlockPos blockposition);",
+        "    // Eturlia - Paper's \"only if the chunk is already loaded\" pair. A mod's fake level (Create's\n"
+        "    // schematic world, CreativeCore's, citadel's path cache) has every block in memory already,\n"
+        "    // so the plain lookup is the honest answer and there is nothing to load.\n"
+        "    @Nullable default BlockState getBlockStateIfLoaded(BlockPos blockposition) { return this.getBlockState(blockposition); }",
+        "BlockGetter.getBlockStateIfLoaded has a default",
+    )
+    replace(
+        SERVER + "/net/minecraft/world/level/BlockGetter.java",
+        "    @Nullable FluidState getFluidIfLoaded(BlockPos blockposition);",
+        "    @Nullable default FluidState getFluidIfLoaded(BlockPos blockposition) { return this.getFluidState(blockposition); } // Eturlia - see getBlockStateIfLoaded",
+        "BlockGetter.getFluidIfLoaded has a default",
+    )
+    replace(
+        SERVER + "/net/minecraft/world/level/LevelReader.java",
+        "    @Nullable ChunkAccess getChunkIfLoadedImmediately(int x, int z); // Paper - ifLoaded api (we need this since current impl blocks if the chunk is loading)",
+        "    // Eturlia - default for the same reason as BlockGetter's pair: sable's plot levels and the\n"
+        "    // other wrapper levels in this pack implement LevelReader and never saw this method.\n"
+        "    @Nullable default ChunkAccess getChunkIfLoadedImmediately(int x, int z) { return this.getChunk(x, z, net.minecraft.world.level.chunk.status.ChunkStatus.FULL, false); } // Paper - ifLoaded api",
+        "LevelReader.getChunkIfLoadedImmediately has a default",
+    )
+    replace(
+        SERVER + "/net/minecraft/world/level/LevelAccessor.java",
+        "    net.minecraft.server.level.ServerLevel getMinecraftWorld(); // CraftBukkit",
+        "    // Eturlia - a wrapper level accessor is not backed by a ServerLevel and cannot invent one.\n"
+        "    // Null says that; AbstractMethodError said nothing and took the caller's thread with it.\n"
+        "    default net.minecraft.server.level.ServerLevel getMinecraftWorld() { return this instanceof net.minecraft.server.level.ServerLevel level ? level : null; } // CraftBukkit",
+        "LevelAccessor.getMinecraftWorld has a default",
+    )
+    replace(
+        SERVER + "/net/minecraft/world/item/trading/Merchant.java",
+        "    org.bukkit.craftbukkit.inventory.CraftMerchant getCraftMerchant(); // CraftBukkit",
+        "    // Eturlia - 132 modded NPCs in this pack implement Merchant. None of them has a Bukkit\n"
+        "    // merchant to hand back, and saying so is survivable; AbstractMethodError was not.\n"
+        "    default org.bukkit.craftbukkit.inventory.CraftMerchant getCraftMerchant() { return null; } // CraftBukkit",
+        "Merchant.getCraftMerchant has a default",
+    )
+    replace(
+        SERVER + "/net/minecraft/world/item/crafting/Recipe.java",
+        "    org.bukkit.inventory.Recipe toBukkitRecipe(org.bukkit.NamespacedKey id); // CraftBukkit",
+        """    // Eturlia start - a modded recipe still has to have a Bukkit form
+    // 50 recipe classes in this pack implement Recipe without this CraftBukkit method, and every
+    // plugin that walks Bukkit.recipeIterator() hit AbstractMethodError on the first one. A modded
+    // recipe's shape cannot be expressed in Bukkit, but its result can: a shapeless recipe with no
+    // ingredients describes "this makes that, by means Bukkit has no word for". If even the result
+    // cannot be read, null - and RecipeIterator skips those.
+    default org.bukkit.inventory.Recipe toBukkitRecipe(org.bukkit.NamespacedKey id) {
+        try {
+            net.minecraft.server.MinecraftServer server = net.minecraft.server.MinecraftServer.getServer();
+            if (server == null) {
+                return null;
+            }
+            org.bukkit.inventory.ItemStack result = org.bukkit.craftbukkit.inventory.CraftItemStack.asBukkitCopy(this.getResultItem(server.registryAccess()));
+            if (result == null || result.getType().isAir()) {
+                return null;
+            }
+            return new org.bukkit.inventory.ShapelessRecipe(id, result);
+        } catch (Throwable thrown) {
+            return null;
+        }
+    }
+    // Eturlia end - a modded recipe still has to have a Bukkit form""",
+        "Recipe.toBukkitRecipe has a default",
+    )
+    replace(
+        SERVER + "/org/bukkit/craftbukkit/inventory/RecipeIterator.java",
+        """    @Override
+    public boolean hasNext() {
+        return this.recipes.hasNext();
+    }
+
+    @Override
+    public Recipe next() {
+        // Paper start - fix removing recipes from RecipeIterator
+        this.currentRecipe = this.recipes.next().getValue().toBukkitRecipe();
+        return this.currentRecipe;
+        // Paper end - fix removing recipes from RecipeIterator
+    }""",
+        """    // Eturlia start - a recipe with no Bukkit form is skipped, never handed out as null
+    private Recipe nextRecipe;
+
+    private Recipe peek() {
+        while (this.nextRecipe == null && this.recipes.hasNext()) {
+            this.nextRecipe = this.recipes.next().getValue().toBukkitRecipe();
+        }
+        return this.nextRecipe;
+    }
+
+    @Override
+    public boolean hasNext() {
+        return this.peek() != null;
+    }
+
+    @Override
+    public Recipe next() {
+        Recipe recipe = this.peek();
+        if (recipe == null) {
+            throw new java.util.NoSuchElementException();
+        }
+        this.nextRecipe = null;
+        this.currentRecipe = recipe; // Paper - fix removing recipes from RecipeIterator
+        return recipe;
+    }
+    // Eturlia end - a recipe with no Bukkit form is skipped, never handed out as null""",
+        "RecipeIterator skips recipes with no Bukkit form",
+    )
+    replace(
+        SERVER + "/org/bukkit/craftbukkit/inventory/RecipeIterator.java",
+        """        // Paper end - fix removing recipes from RecipeIterator
+        this.recipes.remove();""",
+        """        // Paper end - fix removing recipes from RecipeIterator
+        if (this.nextRecipe == null) { // Eturlia - with one recipe read ahead, the underlying iterator is past the one being removed
+            this.recipes.remove();
+        }""",
+        "RecipeIterator.remove respects the read-ahead",
+    )
+
+
+def install_block_state_without_tile():
+    """A block whose Bukkit type wants a block entity, but has none, still gives a BlockState."""
+    print("block state plane")
+    replace(
+        SERVER + "/org/bukkit/craftbukkit/block/CraftBlockStates.java",
+        """        if (world != null && tileEntity == null && CraftBlockStates.isTileEntityOptional(material)) {
+            factory = CraftBlockStates.DEFAULT_FACTORY;
+        } else {
+            factory = CraftBlockStates.getFactory(material, tileEntity != null ? tileEntity.getType() : null); // Paper
+        }""",
+        """        if (world != null && tileEntity == null && CraftBlockStates.isTileEntityOptional(material)) {
+            factory = CraftBlockStates.DEFAULT_FACTORY;
+        } else {
+            factory = CraftBlockStates.getFactory(material, tileEntity != null ? tileEntity.getType() : null); // Paper
+        }
+        // Eturlia start - a modded block borrows a vanilla Material, not its block entity
+        // Plugins read block.getState() from every interact and place event. A modded block reports
+        // a stand-in Material, and if that Material's factory expects a block entity the factory
+        // throws "Tile is null, asynchronous access?" - which is not what happened at all, and it
+        // takes the plugin's handler with it (WorldGuard and CoreProtect, 31 times in one minute of
+        // play). With no block entity there, the plain state is the only honest answer.
+        if (world != null && tileEntity == null && factory instanceof BlockEntityStateFactory) {
+            factory = CraftBlockStates.DEFAULT_FACTORY;
+        }
+        // Eturlia end - a modded block borrows a vanilla Material, not its block entity""",
+        "CraftBlockStates falls back when there is no block entity",
+    )
+
+
 def install_lenient_schedulers():
     """Folia's schedulers refuse what Bukkit's accept, and the plugin that asked dies on enable."""
     print("scheduler plane")
@@ -3185,6 +3486,10 @@ if __name__ == "__main__":
     install_modded_material_bridge()
     install_level_subclass_compat()
     install_level_is_subclassable()
+    install_subclassable_core()
+    install_guest_level_ctor()
+    install_missing_interface_defaults()
+    install_block_state_without_tile()
     install_lenient_schedulers()
     install_plugin_context_loader()
     install_builtin_pack_source()

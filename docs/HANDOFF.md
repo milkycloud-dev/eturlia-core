@@ -309,3 +309,52 @@ reset on 2026-08-12 (the old one was copied from production); the previous file 
 * A client teleported into ungenerated terrain with `view-distance=40` stops sending packets long
   enough for the server to drop it as "Timed out". Pre-generate with `forceload` *before* the
   teleport, and keep the test client's render distance low (`client/mc/options.txt`, set to 4).
+
+---
+
+## 2026-08-13 — the tools, and what they cost to read
+
+Everything here exists to keep an iteration cheap to *read*, not just cheap to run.
+
+**`tools/cycle.sh`** is one turn of the loop: `applyPatches`, generate, build, announce, stop,
+deploy, start, wait, grade. Each step writes its own log under `build-logs/` and prints one line; a
+failing step prints its own tail and stops. `tools/cycle.sh build` stops before deploying.
+
+**`tools/logcheck.py`** grades a boot. It hides the groups already judged benign (each pattern
+carries its reason) and now also remembers every group it has reported, in
+`tools/logcheck-seen.json`. A normal boot is ~400 WARN/ERROR lines in ~40 kinds; after the first run
+the output is the alarming lines plus *what is new since last time*, which is usually nothing.
+`--seen` lists the remembered ones, `--all` hides nothing.
+
+**`tools/finalscan.py`** is the static half of the same idea. It parses the compiled core and every
+mod jar (including nested jarjar) and reports every class that cannot bind: overrides of sealed
+methods, and interface methods with no implementor. One run replaces a night of crash reports. Point
+it at the real core jar, not the launcher:
+
+```
+python3 tools/finalscan.py --jar core/Folia-Server/build/eturlia/folia-server-neoforge-at.jar
+```
+
+**`tools/cmdtest.sh` / `tools/clienttest3.sh`** drive gameplay. Read the traps below before trusting
+either of them.
+
+### Traps this harness has already paid for
+
+* Console commands cannot use entity selectors: Folia runs the console on the global region and
+  refuses `getEntities` from it. **Repeating command blocks do not run on this build either** - a
+  block placed with `{Command:'…',auto:1b}` sits there and never fires, so that workaround is out.
+  Assertions about entities need a player.
+* `screen -X stuff` parses quotes, so a console command sent through `testctl.sh say` must not
+  contain double quotes. SNBT accepts single-quoted strings; use those.
+* Console `/say` renders as the raw translation key. Marker blocks and the `Changed the block at x,
+  y, z` line are the only reliable console-side signal. A command block's own output never reaches
+  the log - read its marker back with `execute if block … run setblock …` from the console.
+* `wait-ready` used to match the *previous* boot's `Done (` line, still sitting in `latest.log`.
+  `cycle.sh` moves the log aside before starting so every boot begins on a clean one.
+* The headless test client stalls for more than 30 seconds while it builds the world and the server
+  drops it on the netty read timeout - which is not the configurable keepalive, so raising
+  `paper.playerconnection.keepalive` does not help. Turning Flywheel off in
+  `client/mc/config/flywheel-client.toml` and removing Distant Horizons was not enough either.
+  Anything typed after that point is silently discarded, so `clienttest3.sh` checks the client is
+  still connected before every keystroke and stops the run when it is not. Trust nothing it prints
+  after a `!!` line.
