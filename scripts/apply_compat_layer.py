@@ -21,6 +21,7 @@ differs.
 """
 import io
 import os
+import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -476,9 +477,18 @@ def install_bukkit_type_bridges():
             if (!eturlia$lenient()) {
                 Preconditions.checkArgument(false);
             }
+            // A pack with ninety mods has hundreds of entity types, and every one of them used to
+            // print a line the first time a player came near it. The fact is worth knowing once;
+            // the list is not worth the console.
             if (ETURLIA_REPORTED.add(key.get().location().toString())) {
-                org.bukkit.Bukkit.getLogger().info("Eturlia: " + key.get().location()
-                        + " is a modded entity, so plugins see it as UNKNOWN");
+                int seen = ETURLIA_REPORTED.size();
+                if (seen <= 5) {
+                    org.bukkit.Bukkit.getLogger().info("Eturlia: " + key.get().location()
+                            + " is a modded entity, so plugins see it as UNKNOWN");
+                } else if (seen == 6) {
+                    org.bukkit.Bukkit.getLogger().info("Eturlia: more modded entity types follow;"
+                            + " plugins see all of them as UNKNOWN (-Deturlia.compat.bukkit-types=strict to refuse instead)");
+                }
             }
             return EntityType.UNKNOWN;
         }
@@ -500,10 +510,30 @@ def install_bukkit_type_bridges():
         //
         // A plugin asking about a modded mob now gets a LivingEntity or a plain Entity: less than
         // the truth, but every method it can call still works.
+        if (entity instanceof net.minecraft.world.entity.projectile.Projectile projectile) {
+            // CraftBukkit's own event code casts the wrapper of anything that flies to Projectile -
+            // ProjectileHitEvent and ProjectileCollideEvent both do it unconditionally - so a
+            // modded projectile handed the plain wrapper takes its region down on first impact.
+            // Create's potato cannon did exactly that.
+            return new EturliaUnknownProjectile(server, projectile);
+        }
         if (entity instanceof net.minecraft.world.entity.LivingEntity living) {
             return new CraftLivingEntity(server, living);
         }
         return new EturliaUnknownEntity(server, entity);
+    }
+
+    /** The wrapper for a modded projectile: everything Bukkit does with one starts with a cast. */
+    public static final class EturliaUnknownProjectile extends CraftProjectile {
+
+        public EturliaUnknownProjectile(CraftServer server, net.minecraft.world.entity.projectile.Projectile entity) {
+            super(server, entity);
+        }
+
+        @Override
+        public String toString() {
+            return "EturliaUnknownProjectile{" + this.getHandleRaw().getClass().getName() + "}";
+        }
     }
 
     /** The wrapper for an entity type Bukkit has no class for — anything a mod adds. */
@@ -1912,6 +1942,18 @@ def install_registry_compat():
 
 # ------------------------------------------------------------------ extensions
 
+def install_item_stack_extension():
+    """ItemStack gains every NeoForge stack hook at once instead of one bridge per crash."""
+    print("stack extension plane")
+    replace(
+        SERVER + "/net/minecraft/world/item/ItemStack.java",
+        "public final class ItemStack implements DataComponentHolder {",
+        """public final class ItemStack implements DataComponentHolder,
+        net.neoforged.neoforge.common.extensions.IItemStackExtension { // Eturlia - every NeoForge stack hook at once""",
+        "ItemStack implements IItemStackExtension",
+    )
+
+
 def install_item_extension():
     """Item gains every NeoForge item hook at once instead of one bridge per crash."""
     print("extension plane")
@@ -1941,6 +1983,1091 @@ def install_item_extension():
 
     // Eturlia/NeoForge: IItemExtension stack-aware crafting remainder (FD / recipes)""",
         "Item.isRepairable",
+    )
+
+
+def install_level_extension():
+    """Level, Player and BlockEntity gain their NeoForge hook interfaces in one go."""
+    print("level extension plane")
+    replace(
+        SERVER + "/net/minecraft/world/level/Level.java",
+        "public abstract class Level extends net.neoforged.neoforge.attachment.AttachmentHolder implements LevelAccessor, AutoCloseable, ca.spottedleaf.moonrise.patches.chunk_system.level.ChunkSystemLevel, ca.spottedleaf.moonrise.patches.chunk_system.world.ChunkSystemEntityGetter, ca.spottedleaf.moonrise.patches.collisions.world.CollisionLevel { // Paper - rewrite chunk system // Paper - optimise collisions // NeoForge - AttachmentHolder",
+        """public abstract class Level extends net.neoforged.neoforge.attachment.AttachmentHolder implements LevelAccessor, AutoCloseable, ca.spottedleaf.moonrise.patches.chunk_system.level.ChunkSystemLevel, ca.spottedleaf.moonrise.patches.chunk_system.world.ChunkSystemEntityGetter, ca.spottedleaf.moonrise.patches.collisions.world.CollisionLevel,
+        net.neoforged.neoforge.common.extensions.ILevelExtension { // Paper - rewrite chunk system // Paper - optimise collisions // NeoForge - AttachmentHolder // Eturlia - every NeoForge level hook at once""",
+        "Level implements ILevelExtension",
+    )
+    replace(
+        SERVER + "/net/minecraft/world/level/Level.java",
+        "    // Eturlia start - NeoForge capability lookups",
+        """    // Eturlia start - ILevelExtension's two abstract methods
+    /**
+     * The widest entity bounding box the level has seen.
+     *
+     * <p>NeoForge keeps this on {@code Level} so that entity searches can widen their query box
+     * for mods with oversized entities - Create's contraptions are the local example. Implementing
+     * the interface is what brings in the whole capability API with it, and the capability API is
+     * how one modded block asks the block next to it for its inventory.</p>
+     */
+    private double eturlia$maxEntityRadius = 2.0D;
+
+    @Override
+    public double getMaxEntityRadius() {
+        return this.eturlia$maxEntityRadius;
+    }
+
+    @Override
+    public double increaseMaxEntityRadius(double value) {
+        if (value > this.eturlia$maxEntityRadius) {
+            this.eturlia$maxEntityRadius = value;
+        }
+        return this.eturlia$maxEntityRadius;
+    }
+
+    /**
+     * Vanilla's name for the block-update notification Paper renamed.
+     *
+     * <p>Paper calls it {@code notifyAndUpdatePhysics} and takes the state the world actually ended
+     * up with as an extra argument. Every mod compiled against vanilla or NeoForge still calls
+     * {@code markAndNotifyBlock}: Create does it for every block it removes while assembling a
+     * contraption, so without this bridge a bearing or an airship never assembles - the blocks stay
+     * in the world, the contraption entity is never spawned, and the block entity ticks itself into
+     * the same error forever.</p>
+     */
+    public void markAndNotifyBlock(BlockPos pos, @Nullable LevelChunk chunk, BlockState oldState, BlockState newState, int flags, int recursionLeft) {
+        this.notifyAndUpdatePhysics(pos, chunk, oldState, newState, this.getBlockState(pos), flags, recursionLeft);
+    }
+    // Eturlia end - ILevelExtension's two abstract methods
+
+    // Eturlia start - NeoForge capability lookups""",
+        "Level.markAndNotifyBlock",
+    )
+    replace(
+        SERVER + "/net/minecraft/world/entity/player/Player.java",
+        "public abstract class Player extends LivingEntity {",
+        """public abstract class Player extends LivingEntity implements
+        net.neoforged.neoforge.common.extensions.IPlayerExtension { // Eturlia - every NeoForge player hook at once""",
+        "Player implements IPlayerExtension",
+    )
+    replace(
+        SERVER + "/net/minecraft/world/level/block/entity/BlockEntity.java",
+        "public abstract class BlockEntity extends net.neoforged.neoforge.attachment.AttachmentHolder { // NeoForge - AttachmentHolder",
+        """public abstract class BlockEntity extends net.neoforged.neoforge.attachment.AttachmentHolder implements
+        net.neoforged.neoforge.common.extensions.IBlockEntityExtension { // NeoForge - AttachmentHolder // Eturlia - every NeoForge block entity hook at once
+
+    // Eturlia start - IBlockEntityExtension's one abstract method
+    /**
+     * The scratch tag NeoForge hands mods for per-block-entity data.
+     *
+     * <p>Implementing the interface is what gives every block entity {@code onLoad},
+     * {@code invalidateCapabilities} and {@code onDataPacket} - the three calls Create's kinetic
+     * blocks make on every state change. The tag itself is not written to disk, which is what
+     * NeoForge does for block entities that never touch it.</p>
+     */
+    private net.minecraft.nbt.CompoundTag eturlia$persistentData;
+
+    @Override
+    public net.minecraft.nbt.CompoundTag getPersistentData() {
+        if (this.eturlia$persistentData == null) {
+            this.eturlia$persistentData = new net.minecraft.nbt.CompoundTag();
+        }
+        return this.eturlia$persistentData;
+    }
+    // Eturlia end - IBlockEntityExtension's one abstract method
+""",
+        "BlockEntity implements IBlockEntityExtension",
+    )
+
+
+def install_remap_fallbacks():
+    """A plugin the remapper chokes on loads anyway, and legacy CraftBukkit package names resolve."""
+    print("remap fallback plane")
+    replace(
+        SERVER + "/io/papermc/paper/pluginremap/PluginRemapper.java",
+        """            } catch (final Exception ex) {
+                throw new RuntimeException("Failed to remap plugin jar '" + inputFile + "'", ex);
+            }""",
+        """            } catch (final Exception ex) {
+                // Eturlia start - drop the classes this JVM could never load, then try once more
+                // TAB and DecentHolograms ship adapters for future Minecraft versions compiled at a
+                // class-file version this JVM does not know. AutoRenamingTool refuses the whole jar
+                // over them, and an unremapped plugin then dies on its first NMS call
+                // (DecentHolograms: CraftPlayer.getHandle). Those classes cannot run here under any
+                // circumstances, so removing them costs nothing and buys the rest of the plugin.
+                try {
+                    final Path filtered = destination.resolveSibling(destination.getFileName() + ".eturlia-filtered.jar");
+                    if (eturlia$stripUnloadableClasses(inputFile, filtered)) {
+                        Files.deleteIfExists(destination);
+                        try (final DebugLogger retryLogger = DebugLogger.forOutputFile(destination)) {
+                            try (final Renamer retry = Renamer.builder()
+                                .add(Transformer.renamerFactory(this.mappings(), false))
+                                .add(addNamespaceManifestAttribute(InsertManifestAttribute.MOJANG_PLUS_YARN_NAMESPACE))
+                                .add(Transformer.signatureStripperFactory(SignatureStripperConfig.ALL))
+                                .lib(reobfServer.toFile())
+                                .threads(1)
+                                .logger(retryLogger)
+                                .debug(retryLogger.debug())
+                                .build()) {
+                                retry.run(filtered.toFile(), destination.toFile());
+                            }
+                        }
+                        Files.deleteIfExists(filtered);
+                        LOGGER.info("Remapped {} '{}' after dropping classes this JVM cannot load.",
+                            library ? "library" : "plugin", inputFile);
+                        return destination;
+                    }
+                } catch (final Exception retryFailed) {
+                    LOGGER.warn("Second attempt at '{}' failed too ({})", inputFile, retryFailed.toString());
+                }
+                // Eturlia end - drop the classes this JVM could never load, then try once more
+                // Eturlia start - a jar the remapper cannot read is still better used as it is
+                // AutoRenamingTool refuses a whole jar over one class it cannot parse (TAB and
+                // DecentHolograms carry classes with a class-file version its ASM predates), and
+                // Paper answers a failed remap by dropping the plugin. Most plugins that fail here
+                // are already Mojang-mapped or never touch NMS at all, so the original jar loads
+                // and works; the few that genuinely needed remapping fail on their own later, and
+                // only those are lost instead of all of them.
+                LOGGER.warn("Could not remap {} '{}' ({}); loading it unremapped.",
+                    library ? "library" : "plugin", inputFile, ex.toString());
+                try {
+                    Files.deleteIfExists(destination);
+                } catch (final IOException ignored) {
+                }
+                index.skip(inputFile);
+                return inputFile;
+                // Eturlia end - a jar the remapper cannot read is still better used as it is
+            }""",
+        "PluginRemapper falls back to the original jar",
+    )
+    replace(
+        SERVER + "/io/papermc/paper/pluginremap/PluginRemapper.java",
+        """    private IMappingFile mappings() {""",
+        """    // Eturlia start - copy a jar without the classes this JVM cannot load
+    /**
+     * Writes {@code input} to {@code output} minus every class whose class-file version this JVM
+     * does not support, and minus multi-release entries for later Java versions.
+     *
+     * @return {@code true} if anything was dropped, so a second remap attempt is worth making
+     */
+    private static boolean eturlia$stripUnloadableClasses(final Path input, final Path output) throws IOException {
+        final int maxMajor = 44 + Runtime.version().feature(); // 65 on Java 21
+        boolean dropped = false;
+        Files.deleteIfExists(output);
+        try (final java.util.zip.ZipInputStream in = new java.util.zip.ZipInputStream(Files.newInputStream(input));
+             final java.util.zip.ZipOutputStream out = new java.util.zip.ZipOutputStream(Files.newOutputStream(output))) {
+            java.util.zip.ZipEntry entry;
+            while ((entry = in.getNextEntry()) != null) {
+                final byte[] bytes = in.readAllBytes();
+                final String name = entry.getName();
+                if (name.endsWith(".class") && bytes.length > 8) {
+                    final int major = ((bytes[6] & 0xFF) << 8) | (bytes[7] & 0xFF);
+                    if (major > maxMajor) {
+                        dropped = true;
+                        continue;
+                    }
+                }
+                final java.util.zip.ZipEntry copy = new java.util.zip.ZipEntry(name);
+                copy.setTime(entry.getTime());
+                out.putNextEntry(copy);
+                out.write(bytes);
+                out.closeEntry();
+            }
+        }
+        if (!dropped) {
+            Files.deleteIfExists(output);
+        }
+        return dropped;
+    }
+    // Eturlia end - copy a jar without the classes this JVM cannot load
+
+    private IMappingFile mappings() {""",
+        "PluginRemapper can drop unloadable classes",
+    )
+    replace(
+        SERVER + "/io/papermc/paper/plugin/entrypoint/classloader/PaperPluginClassLoader.java",
+        """        throw new ClassNotFoundException(name);
+    }
+
+    @Override
+    public void init(JavaPlugin plugin) {""",
+        """        // Eturlia start - the versioned CraftBukkit package a legacy plugin was built against
+        // Plugins built for Spigot address CraftBukkit through org.bukkit.craftbukkit.v1_21_R1.
+        // Paper dropped the version segment in 1.20.5, so those names resolve to nothing and the
+        // plugin dies on enable (InvSee++: CraftHumanEntity). The classes are the same classes -
+        // answer with the unversioned one rather than pretending they are gone.
+        int eturliaVersionedPackage = name.indexOf("org.bukkit.craftbukkit.v1_");
+        if (eturliaVersionedPackage == 0) {
+            int afterVersion = name.indexOf('.', "org.bukkit.craftbukkit.".length());
+            if (afterVersion > 0) {
+                String unversioned = "org.bukkit.craftbukkit." + name.substring(afterVersion + 1);
+                // CraftServer's own loader is the one that certainly holds the CraftBukkit classes;
+                // this class may live in the API module, which does not see them.
+                ClassLoader craftBukkitLoader = org.bukkit.Bukkit.getServer() != null
+                    ? org.bukkit.Bukkit.getServer().getClass().getClassLoader()
+                    : this.getClass().getClassLoader();
+                try {
+                    return Class.forName(unversioned, resolve, craftBukkitLoader);
+                } catch (ClassNotFoundException ignored) {
+                }
+            }
+        }
+        // Eturlia end - the versioned CraftBukkit package a legacy plugin was built against
+
+        throw new ClassNotFoundException(name);
+    }
+
+    @Override
+    public void init(JavaPlugin plugin) {""",
+        "PaperPluginClassLoader resolves versioned CraftBukkit names",
+    )
+    replace(
+        SERVER + "/org/bukkit/craftbukkit/util/CraftMagicNumbers.java",
+        """    @Override
+    public byte[] processClass(PluginDescriptionFile pdf, String path, byte[] clazz) {""",
+        """    // Eturlia start - rewrite the versioned CraftBukkit package out of plugin bytecode
+    /**
+     * Rewrites {@code org/bukkit/craftbukkit/v1_21_R1/...} to {@code org/bukkit/craftbukkit/...}.
+     *
+     * <p>Answering the versioned name from the class loader is not enough: a constant-pool
+     * reference must resolve to a class of exactly that name, so a plugin built against Spigot
+     * fails at the first NMS call no matter what the loader returns (InvSee++ dies on
+     * CraftHumanEntity while enabling). Rewriting the reference itself is the only version of this
+     * that the JVM accepts. Plugins that never mention the versioned package are handed back
+     * untouched, so this costs one substring scan for everyone else.</p>
+     */
+    public static byte[] eturlia$stripVersionedCraftBukkit(byte[] clazz) {
+        if (clazz == null || clazz.length == 0) {
+            return clazz;
+        }
+        if (!new String(clazz, java.nio.charset.StandardCharsets.ISO_8859_1).contains("org/bukkit/craftbukkit/v1_")) {
+            return clazz;
+        }
+        try {
+            org.objectweb.asm.ClassReader reader = new org.objectweb.asm.ClassReader(clazz);
+            org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+            reader.accept(new ClassRemapper(writer, new org.objectweb.asm.commons.Remapper() {
+                @Override
+                public String map(String internalName) {
+                    if (internalName.startsWith("org/bukkit/craftbukkit/v1_")) {
+                        int afterVersion = internalName.indexOf('/', "org/bukkit/craftbukkit/".length());
+                        if (afterVersion > 0) {
+                            return "org/bukkit/craftbukkit/" + internalName.substring(afterVersion + 1);
+                        }
+                    }
+                    return internalName;
+                }
+            }), 0);
+            return writer.toByteArray();
+        } catch (Throwable thr) {
+            // A class we cannot read is a class the JVM will complain about on its own terms.
+            return clazz;
+        }
+    }
+    // Eturlia end - rewrite the versioned CraftBukkit package out of plugin bytecode
+
+    @Override
+    public byte[] processClass(PluginDescriptionFile pdf, String path, byte[] clazz) {
+        clazz = CraftMagicNumbers.eturlia$stripVersionedCraftBukkit(clazz); // Eturlia - before anything else looks at it""",
+        "CraftMagicNumbers strips the versioned CraftBukkit package",
+    )
+    replace(
+        SERVER + "/org/bukkit/craftbukkit/util/CraftMagicNumbers.java",
+        """import org.bukkit.plugin.PluginDescriptionFile;""",
+        """import org.bukkit.plugin.PluginDescriptionFile;
+import org.objectweb.asm.commons.ClassRemapper; // Eturlia - versioned CraftBukkit package rewrite""",
+        "CraftMagicNumbers imports ClassRemapper",
+    )
+    replace(
+        API + "/org/bukkit/plugin/java/PluginClassLoader.java",
+        """        throw new ClassNotFoundException(name);
+    }
+
+    @Override
+    protected Class<?> findClass(String name) throws ClassNotFoundException {""",
+        """        // Eturlia start - the versioned CraftBukkit package a legacy plugin was built against
+        // Same as in PaperPluginClassLoader, for the plugins that still come through the Bukkit
+        // loader: org.bukkit.craftbukkit.v1_21_R1.entity.CraftHumanEntity is
+        // org.bukkit.craftbukkit.entity.CraftHumanEntity with a version segment Paper dropped.
+        if (name.startsWith("org.bukkit.craftbukkit.v1_")) {
+            int afterVersion = name.indexOf('.', "org.bukkit.craftbukkit.".length());
+            if (afterVersion > 0) {
+                // CraftServer's own loader, not this one: PluginClassLoader lives in the API jar,
+                // which ModLauncher may hand a module that cannot see org.bukkit.craftbukkit.
+                ClassLoader craftBukkitLoader = org.bukkit.Bukkit.getServer() != null
+                    ? org.bukkit.Bukkit.getServer().getClass().getClassLoader()
+                    : PluginClassLoader.class.getClassLoader();
+                try {
+                    return Class.forName("org.bukkit.craftbukkit." + name.substring(afterVersion + 1),
+                        resolve, craftBukkitLoader);
+                } catch (ClassNotFoundException ignored) {
+                }
+            }
+        }
+        // Eturlia end - the versioned CraftBukkit package a legacy plugin was built against
+
+        throw new ClassNotFoundException(name);
+    }
+
+    @Override
+    protected Class<?> findClass(String name) throws ClassNotFoundException {""",
+        "legacy PluginClassLoader resolves versioned CraftBukkit names",
+    )
+
+
+def install_modded_entity_wrappers():
+    """A modded wall entity no longer needs a Bukkit class that does not exist."""
+    print("modded entity wrapper plane")
+    replace(
+        SERVER + "/net/minecraft/world/entity/decoration/BlockAttachedEntity.java",
+        """                    HangingBreakEvent event = new HangingBreakEvent((Hanging) this.getBukkitEntity(), cause);
+                    this.level().getCraftServer().getPluginManager().callEvent(event);
+
+                    if (this.isRemoved() || event.isCancelled()) {
+                        return;
+                    }""",
+        """                    // Eturlia start - a modded wall entity has no Bukkit Hanging class
+                    // HangingBreakEvent needs a Hanging, and Bukkit only has wrappers for the four
+                    // vanilla ones. Create's crafting blueprint and seat are block-attached too, and
+                    // the cast ended their region the first time one of them lost its wall. Without
+                    // a wrapper there is no event to fire, so the entity just falls the vanilla way.
+                    if (!(this.getBukkitEntity() instanceof Hanging bukkitHanging)) {
+                        this.discard(EntityRemoveEvent.Cause.DROP);
+                        this.dropItem((Entity) null);
+                        return;
+                    }
+                    // Eturlia end - a modded wall entity has no Bukkit Hanging class
+                    HangingBreakEvent event = new HangingBreakEvent(bukkitHanging, cause);
+                    this.level().getCraftServer().getPluginManager().callEvent(event);
+
+                    if (this.isRemoved() || event.isCancelled()) {
+                        return;
+                    }""",
+        "BlockAttachedEntity tolerates a modded wall entity",
+    )
+
+
+def install_level_is_subclassable():
+    """Paper sealed most of Level for the JIT; mods that build their own Level cannot load at all."""
+    print("level subclass plane (whole class)")
+    path = SERVER + "/net/minecraft/world/level/Level.java"
+    with open(path, encoding="utf-8") as handle:
+        lines = handle.read().split("\n")
+
+    head = re.compile(r"^(\s+)(public|protected)( static)? final (.*)$")
+    changed = 0
+    for index, line in enumerate(lines):
+        match = head.match(line)
+        if match is None:
+            continue
+        rest = match.group(4)
+        open_paren = rest.find("(")
+        if open_paren < 0:
+            continue  # a field, not a method
+        equals = rest.find("=")
+        if equals != -1 and equals < open_paren:
+            continue  # a field whose initialiser happens to call something
+        lines[index] = "%s%s%s %s" % (match.group(1), match.group(2), match.group(3) or "", rest)
+        changed += 1
+
+    if changed == 0:
+        print("  already applied: Level's methods are overridable")
+        return
+
+    # One note in the file, so the next reader knows this was deliberate.
+    for index, line in enumerate(lines):
+        if line.startswith("public abstract class Level "):
+            lines.insert(index, "// Eturlia - Paper marks most of Level's methods final to help the JIT inline them. Mods build\n"
+                                "// their own Level subclasses (Create's SchematicLevel and PonderLevel, contraption worlds), and a\n"
+                                "// subclass that overrides a final method cannot even be defined - IncompatibleClassChangeError at\n"
+                                "// class load, before a line of the mod runs. The methods are unchanged; only the seal is gone.")
+            break
+
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write("\n".join(lines))
+    print("  Level: %d methods are overridable again" % changed)
+
+
+def install_builtin_pack_source():
+    """NeoForge adds one method to BuiltInPackSource; without it a mod's built-in packs never load."""
+    print("built-in pack source plane")
+    path = SERVER + "/net/minecraft/server/packs/repository/BuiltInPackSource.java"
+    if os.path.exists(path) and "fromName" in read(path) and "Eturlia" in read(path):
+        print("  already applied: BuiltInPackSource.fromName")
+        return
+
+    vanilla = (CORE + "/Folia-Server/.gradle/caches/paperweight/mc-dev-sources"
+                      "/net/minecraft/server/packs/repository/BuiltInPackSource.java")
+    if not os.path.exists(vanilla):
+        print("  !! no decompiled BuiltInPackSource to start from — run applyPatches first")
+        return
+
+    source = read(vanilla)
+    marker = "public abstract class BuiltInPackSource implements RepositorySource {"
+    if marker not in source:
+        print("  !! BuiltInPackSource does not look like the class we expected")
+        return
+
+    addition = marker + """
+    // Eturlia start - the one method NeoForge patches into this class
+    /**
+     * Builds a resources supplier that resolves the pack by its name when it is opened.
+     *
+     * <p>{@code AddPackFindersEvent.addPackFinders} calls this for every built-in pack a mod ships,
+     * so a mod that carries its own datapack - Selling Bin and Starcatcher here - loses all of it
+     * with a {@code NoSuchMethodError} while the server is still starting. NeoForge patches the
+     * method into vanilla; Eturlia adds it to the class the same way it adds every other vanilla
+     * shape a mod expects.</p>
+     */
+    public static Pack.ResourcesSupplier fromName(java.util.function.Function<PackLocationInfo, PackResources> open) {
+        return new Pack.ResourcesSupplier() {
+            @Override
+            public PackResources openPrimary(PackLocationInfo info) {
+                return open.apply(info);
+            }
+
+            @Override
+            public PackResources openFull(PackLocationInfo info, Pack.Metadata metadata) {
+                return open.apply(info);
+            }
+        };
+    }
+    // Eturlia end - the one method NeoForge patches into this class
+"""
+    write(path, source.replace(marker, addition, 1))
+    print("  BuiltInPackSource.fromName")
+
+
+def install_quiet_startup():
+    """Two Eturlia messages that say the same thing hundreds of times, or say it too loudly."""
+    print("quiet startup plane")
+    replace(
+        ETURLIA + "/eturlia/core/loading/LithostitchedCompatGate.java",
+        """        String msg = \"\"\"""",
+        """        // Eturlia start - the operator already answered this question
+        // With the override set the block below is advice nobody asked for, printed to stderr on
+        // every boot. One line is enough to keep the fact visible.
+        if (Boolean.getBoolean("eturlia.lithostitched.allow-unsafe")) {
+            LOGGER.warning("Lithostitched " + raw + " is below the supported " + min
+                    + " and eturlia.lithostitched.allow-unsafe is set: starting anyway."
+                    + " Chunk generation may throw NoSuchElementException in TemplateLists.getRandom.");
+            return true;
+        }
+        // Eturlia end - the operator already answered this question
+        String msg = \"\"\"""",
+        "lithostitched override says one line",
+    )
+
+
+def install_lenient_schedulers():
+    """Folia's schedulers refuse what Bukkit's accept, and the plugin that asked dies on enable."""
+    print("scheduler plane")
+    base = SERVER + "/io/papermc/paper/threadedregions/scheduler/"
+    names = ["FoliaGlobalRegionScheduler.java", "FoliaRegionScheduler.java",
+             "FoliaEntityScheduler.java", "FoliaAsyncScheduler.java"]
+    check = re.compile(
+        r"if \((\w+) (<=|<) 0L?\) \{\n\s*throw new IllegalArgumentException\(\"[^\"]+\"\);\n(\s*)\}")
+    finals = re.compile(r"final (long (?:delayTicks|initialDelayTicks|periodTicks|delay|initialDelay|period)\b)")
+
+    for name in names:
+        path = base + name
+        with open(path, encoding="utf-8") as handle:
+            source = handle.read()
+        if "Eturlia - clamp" in source:
+            print("  already applied: %s" % name)
+            continue
+
+        def clamp(match):
+            variable, operator, indent = match.group(1), match.group(2), match.group(3)
+            # "< 0" guards a delay, where zero is a legal answer; "<= 0" guards a period, which has
+            # to be at least one tick to mean anything.
+            floor = "0L" if operator == "<" else "1L"
+            return ("if (%s %s 0) {\n%s    %s = %s; // Eturlia - clamp instead of throwing: a plugin"
+                    " written for Bukkit passes 0 here, and Folia answered by killing it on enable"
+                    "\n%s}" % (variable, operator, indent, variable, floor, indent))
+
+        patched = finals.sub(r"\1", check.sub(clamp, source))
+        if patched == source:
+            print("  !! nothing to clamp in %s" % name)
+            continue
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(patched)
+        print("  %s: schedulers clamp their arguments" % name)
+
+
+def install_plugin_context_loader():
+    """A plugin that scans its own classpath on enable finds it."""
+    print("plugin context loader plane")
+    replace(
+        API + "/org/bukkit/plugin/java/JavaPlugin.java",
+        """        if (isEnabled != enabled) {
+            isEnabled = enabled;
+
+            if (isEnabled) {
+                try { // Paper - lifecycle events
+                onEnable();
+                } finally { this.allowsLifecycleRegistration = false; } // Paper - lifecycle events
+            } else {
+                onDisable();
+            }
+        }""",
+        """        if (isEnabled != enabled) {
+            isEnabled = enabled;
+
+            // Eturlia start - run the callback under the plugin's own class loader
+            // Libraries that discover their implementations by scanning the classpath - ClassGraph,
+            // Reflections, ServiceLoader - start from the thread context class loader. On a plain
+            // server that is close enough to the plugin's loader; here it is ModLauncher's module
+            // loader, which enumerates nothing a plugin owns, so the scan comes back empty and the
+            // plugin throws while enabling (ImageFrame: "Unable to find suitable implementation of
+            // PlatformScheduler"). Pointing it at the plugin for the length of the callback costs
+            // nothing and is what the library expected to find.
+            final Thread eturliaThread = Thread.currentThread();
+            final ClassLoader eturliaPrevious = eturliaThread.getContextClassLoader();
+            final ClassLoader eturliaPluginLoader = this.getClass().getClassLoader();
+            if (eturliaPluginLoader != null) {
+                eturliaThread.setContextClassLoader(eturliaPluginLoader);
+            }
+            try {
+            // Eturlia end - run the callback under the plugin's own class loader
+            if (isEnabled) {
+                try { // Paper - lifecycle events
+                onEnable();
+                } finally { this.allowsLifecycleRegistration = false; } // Paper - lifecycle events
+            } else {
+                onDisable();
+            }
+            // Eturlia start - run the callback under the plugin's own class loader
+            } finally {
+                eturliaThread.setContextClassLoader(eturliaPrevious);
+            }
+            // Eturlia end - run the callback under the plugin's own class loader
+        }""",
+        "JavaPlugin enables under its own class loader",
+    )
+
+
+def install_wrapper_level_compat():
+    """A mod's fake Level (Create's contraption and schematic worlds) can be constructed at all."""
+    print("wrapper level plane")
+    replace(
+        SERVER + "/net/minecraft/world/level/Level.java",
+        """    public final io.papermc.paper.threadedregions.RegionizedData<io.papermc.paper.threadedregions.RegionizedWorldData> worldRegionData
+        = new io.papermc.paper.threadedregions.RegionizedData<>(
+        (ServerLevel)this, () -> new io.papermc.paper.threadedregions.RegionizedWorldData((ServerLevel)Level.this),
+        io.papermc.paper.threadedregions.RegionizedWorldData.REGION_CALLBACK
+    );""",
+        """    // Eturlia start - not every Level is a ServerLevel
+    // Folia casts this to ServerLevel in a field initialiser, so the cast runs inside Level's
+    // constructor - and a mod that wraps a level (Create's ContraptionWorld and SchematicLevel,
+    // through catnip's WrappedLevel) is a Level that is not a ServerLevel. Every contraption
+    // therefore died with a ClassCastException the moment it was assembled, right after its blocks
+    // had already been taken out of the world. A wrapper level has no regions and never ticks, so
+    // it has no region data either; null is the honest answer and nothing on that path asks.
+    public final io.papermc.paper.threadedregions.RegionizedData<io.papermc.paper.threadedregions.RegionizedWorldData> worldRegionData
+        = Level.eturlia$newWorldRegionData(this);
+
+    private static io.papermc.paper.threadedregions.RegionizedData<io.papermc.paper.threadedregions.RegionizedWorldData> eturlia$newWorldRegionData(Level level) {
+        if (!(((Object) level) instanceof ServerLevel serverLevel)) {
+            return null;
+        }
+        return new io.papermc.paper.threadedregions.RegionizedData<>(
+            serverLevel, () -> new io.papermc.paper.threadedregions.RegionizedWorldData(serverLevel),
+            io.papermc.paper.threadedregions.RegionizedWorldData.REGION_CALLBACK
+        );
+    }
+    // Eturlia end - not every Level is a ServerLevel""",
+        "Level.worldRegionData tolerates a wrapper level",
+    )
+    replace(
+        SERVER + "/net/minecraft/world/level/Level.java",
+        """        Level world = ret.world;
+        if (world != this) {
+            throw new IllegalStateException("World mismatch: expected " + this.getWorld().getName() + " but got " + world.getWorld().getName());
+        }""",
+        """        Level world = ret.world;
+        if (world != this) {
+            // Eturlia start - a wrapper level borrows the region it is being used from
+            // Create runs block logic against its contraption world while ticking a real region.
+            // The data belongs to the real world, which is exactly the world the wrapper is
+            // standing in for, so lending it is closer to right than refusing to answer.
+            if (!net.minecraft.server.MinecraftServer.eturlia$strictFoliaStubs() && !(((Object) this) instanceof ServerLevel)) {
+                return ret;
+            }
+            // Eturlia end - a wrapper level borrows the region it is being used from
+            throw new IllegalStateException("World mismatch: expected " + this.getWorld().getName() + " but got " + world.getWorld().getName());
+        }""",
+        "Level.getCurrentWorldData tolerates a wrapper level",
+    )
+
+
+def install_console_command_errors():
+    """A failing vanilla command reports what went wrong instead of a NullPointerException."""
+    print("console command error plane")
+    replace(
+        SERVER + "/org/bukkit/craftbukkit/CraftServer.java",
+        """        } catch (CommandException ex) {
+            this.pluginManager.callEvent(new com.destroystokyo.paper.event.server.ServerExceptionEvent(new com.destroystokyo.paper.exception.ServerCommandException(ex, target, sender, args))); // Paper
+            //target.timings.stopTiming(); // Spigot // Paper
+            throw ex;
+        } catch (Throwable ex) {
+            //target.timings.stopTiming(); // Spigot // Paper
+            String msg = "Unhandled exception executing '" + commandLine + "' in " + target;
+            this.pluginManager.callEvent(new com.destroystokyo.paper.event.server.ServerExceptionEvent(new com.destroystokyo.paper.exception.ServerCommandException(ex, target, sender, args))); // Paper
+            throw new CommandException(msg, ex);
+        }""",
+        """        } catch (CommandException ex) {
+            // Eturlia start - a vanilla command has no Bukkit Command to blame
+            // ServerCommandException requires the Bukkit Command that failed, and a vanilla command
+            // reached this way has none: the constructor then threw NullPointerException("command")
+            // and that is all the operator ever saw - the real failure never reached the console.
+            if (target != null) {
+            this.pluginManager.callEvent(new com.destroystokyo.paper.event.server.ServerExceptionEvent(new com.destroystokyo.paper.exception.ServerCommandException(ex, target, sender, args))); // Paper
+            } else {
+                net.minecraft.server.MinecraftServer.LOGGER.warn("Command '{}' failed", commandLine, ex);
+            }
+            // Eturlia end - a vanilla command has no Bukkit Command to blame
+            //target.timings.stopTiming(); // Spigot // Paper
+            throw ex;
+        } catch (Throwable ex) {
+            //target.timings.stopTiming(); // Spigot // Paper
+            String msg = "Unhandled exception executing '" + commandLine + "' in " + target;
+            // Eturlia start - a vanilla command has no Bukkit Command to blame
+            if (target != null) {
+            this.pluginManager.callEvent(new com.destroystokyo.paper.event.server.ServerExceptionEvent(new com.destroystokyo.paper.exception.ServerCommandException(ex, target, sender, args))); // Paper
+            } else {
+                net.minecraft.server.MinecraftServer.LOGGER.warn(msg, ex);
+            }
+            // Eturlia end - a vanilla command has no Bukkit Command to blame
+            throw new CommandException(msg, ex);
+        }""",
+        "CraftServer reports the real command failure",
+    )
+
+
+def install_off_region_world_data():
+    """Code that touches a world from outside a region tick gets empty data, not a null pointer."""
+    print("off-region world data plane")
+    replace(
+        SERVER + "/net/minecraft/world/level/Level.java",
+        """    public io.papermc.paper.threadedregions.RegionizedWorldData getCurrentWorldData() {
+        final io.papermc.paper.threadedregions.RegionizedWorldData ret = io.papermc.paper.threadedregions.TickRegionScheduler.getCurrentRegionizedWorldData();
+        if (ret == null) {
+            return ret;
+        }""",
+        """    // Eturlia start - a world always has data to answer with
+    /**
+     * The scratch world data handed to callers that are not inside a region tick.
+     *
+     * <p>Folia only creates this per region, so off a region thread it used to be null - and every
+     * CraftBukkit-era field lives on it: {@code captureBlockStates}, {@code capturedTileEntities},
+     * {@code captureTreeGeneration}. A console command, a mod's deferred "main thread" task, or a
+     * plugin's async callback therefore died on a null pointer instead of doing something sensible.
+     * Nothing captures anything outside a region tick, so an empty holder is the right answer;
+     * writes into it go to a scratch object and are dropped, which is what "not in a region" means.
+     * The old behaviour is one flag away: -Deturlia.compat.folia-stubs=strict.</p>
+     */
+    private volatile io.papermc.paper.threadedregions.RegionizedWorldData eturlia$offRegionWorldData;
+
+    public io.papermc.paper.threadedregions.RegionizedWorldData eturlia$offRegionWorldData() {
+        if (net.minecraft.server.MinecraftServer.eturlia$strictFoliaStubs()) {
+            return null;
+        }
+        io.papermc.paper.threadedregions.RegionizedWorldData data = this.eturlia$offRegionWorldData;
+        if (data != null) {
+            return data;
+        }
+        synchronized (this) {
+            if (this.eturlia$offRegionWorldData == null && ((Object) this) instanceof net.minecraft.server.level.ServerLevel serverLevel) {
+                try {
+                    this.eturlia$offRegionWorldData = new io.papermc.paper.threadedregions.RegionizedWorldData(serverLevel);
+                } catch (Throwable thr) {
+                    // Building it needs the world to be far enough along; before that, null is
+                    // still the honest answer and the caller keeps the behaviour it had.
+                    return null;
+                }
+            }
+            return this.eturlia$offRegionWorldData;
+        }
+    }
+    // Eturlia end - a world always has data to answer with
+
+    public io.papermc.paper.threadedregions.RegionizedWorldData getCurrentWorldData() {
+        final io.papermc.paper.threadedregions.RegionizedWorldData ret = io.papermc.paper.threadedregions.TickRegionScheduler.getCurrentRegionizedWorldData();
+        if (ret == null) {
+            return this.eturlia$offRegionWorldData(); // Eturlia - empty data instead of null
+        }""",
+        "Level.getCurrentWorldData answers off-region callers",
+    )
+
+
+def install_level_subclass_compat():
+    """A mod may still subclass Level; Moonrise sealed a method it overrides."""
+    print("level subclass plane")
+    replace(
+        SERVER + "/net/minecraft/world/level/Level.java",
+        "    public final <T extends Entity> List<T> getEntitiesOfClass(final Class<T> entityClass, final AABB boundingBox, final Predicate<? super T> predicate) {",
+        """    // Eturlia - Moonrise sealed this for the JIT; Create's SchematicLevel overrides it, and a
+    // subclass that cannot even be defined takes every schematic, ponder and contraption preview
+    // with it (IncompatibleClassChangeError at class load, before any of the mod's code runs).
+    public <T extends Entity> List<T> getEntitiesOfClass(final Class<T> entityClass, final AABB boundingBox, final Predicate<? super T> predicate) {""",
+        "Level.getEntitiesOfClass is overridable",
+    )
+
+
+def install_spawn_egg_compat():
+    """A modded spawn egg answers the feature check and finds its own entity type."""
+    print("spawn egg plane")
+    replace(
+        SERVER + "/net/minecraft/world/item/SpawnEggItem.java",
+        """    @Override
+    public FeatureFlagSet requiredFeatures() {
+        return this.defaultType.requiredFeatures();
+    }""",
+        """    @Override
+    public FeatureFlagSet requiredFeatures() {
+        // Eturlia start - a spawn egg that resolves its type later has no default one
+        // NeoForge's DeferredSpawnEggItem hands null to this constructor and overrides getType
+        // instead, because the entity type does not exist yet when items are registered. Vanilla
+        // dereferences the field here, and this method is on the path of every creative inventory
+        // packet: the NPE is thrown before the item ever reaches the player's hand, which is why
+        // modded eggs neither appear nor spawn anything.
+        if (this.defaultType == null) {
+            return net.minecraft.world.flag.FeatureFlags.VANILLA_SET;
+        }
+        // Eturlia end - a spawn egg that resolves its type later has no default one
+        return this.defaultType.requiredFeatures();
+    }""",
+        "SpawnEggItem.requiredFeatures",
+    )
+    replace(
+        SERVER + "/net/minecraft/world/item/SpawnEggItem.java",
+        """    public EntityType<?> getType(ItemStack stack) {
+        CustomData customdata = (CustomData) stack.getOrDefault(DataComponents.ENTITY_DATA, CustomData.EMPTY);
+
+        return !customdata.isEmpty() ? (EntityType) customdata.read(SpawnEggItem.ENTITY_TYPE_FIELD_CODEC).result().orElse(this.defaultType) : this.defaultType;
+    }""",
+        """    public EntityType<?> getType(ItemStack stack) {
+        CustomData customdata = (CustomData) stack.getOrDefault(DataComponents.ENTITY_DATA, CustomData.EMPTY);
+        // Eturlia start - fall back to the type the item is named after
+        EntityType<?> fallback = this.defaultType != null ? this.defaultType : this.eturlia$typeFromItemId(stack);
+
+        return !customdata.isEmpty() ? (EntityType) customdata.read(SpawnEggItem.ENTITY_TYPE_FIELD_CODEC).result().orElse(fallback) : fallback;
+    }
+
+    /**
+     * Guesses the entity type from the item id when the egg carries no type of its own.
+     *
+     * <p>Only reached for a subclass that meant to answer {@code getType} itself and did not - a
+     * mod loaded far enough to register the item but not far enough to bind its entity supplier.
+     * Both spellings mods use are tried, {@code potoo_spawn_egg} and {@code spawn_egg_potoo}.</p>
+     */
+    @Nullable
+    private EntityType<?> eturlia$typeFromItemId(ItemStack stack) {
+        net.minecraft.resources.ResourceLocation itemId = BuiltInRegistries.ITEM.getKey(stack.getItem());
+        if (itemId == null) {
+            return null;
+        }
+
+        String path = itemId.getPath();
+        if (path.endsWith("_spawn_egg")) {
+            path = path.substring(0, path.length() - "_spawn_egg".length());
+        } else if (path.startsWith("spawn_egg_")) {
+            path = path.substring("spawn_egg_".length());
+        } else {
+            return null;
+        }
+
+        return BuiltInRegistries.ENTITY_TYPE
+            .getOptional(net.minecraft.resources.ResourceLocation.fromNamespaceAndPath(itemId.getNamespace(), path))
+            .orElse(null);
+        // Eturlia end - fall back to the type the item is named after
+    }""",
+        "SpawnEggItem.getType fallback",
+    )
+    replace(
+        SERVER + "/net/minecraft/world/item/SpawnEggItem.java",
+        """                entitytypes = this.getType(itemstack);
+                if (entitytypes.spawn((ServerLevel) world, itemstack,""",
+        """                entitytypes = this.getType(itemstack);
+                if (entitytypes == null) return InteractionResult.PASS; // Eturlia - an egg with no type spawns nothing instead of throwing
+                if (entitytypes.spawn((ServerLevel) world, itemstack,""",
+        "SpawnEggItem.useOn null type",
+    )
+    replace(
+        SERVER + "/net/minecraft/world/item/SpawnEggItem.java",
+        """                EntityType<?> entitytypes = this.getType(itemstack);
+                Entity entity = entitytypes.spawn((ServerLevel) world, itemstack, user, blockposition, MobSpawnType.SPAWN_EGG, false, false);""",
+        """                EntityType<?> entitytypes = this.getType(itemstack);
+                if (entitytypes == null) return InteractionResultHolder.pass(itemstack); // Eturlia - an egg with no type spawns nothing instead of throwing
+                Entity entity = entitytypes.spawn((ServerLevel) world, itemstack, user, blockposition, MobSpawnType.SPAWN_EGG, false, false);""",
+        "SpawnEggItem.use null type",
+    )
+    replace(
+        SERVER + "/net/minecraft/world/item/SpawnEggItem.java",
+        """                entitytypes = this.getType(itemstack);
+                spawner.setEntityId(entitytypes, world.getRandom());""",
+        """                entitytypes = this.getType(itemstack);
+                if (entitytypes == null) return InteractionResult.PASS; // Eturlia - an egg with no type leaves the spawner alone
+                spawner.setEntityId(entitytypes, world.getRandom());""",
+        "SpawnEggItem spawner null type",
+    )
+
+
+def install_container_defaults():
+    """A modded container no longer dies on the CraftBukkit methods it never heard of."""
+    print("container plane")
+    replace(
+        SERVER + "/net/minecraft/world/Container.java",
+        """    // CraftBukkit start
+    java.util.List<ItemStack> getContents();
+
+    void onOpen(CraftHumanEntity who);
+
+    void onClose(CraftHumanEntity who);
+
+    java.util.List<org.bukkit.entity.HumanEntity> getViewers();
+
+    org.bukkit.inventory.@org.jetbrains.annotations.Nullable InventoryHolder getOwner(); // Paper - annotation
+
+    void setMaxStackSize(int size);
+
+    org.bukkit.Location getLocation();""",
+        """    // CraftBukkit start
+    // Eturlia start - CraftBukkit's container methods stop being abstract
+    // CraftBukkit adds seven methods to this interface so that every vanilla container can answer
+    // the Bukkit inventory API. A mod that writes its own container implements the interface it
+    // found in the vanilla jar, which has none of them, and the class loads happily - until
+    // something opens it and the JVM throws AbstractMethodError from inside a region tick, which on
+    // Folia ends the server. That is one crash per modded chest, barrel or workbench: BCLib's
+    // barrels in the End did it five times this afternoon.
+    //
+    // Defaults answer the way an inventory with no Bukkit side would: nobody is watching it, it
+    // belongs to nobody, and it lives nowhere. Vanilla containers still override all of them, so
+    // nothing about the Bukkit API changes for the containers that do have a Bukkit side.
+    default java.util.List<ItemStack> getContents() {
+        java.util.List<ItemStack> contents = new java.util.ArrayList<>(this.getContainerSize());
+        for (int slot = 0; slot < this.getContainerSize(); ++slot) {
+            contents.add(this.getItem(slot));
+        }
+        return contents;
+    }
+
+    default void onOpen(CraftHumanEntity who) {}
+
+    default void onClose(CraftHumanEntity who) {}
+
+    default java.util.List<org.bukkit.entity.HumanEntity> getViewers() {
+        return new java.util.ArrayList<>();
+    }
+
+    default org.bukkit.inventory.@org.jetbrains.annotations.Nullable InventoryHolder getOwner() {
+        return null;
+    }
+
+    default void setMaxStackSize(int size) {}
+
+    default org.bukkit.Location getLocation() {
+        return null;
+    }
+    // Eturlia end - CraftBukkit's container methods stop being abstract""",
+        "Container CraftBukkit defaults",
+    )
+    replace(
+        SERVER + "/net/minecraft/world/Container.java",
+        "    int getMaxStackSize(); // CraftBukkit",
+        """    default int getMaxStackSize() { return Container.MAX_STACK; } // CraftBukkit // Eturlia - vanilla's own answer for containers that never overrode it""",
+        "Container.getMaxStackSize default",
+    )
+
+
+def install_portal_compat():
+    """A modded portal teleports instead of killing the region the player stands in."""
+    print("portal plane")
+    replace(
+        SERVER + "/net/minecraft/world/level/block/Portal.java",
+        """    // Folia start - region threading
+    public boolean portalAsync(ServerLevel sourceWorld, Entity portalTarget, BlockPos portalPos);
+    // Folia end - region threading""",
+        """    // Folia start - region threading
+    // Eturlia start - a portal written against vanilla still works
+    // Folia made this abstract, so a modded portal - Twilight Forest, BetterEnd, the Aether - fails
+    // with AbstractMethodError the moment an entity touches it. The error lands inside the player
+    // tick, Folia answers a failed region tick by stopping the server, and because the player is
+    // still standing in the portal when they log back in, the next login repeats it: the kick loop
+    // reported for the Twilight Forest portal.
+    //
+    // The default does what NetherPortalBlock and EndPortalBlock do - refuse the move unless this
+    // thread owns both the entity and the portal block - and then asks the mod itself where the
+    // entity should end up.
+    default boolean portalAsync(ServerLevel sourceWorld, Entity portalTarget, BlockPos portalPos) {
+        if (!ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(portalTarget)) {
+            return false;
+        }
+        if (!ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(sourceWorld, portalPos)) {
+            return false;
+        }
+        return portalTarget.eturlia$portalAsync(this, sourceWorld, portalPos);
+    }
+    // Eturlia end - a portal written against vanilla still works
+    // Folia end - region threading""",
+        "Portal.portalAsync default",
+    )
+    replace(
+        SERVER + "/net/minecraft/world/entity/Entity.java",
+        "    public boolean endPortalLogicAsync(BlockPos portalPos) {",
+        """    // Eturlia start - the transition half of Portal.portalAsync
+    /**
+     * Carries out a modded portal's own transition through Folia's async teleport.
+     *
+     * <p>{@code getPortalDestination} is the mod's method, written for a server where any thread
+     * may touch any world. Here it runs on the thread that owns the portal block, which is the
+     * closest thing to what it expects. If it reaches into a world this thread does not own,
+     * Folia's thread check throws - and refusing the transition leaves the player standing in the
+     * portal, which is a working server, while letting the throwable out is not.</p>
+     */
+    public boolean eturlia$portalAsync(net.minecraft.world.level.block.Portal portal, ServerLevel sourceWorld, BlockPos portalPos) {
+        ca.spottedleaf.moonrise.common.util.TickThread.ensureTickThread(this, "Cannot portal entity async");
+
+        final net.minecraft.world.level.portal.DimensionTransition transition;
+        try {
+            transition = portal.getPortalDestination(sourceWorld, this, portalPos);
+        } catch (Throwable thr) {
+            Entity.LOGGER.warn("Eturlia: portal {} could not pick a destination", portal.getClass().getName(), thr);
+            return false;
+        }
+
+        if (transition == null || transition.newLevel() == null) {
+            return false;
+        }
+
+        return this.teleportAsync(
+            transition.newLevel(), transition.pos(), Float.valueOf(transition.yRot()), Float.valueOf(transition.xRot()),
+            transition.speed(),
+            transition.cause() == null ? org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.UNKNOWN : transition.cause(),
+            Entity.TELEPORT_FLAG_LOAD_CHUNK | Entity.TELEPORT_FLAG_TELEPORT_PASSENGERS,
+            (entity) -> {
+                try {
+                    transition.postDimensionTransition().onTransition(entity);
+                } catch (Throwable thr) {
+                    Entity.LOGGER.warn("Eturlia: portal {} failed after the transition", portal.getClass().getName(), thr);
+                }
+            }
+        );
+    }
+    // Eturlia end - the transition half of Portal.portalAsync
+
+    public boolean endPortalLogicAsync(BlockPos portalPos) {""",
+        "Entity.eturlia$portalAsync",
+    )
+
+
+def install_packet_thread_routing():
+    """A mod's "run this on the main thread" lands in the region that owns the player who asked."""
+    print("packet routing plane")
+    replace(
+        SERVER + "/net/minecraft/network/Connection.java",
+        """    private static <T extends PacketListener> void genericsFtw(Packet<T> packet, PacketListener listener) {
+        packet.handle((T) listener); // CraftBukkit - decompile error
+    }""",
+        """    private static <T extends PacketListener> void genericsFtw(Packet<T> packet, PacketListener listener) {
+        // Eturlia start - remember whose packet this thread is carrying
+        // Mod networking runs on this thread and then asks the server to finish the work "on the
+        // main thread". Folia has no main thread, so the core has to pick a region for it, and the
+        // only region that can be right is the one that owns the player the packet came from.
+        final PacketListener previousListener = net.minecraft.server.MinecraftServer.eturlia$currentListener.get();
+        net.minecraft.server.MinecraftServer.eturlia$currentListener.set(listener);
+        try {
+        // Eturlia end - remember whose packet this thread is carrying
+        packet.handle((T) listener); // CraftBukkit - decompile error
+        // Eturlia start - remember whose packet this thread is carrying
+        } finally {
+            net.minecraft.server.MinecraftServer.eturlia$currentListener.set(previousListener);
+        }
+        // Eturlia end - remember whose packet this thread is carrying
+    }""",
+        "Connection tracks the packet listener",
+    )
+    replace(
+        SERVER + "/net/minecraft/server/MinecraftServer.java",
+        """    public static void eturlia$runAsMainThread(Runnable runnable) {
+        if (runnable == null) {
+            return;
+        }
+        if (MinecraftServer.eturlia$inRegionTick()) {
+            MinecraftServer.eturlia$runGuarded(runnable);
+            return;
+        }
+        io.papermc.paper.threadedregions.RegionizedServer regionized =
+            io.papermc.paper.threadedregions.RegionizedServer.getInstance();
+        if (regionized != null) {
+            regionized.addTask(() -> MinecraftServer.eturlia$runGuarded(runnable));
+            return;
+        }
+        MinecraftServer.eturlia$runGuarded(runnable);
+    }""",
+        """    public static final ThreadLocal<net.minecraft.network.PacketListener> eturlia$currentListener = new ThreadLocal<>();
+
+    public static void eturlia$runAsMainThread(Runnable runnable) {
+        if (runnable == null) {
+            return;
+        }
+        if (MinecraftServer.eturlia$inRegionTick()) {
+            MinecraftServer.eturlia$runGuarded(runnable);
+            return;
+        }
+        io.papermc.paper.threadedregions.RegionizedServer regionized =
+            io.papermc.paper.threadedregions.RegionizedServer.getInstance();
+        // Eturlia start - a packet's task belongs to the packet's own region
+        // The global region is a single queue for the whole server. Sending every mod packet
+        // through it does two bad things at once: it serialises work that Folia just spent a lot of
+        // effort splitting apart - which is what a player feels as a Create machine stuttering -
+        // and it runs the task on a thread that owns no world data, so anything that touches the
+        // world throws (3064 of those in one afternoon, all from one block-info packet).
+        //
+        // While a packet is being handled this thread knows which player sent it, and that player's
+        // chunk names the region that owns the blocks around them - which is what the task is
+        // almost always about. Queue it there instead: correct data, and one queue per player
+        // rather than one for the server.
+        if (regionized != null) {
+            net.minecraft.network.PacketListener listener = MinecraftServer.eturlia$currentListener.get();
+            if (listener instanceof net.minecraft.server.network.ServerGamePacketListenerImpl gameListener) {
+                net.minecraft.server.level.ServerPlayer player = gameListener.player;
+                if (player != null && !player.isRemoved() && player.level() instanceof net.minecraft.server.level.ServerLevel level) {
+                    net.minecraft.core.BlockPos pos = player.blockPosition();
+                    regionized.taskQueue.queueTickTaskQueue(
+                        level, pos.getX() >> 4, pos.getZ() >> 4,
+                        () -> MinecraftServer.eturlia$runGuarded(runnable)
+                    );
+                    return;
+                }
+            }
+        }
+        // Eturlia end - a packet's task belongs to the packet's own region
+        if (regionized != null) {
+            regionized.addTask(() -> MinecraftServer.eturlia$runGuarded(runnable));
+            return;
+        }
+        MinecraftServer.eturlia$runGuarded(runnable);
+    }""",
+        "runAsMainThread routes by packet owner",
+    )
+    replace(
+        SERVER + "/net/minecraft/world/level/Level.java",
+        """        net.minecraft.world.level.block.entity.BlockEntity blockEntity;
+        if (!this.getCurrentWorldData().capturedTileEntities.isEmpty() && (blockEntity = this.getCurrentWorldData().capturedTileEntities.get(blockposition)) != null) { // Folia - region threading
+            return blockEntity;
+        }""",
+        """        net.minecraft.world.level.block.entity.BlockEntity blockEntity;
+        // Eturlia start - a lookup from outside a region tick reads no captured state
+        // capturedTileEntities only ever holds anything in the middle of a block placement, which
+        // happens inside a region tick. A caller that is not in one - the global region draining a
+        // mod's deferred task, for one - has no captured state to read, and answering with the
+        // chunk is both correct and quiet, where reaching into a null holder is a crash.
+        final io.papermc.paper.threadedregions.RegionizedWorldData eturliaWorldData = this.getCurrentWorldData();
+        if (eturliaWorldData != null && !eturliaWorldData.capturedTileEntities.isEmpty() && (blockEntity = eturliaWorldData.capturedTileEntities.get(blockposition)) != null) { // Folia - region threading
+            return blockEntity;
+        }
+        // Eturlia end - a lookup from outside a region tick reads no captured state""",
+        "Level.getBlockEntity survives off-region lookups",
     )
 
 
@@ -1993,6 +3120,23 @@ if __name__ == "__main__":
     install_plugin_compat()
     install_registry_compat()
     install_item_extension()
+    install_item_stack_extension()
+    install_level_extension()
+    install_wrapper_level_compat()
+    install_off_region_world_data()
+    install_console_command_errors()
+    install_level_subclass_compat()
+    install_level_is_subclassable()
+    install_lenient_schedulers()
+    install_plugin_context_loader()
+    install_builtin_pack_source()
+    install_quiet_startup()
+    install_modded_entity_wrappers()
+    install_remap_fallbacks()
+    install_spawn_egg_compat()
+    install_container_defaults()
+    install_portal_compat()
+    install_packet_thread_routing()
     install_configuration_listener_shape()
     install_extensible_enums()
     install_recipe_book_settings()

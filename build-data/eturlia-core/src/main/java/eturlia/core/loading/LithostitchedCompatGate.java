@@ -62,6 +62,16 @@ public final class LithostitchedCompatGate {
             LOGGER.info("Lithostitched " + raw + " OK (require ≥ " + min + ", no beta/alpha)");
             return true;
         }
+        // Eturlia start - the operator already answered this question
+        // With the override set the block below is advice nobody asked for, printed to stderr on
+        // every boot. One line is enough to keep the fact visible.
+        if (Boolean.getBoolean("eturlia.lithostitched.allow-unsafe")) {
+            LOGGER.warning("Lithostitched " + raw + " is below the supported " + min
+                    + " and eturlia.lithostitched.allow-unsafe is set: starting anyway."
+                    + " Chunk generation may throw NoSuchElementException in TemplateLists.getRandom.");
+            return true;
+        }
+        // Eturlia end - the operator already answered this question
         String msg = """
             ================================================================================
             ETURLIA REFUSED TO START: unsupported Lithostitched version
