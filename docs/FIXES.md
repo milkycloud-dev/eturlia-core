@@ -247,12 +247,12 @@ refused and the plugin died on enable.
 
 ### A modded block had no Material, and plugins never checked for null
 
-Every protection and logging plugin reads  out of  and
- and uses it immediately: CoreProtect calls , WorldGuard hands it to a
-. A modded block has no Bukkit , so the first one a player
+Every protection and logging plugin reads `block.getType()` out of `BlockPlaceEvent` and
+`BlockBreakEvent` and uses it immediately: CoreProtect calls `.name()` on it, WorldGuard hands it to
+a `Preconditions.checkNotNull`. A modded block has no Bukkit `Material`, so the first one a player
 touched took the handler down - and with it whatever protection that plugin was there to apply.
-Modded blocks now report : a plain solid block, so region protection and logging
-behave the way they would for any other block.  restores the
+Modded blocks now report `Material.STONE`: a plain solid block, so region protection and logging
+behave the way they would for any other block. `-Deturlia.compat.bukkit-types=strict` restores the
 null. This closed the last errors a player could produce by playing: WorldGuard, CoreProtect and the
 block-break packet all went quiet in the same run.
 
