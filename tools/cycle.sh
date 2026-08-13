@@ -47,8 +47,12 @@ fi
 bash "$N/tools/testctl.sh" say "say Server restarting for a core update - back in about a minute" > /dev/null 2>&1
 sleep 5
 step stop bash "$N/tools/testctl.sh" stop
+# Start every boot on a fresh log: wait-ready and logcheck both read latest.log, and the previous
+# boot's lines in it are indistinguishable from this one's.
+mv "$N/server/logs/latest.log" "$N/server/logs/prev.log" 2>/dev/null
 cp "$JAR" "$N/server/eturlia.jar" || exit 1
 echo "    deployed $(md5sum "$N/server/eturlia.jar" | cut -c1-12)"
+sleep 20
 step start bash "$N/tools/testctl.sh" start
 bash "$N/tools/testctl.sh" wait-ready 420 || exit 1
 sleep 20
