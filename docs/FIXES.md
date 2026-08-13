@@ -1,7 +1,7 @@
 # Eturlia — what the core absorbs, and why
 
 Eturlia is Folia (Paper's regionised multithreading) with NeoForge's FML bolted on, running the
-**unmodified** NoteBuns production pack: 86 mods and 38 plugins, none of them patched.
+**unmodified** NoteBuns production pack: 87 mod jars and 38 plugin jars, none of them patched.
 
 That last word is the whole design. Patching each mod does not scale past one pack update, so every
 fix below lives in the core and closes a *class* of failure rather than naming a mod. All of them
@@ -9,14 +9,23 @@ are produced by one idempotent generator, [`scripts/apply_compat_layer.py`](../s
 run after `./gradlew applyPatches` and before the jar is built. Every plane has a switch, and
 `strict` restores stock Folia behaviour.
 
+This file is the history, organised by class of failure. For the project as a whole read the
+[README](../README.md); for what is running and what is open read [`HANDOFF.md`](HANDOFF.md); for how
+any of it is measured read [`TESTING.md`](TESTING.md).
+
 ## Where it stands
+
+Measured 2026-08-13, build `2026-08-13T11:46:07Z`:
 
 | | |
 |---|---|
-| Boot | `Done (10.1s)` — 86 mods, 38 plugins |
-| Join | a player holds the world for **26 minutes** and counting, zero failed region ticks |
-| Errors in a 10-minute session with a player online | **1** (DecentHolograms, a Spigot-mapped plugin — see "Still open") |
-| Recipes lost at boot | **153 → 7** |
+| Boot | `Done (12.673s)` — 115 mods from 87 jars, 37 plugins from 38 jars |
+| Alarming lines in a full boot | 2, both third-party plugin bugs (ImageFrame, KartaAutoAnnouncer) |
+| Mod classes that cannot bind to the core | 0 outside datagen (`tools/finalscan.py`) |
+| Plugin commands registered | 224 of 225 declared |
+| Vanilla commands present | 48 of 48 |
+| Create | a bearing driven through a shaft chain assembles and lifts its blocks; 10 assemble/disassemble cycles, 0 errors |
+| Create: Aeronautics | contraptions assemble on a world border; physics sub-levels construct and tick |
 
 ## The failure classes, and what closes each
 

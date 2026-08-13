@@ -1,5 +1,9 @@
 # Testpack — Compatibility Manifest
 
+> **Superseded.** The pack this project is measured against is listed 1:1 in
+> [`../../README.md`](../../README.md), read straight off the test server.
+> The manifest below is a snapshot from the per-mod era and is not kept in sync.
+
 This directory currently stores a pinned compatibility manifest for the compat
 modules (Create/CBC/Sable/Aeronautics) and related notes.
 

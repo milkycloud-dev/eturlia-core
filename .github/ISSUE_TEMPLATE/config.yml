@@ -1,10 +1,11 @@
-blank_issues_enabled: false
+blank_issues_enabled: true
 contact_links:
-  - name: PaperMC Discord
-    url: https://discord.gg/papermc
-    about: If you are having minor issues, come ask us on our Discord server!
-  - name: Exploit Report
-    url: https://discord.gg/papermc
-    about: |
-      Due to GitHub not currently allowing private issues, exploit reports are currently handled via our Discord.
-      To report an exploit, see the #paper-exploit-report channel.
+  - name: Current state and open problems
+    url: https://github.com/milkycloud-dev/eturlia-core/blob/main/docs/HANDOFF.md
+    about: What is running, what is solved, and what is open right now — read this first.
+  - name: What the core absorbs, by class of failure
+    url: https://github.com/milkycloud-dev/eturlia-core/blob/main/docs/FIXES.md
+    about: The failure you are looking at is often a case of one already closed here.
+  - name: How any of this is measured
+    url: https://github.com/milkycloud-dev/eturlia-core/blob/main/docs/TESTING.md
+    about: The harness, the marker mechanism, and the traps a test run has to avoid.
