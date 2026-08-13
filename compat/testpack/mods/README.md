@@ -1,5 +1,9 @@
 # Test Mod Manifest
 
+> **Superseded.** The pack this project is measured against is listed 1:1 in
+> [`../../README.md`](../../README.md), read straight off the test server.
+> The manifest below is a snapshot from the per-mod era and is not kept in sync.
+
 This directory tracks pinned mod/version references for compat validation.
 It currently acts as a **manifest-first** source of truth.
 

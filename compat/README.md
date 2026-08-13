@@ -1,5 +1,13 @@
 # Eturlia Compat — Compatibility Modules
 
+> **Superseded approach — kept for the record.**
+>
+> This directory is what the project looked like when it still fixed incompatibility *per mod*.
+> Since 2026-08-11 the rule is the opposite: the core absorbs the incompatibility and no mod is
+> touched, so nothing here is built, shipped or maintained. Read
+> [`../README.md`](../README.md) for the current design and
+> [`../docs/FIXES.md`](../docs/FIXES.md) for what the core does instead.
+
 > **Status: design sketch, not working code.**
 >
 > Both modules (`eturlia-compat-create`, `eturlia-compat-sable`) are skeletons: every

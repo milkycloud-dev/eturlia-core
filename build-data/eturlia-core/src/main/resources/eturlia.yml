@@ -294,7 +294,7 @@ neoforge:
   # Напоминание: оригинальный arclight_sable_patch = BLOCK; нужен eturlia-shim.
   remind-sable-shim: true
   # СПРАВОЧНО (не применяется кодом): не класть клиентские jars и spark-neoforge —
-  # см. docs/PACK_COMPAT_ASIC_2026-08.md
+  # см. README.md, раздел 7 (состав тестового стенда и что ядро пропускает само).
   remind-pack-compat-doc: true
 
 
@@ -331,4 +331,4 @@ reference:
   server-properties: server.properties
   spigot: spigot.yml
   bukkit: bukkit.yml
-  pack-compat-doc: docs/PACK_COMPAT_ASIC_2026-08.md
+  pack-compat-doc: README.md

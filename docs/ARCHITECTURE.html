@@ -504,17 +504,22 @@ production-сервер. Это доказывает изоляцию регио
 <h2 id="s11" data-n="11">Что осталось открытым</h2>
 <table>
   <tr><th>Что</th><th>Состояние</th></tr>
-  <tr><td>ремаппер плагинов Spigot→Mojang</td><td>подключён к маппингам на диске, но выключен: при включении падает загрузка плагинов — <code>net.neoforged.art.api.Transformer</code> не виден слою, куда ModLauncher грузит сервер</td></tr>
+  <tr><td><code>LibraryLoader</code> под ModLauncher</td><td><b>открыто.</b> Плагин, чей paper-загрузчик тянет Maven-библиотеки, не грузится: <code>MavenLibraryResolver</code> бросает NPE, его repository system в этой сборке не собран. Ловится на PlugManX; это класс поломки, а не один плагин. Подробности — <code>docs/HANDOFF.md</code>, §5.1</td></tr>
+  <tr><td>Create: Aeronautics, нативная часть</td><td><b>открыто, но не наше.</b> <code>/sable spawn joint_test</code> доходит до <code>buoyancy.rs</code> в Rapier; паника не разворачивает стек и убивает JVM без crash-отчёта. Java-сторона под-миров вычищена</td></tr>
+  <tr><td>синие следы за игроком</td><td><b>закрыто: не сервер.</b> <code>-Deturlia.debug.particles=true</code> показал ноль частиц от ядра за весь прогон; эффект остаётся при снятых 38 плагинах и ~35 клиентских модах и воспроизводится в новом мире. Рисует клиентская половина мода</td></tr>
   <tr><td><code>ServerStartedEvent</code> у модов</td><td>не доходит: <code>getCurrentRegion()</code> == null на Server thread</td></tr>
   <tr><td>7 рецептов и 20 достижений</td><td>устаревший JSON модов и ссылки на отсутствующие моды — не ядро</td></tr>
-  <tr><td><code>LibraryLoader</code> под ModLauncher</td><td>плагины с <code>libraries:</code> не резолвят Maven</td></tr>
+  <tr><td>ремаппер плагинов Spigot→Mojang</td><td><b>закрыто.</b> Включён по умолчанию (<code>-Deturlia.compat.plugin-remap=true</code>); jar с классами, которые JVM не грузит, повторяется без них</td></tr>
   <tr><td>консоль без <code>&gt;</code></td><td>оказалось не ядро: <code>start.sh</code> заворачивал вывод в <code>tee</code>, из-за чего fd 1 переставал быть tty и JLine не поднимал терминал. Убрано, лог теперь пишет сам screen</td></tr>
 </table>
 
 <hr>
 <footer>
-Замеры сняты на тестовом сервере 12.08.2026: Folia 1.21.1 + NeoForge 21.1.248, 86 модов, 38 плагинов,
-куча -Xms2G -Xmx8G, 32 ядра. Источник цифр — <code>/tps</code> самого сервера и его журналы.
+Замеры сняты на тестовом сервере 13.08.2026, сборка <code>2026-08-13T11:46:07Z</code>:
+Folia 1.21.1 + NeoForge 21.1.248, 115 модов из 87 jar, 37 плагинов из 38 jar,
+куча -Xms8G -Xmx8G (ZGC), 32 логических ядра, <code>region-tick-threads: 16</code>.
+Источник цифр — <code>/tps</code> самого сервера и его журналы. Состав стенда 1 в 1 —
+<code>README.md</code>, раздел 7; что открыто сейчас — <code>docs/HANDOFF.md</code>.
 </footer>
 </main>
 </div>
