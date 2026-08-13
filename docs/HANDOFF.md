@@ -17,7 +17,7 @@ session should do first. The per-failure-class account of the fixes themselves i
 | Core repository | `/home/user/milky/eturlia_new/core` (this repo) |
 | Test server | `/home/user/milky/eturlia_new/server`, screen session `test`, port **25963** |
 | Published | `github.com/milkycloud-dev/eturlia-core`, branch `main`, workflow `eturlia-ci` |
-| Upstream | `eturnercus/Core` — itself a fork of PaperMC/Folia carrying NeoForge 21.1.248 |
+| Lineage | a Folia + NeoForge 21.1.248 fork this history started from; attribution is in the README |
 | Docs | `docs/FIXES.md`, `docs/TESTING.md`, `docs/ARCHITECTURE.html` (Russian, diagrams), `docs/archive/` |
 
 The box also runs an unrelated **production** server in screen session `NoteBuns`

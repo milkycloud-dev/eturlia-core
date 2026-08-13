@@ -372,8 +372,8 @@ times in one minute of ordinary play. With no block entity there, the plain stat
 
 ### Not ours, and not broken
 
-* **Damage and the void.** The log of the reported session has `eturnercus was slain by Spider` and
-  `was blown up by Creeper` a minute after `/god` and `/ungod`. Damage works. Both reports are
+* **Damage and the void.** The log of the reported session has a `was slain by Spider` line and a
+  `was blown up by Creeper` one a minute after `/god` and `/ungod`. Damage works. Both reports are
   consistent with being inside a contraption sublevel, which did not tick at all until the Level
   constructor above was fixed.
 * **The trail behind the player** is PPC_Wings' `flutter` effect, switched on for two UUIDs in
