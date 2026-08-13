@@ -157,7 +157,10 @@ def main():
     parser.add_argument("--n", type=int, default=14)
     parser.add_argument("--seed", type=int, default=13)
     parser.add_argument("--only", default="")
+    parser.add_argument("--all", action="store_true", help="list every failure, not the first few")
     args = parser.parse_args()
+    global SHOW_ALL
+    SHOW_ALL = args.all
     rng = random.Random(args.seed)
     only = set(args.only.split(",")) if args.only else None
     wanted = lambda name: only is None or name in only          # noqa: E731

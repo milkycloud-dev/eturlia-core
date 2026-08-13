@@ -408,3 +408,54 @@ console still fails, loudly and without touching anything - Folia's own thread c
 | Modded blocks placed and read back | 16 of 20 sampled; 3 are optional content the mod only registers with another mod present, 1 is a bush that needs its own soil |
 | Modded block entities left ticking | 40 placed, no exceptions |
 | Modded worldgen features | placed where their conditions allow, `Failed to place feature` on a flat test platform otherwise |
+
+---
+
+## 2026-08-13 — what it takes to make a physics airship work on Folia
+
+Create Aeronautics builds its ships in a *sub-level*: a level of its own, made at runtime by sable,
+with its own chunks and its own chunk holders. Every assumption Paper's rewrites make about "a level
+is the server's level" is wrong for it, and each wrong assumption killed the server outright - Folia
+answers a failed region tick by shutting down.
+
+They were found by driving sable's own commands (`/sable spawn joint_test`, `/sable assemble`,
+`/sable storage find_all_sub_levels`) from a real client and reading what broke, one layer at a time.
+Six layers, in the order they surfaced:
+
+| what was missing | what happened |
+|---|---|
+| `LevelLightEngine.blockEngine`, `.skyEngine` | Moonrise replaced both with one `lightEngine`. `NoSuchFieldError` on the first sub-level. |
+| `LevelChunkSection(PalettedContainer, PalettedContainerRO)` | CraftBukkit narrowed the second parameter, so vanilla's own constructor no longer existed. |
+| `ChunkHolder.fullChunkFuture`, `.tickingChunkFuture`, `.entityTickingChunkFuture` | deleted by the chunk-system rewrite; sable's `PlotChunkHolder` inherits and reads them. |
+| `ChunkAccess.getLevel()` | only `LevelChunk` declared it; a mod holding the supertype linked to nothing. |
+| `ChunkMap`'s status listener | a mod's own chunk map passes null, and the first status change threw. |
+| Folia's "Cannot asynchronously load chunks" | the sub-level's chunks belong to *no* region, so nothing could ever race - the guard refused anyway. |
+
+The last two mattered far more than a normal NPE. Sable's physics is Rapier, a native library, and a
+Java exception mid-construction leaves its side half-built. The next native call then panics - `No
+rigid body for id` - **inside a function that cannot unwind**, and the JVM aborts. From the outside
+that looks like the server quietly restarting; nothing appears in the crash reports, because the
+process never got to write one. Every attempt at an airship did this.
+
+With those six in place the Java side of `/sable spawn joint_test` is clean: the command runs, no
+exception, no region death.
+
+### Other things this round
+
+* **The netty read timeout is configurable.** Thirty seconds of silence is not proof a client is
+  gone - on a 90-mod pack it is one stall while the world builds. That number is hard-coded in
+  vanilla and is *not* the keepalive, so raising `paper.playerconnection.keepalive` never helped.
+  `-Deturlia.compat.read-timeout=<seconds>`, 90 by default. The headless test client had never once
+  survived its first minute before this; now it stays for a full run.
+* **Deferred tasks are timed.** Every mod task that cannot run inline goes through
+  `eturlia$runAsMainThread`; it now records how long each waited on the player's region and on the
+  global region, and says so once every 30 seconds when the worst wait passes 250ms.
+  `-Deturlia.compat.dispatch-timing=off`.
+
+### The blue trails
+
+Not the core, and not PlayerParticles: the **DemonicEye** plugin draws particle "eyes" that follow
+players (`follow-mode: ATTACHED`, `update-interval: 1`) using `SOUL_FIRE_FLAME` and `SOUL` - which
+are exactly the cyan the screenshots show. Nothing in the compatibility layer spawns a particle
+anywhere; the generator has no reference to one. The jar is in `plugins1/` now, its config left in
+place. To keep the eyes but lose the cyan, `use-soul-flame: false` in `plugins/DemonicEye/config.yml`.
