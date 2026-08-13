@@ -1,0 +1,377 @@
+ETURLIA PROPRIETARY LICENCE
+Version 1.0 — 13 August 2026
+
+Copyright (c) 2026 milkycloud-dev. All rights reserved.
+
+English text is authoritative. Русский перевод приведён ниже и дан для удобства;
+в случае расхождения преимущественную силу имеет английский текст.
+
+
+================================================================================
+0. DEFINITIONS
+================================================================================
+
+"the Work"        — everything in this repository that is not Upstream Material
+                    (see section 6): the compatibility layer and its generator,
+                    the launcher, the core runtime code, the build tooling, the
+                    test tooling, the configuration templates, the documentation,
+                    the logo and other assets, and any binary, jar, container
+                    image or other artifact built from any of it.
+
+"the Licensor"    — the copyright holder named above.
+
+"You"             — any natural person or legal entity that accesses, copies,
+                    stores, compiles, executes or otherwise uses the Work.
+
+"Written Permission" — a signed or e-mailed grant issued by the Licensor to a
+                    named recipient, for a stated purpose, and dated. Nothing
+                    else counts: not a public repository, not an issue comment,
+                    not silence, not prior conduct.
+
+
+================================================================================
+1. NO LICENCE IS GRANTED BY DEFAULT
+================================================================================
+
+The Work is proprietary. No right, licence, permission or immunity of any kind is
+granted to You by this document, by the publication of the Work, by its presence
+on any hosting service, or by the fact that You are able to read it.
+
+The availability of source code is NOT an offer of a licence. Reading published
+source is not use, and is not restricted by this section; every act listed in
+section 2 is.
+
+Any right You wish to exercise must first be obtained through Written Permission.
+
+
+================================================================================
+2. PROHIBITED WITHOUT WRITTEN PERMISSION
+================================================================================
+
+Without prior Written Permission You may not, in whole or in part, directly or
+through any intermediary:
+
+  a) copy, publish, mirror, upload, host, re-host, distribute, sublicense, lend,
+     rent, sell, resell, bundle, or otherwise make the Work available to any
+     third party, in source or binary form, gratis or for a fee;
+
+  b) fork the repository, create derivative works, translate, port, adapt,
+     merge the Work into another project, or incorporate any part of it —
+     including individual patches, planes of the compatibility layer, scripts,
+     configuration files or documentation — into any other work;
+
+  c) run the Work to provide a service to any third party, including operating a
+     game server that others connect to, a hosting product, a "modpack server"
+     offering, a managed instance, or any other service in which persons other
+     than You interact with a running instance of the Work;
+
+  d) use the Work for any commercial purpose, or in any activity that generates
+     revenue, donations, subscriptions or in-game sales, whether or not the Work
+     itself is charged for;
+
+  e) reverse engineer, decompile or disassemble any binary artifact of the Work,
+     except and only to the exact extent that such an act cannot lawfully be
+     prohibited under applicable mandatory law;
+
+  f) remove, obscure, alter or falsify any copyright notice, licence notice,
+     authorship attribution, version string or build stamp contained in the Work,
+     or present the Work or any part of it as Your own;
+
+  g) use the Work, or any part of it, as training data, fine-tuning data,
+     evaluation data or retrieval material for any machine-learning model or
+     automated code-generation system, or submit it to any third-party service
+     that does so;
+
+  h) use any name, mark, logo or visual identity of the Work — including the name
+     "Eturlia" and the mark shipped in docs/assets — to designate, promote or
+     imply endorsement of anything not published by the Licensor;
+
+  i) apply for, assert or claim any patent, trademark, copyright registration or
+     other exclusive right over the Work or over anything substantially derived
+     from it.
+
+The prohibitions above apply irrespective of the medium, the technical means, the
+size of the excerpt, and whether or not the result is publicly visible.
+
+
+================================================================================
+3. WHAT IS PERMITTED
+================================================================================
+
+Nothing beyond what mandatory law grants You regardless of this licence.
+
+If, and only if, the Licensor has given You Written Permission, You may exercise
+exactly the rights it names, for exactly the purpose it names, for as long as it
+says, and no further. Such a permission is personal to You, non-transferable,
+non-sublicensable, and revocable by the Licensor at any time on notice.
+
+
+================================================================================
+4. CONTRIBUTIONS
+================================================================================
+
+If You submit any material to the Work — a patch, a pull request, an issue
+attachment, a suggestion embodied in code — You assign to the Licensor all rights
+in that material to the fullest extent permitted by law, and where assignment is
+not permitted You grant the Licensor a perpetual, worldwide, irrevocable,
+royalty-free, exclusive licence to use it under these terms. You confirm that You
+are entitled to do so. You receive no rights in the Work in return.
+
+
+================================================================================
+5. TERMINATION
+================================================================================
+
+Any Written Permission terminates automatically, without notice and without any
+act by the Licensor, upon any breach of this licence by You. On termination You
+must immediately cease all use of the Work and destroy every copy in Your
+possession or control, including build outputs and deployed instances.
+
+Termination does not limit any other remedy available to the Licensor.
+
+
+================================================================================
+6. UPSTREAM MATERIAL
+================================================================================
+
+The Work is built on top of, and distributed alongside, material originating from
+other projects — principally PaperMC/Folia and Paper, the Minecraft server code
+they operate on, and NeoForge ("Upstream Material").
+
+Upstream Material remains governed by the licences under which it was received.
+Those licences are reproduced in this repository:
+
+    PATCHES-LICENSE
+    folia-server/LICENCE.txt
+    folia-api/LICENCE.txt
+
+Where Upstream Material's licence grants You rights, that licence governs that
+material and prevails over this document to the extent of any conflict. Nothing
+in this licence purports to restrict rights You hold in Upstream Material, and
+nothing here is to be read as a claim of ownership over it.
+
+This document governs the Work as defined in section 0 — the material authored
+for this project — and nothing else.
+
+Minecraft is a trademark of Mojang Studios. This project is not affiliated with,
+endorsed by, or connected to Mojang Studios or Microsoft. Use of the Work does
+not grant any right to Minecraft itself, which requires a licence from Mojang.
+
+
+================================================================================
+7. NO WARRANTY
+================================================================================
+
+THE WORK IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE, TITLE AND NON-INFRINGEMENT.
+
+This is an experimental server core. It may corrupt worlds, lose player data,
+crash under load, or behave in ways no one has anticipated.
+
+
+================================================================================
+8. NO LIABILITY
+================================================================================
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE LICENSOR SHALL NOT BE
+LIABLE FOR ANY CLAIM, DAMAGE, DATA LOSS, WORLD CORRUPTION, SERVICE INTERRUPTION,
+LOST REVENUE OR OTHER LIABILITY, WHETHER IN CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF, OR IN CONNECTION WITH THE WORK OR ITS USE.
+
+
+================================================================================
+9. NO SUPPORT OBLIGATION
+================================================================================
+
+The Licensor is under no obligation to provide support, updates, fixes,
+migrations, or any form of assistance, and may discontinue the Work at any time.
+
+
+================================================================================
+10. PERMISSIONS AND CONTACT
+================================================================================
+
+Requests for Written Permission, and all licensing correspondence:
+
+    milkycloud-dev <uberlion1@gmail.com>
+
+State who You are, what You intend to do, and for how long. Silence is a refusal.
+
+
+================================================================================
+ЛИЦЕНЗИЯ ETURLIA (перевод)
+================================================================================
+
+Версия 1.0 — 13 августа 2026
+Copyright (c) 2026 milkycloud-dev. Все права защищены.
+
+Перевод дан для удобства. При расхождении преимущественную силу имеет
+англоязычный текст выше.
+
+0. ОПРЕДЕЛЕНИЯ
+
+«Произведение» — всё в этом репозитории, что не является Материалом Апстрима
+(раздел 6): слой совместимости и его генератор, лаунчер, рантайм ядра,
+инструменты сборки и тестирования, шаблоны конфигурации, документация, логотип и
+прочие материалы, а также любой бинарный файл, jar, образ или иной артефакт,
+собранный из всего перечисленного.
+
+«Лицензиар» — правообладатель, указанный выше.
+
+«Вы» — любое физическое или юридическое лицо, которое получает доступ к
+Произведению, копирует, хранит, компилирует, запускает или иначе использует его.
+
+«Письменное разрешение» — подписанное или отправленное по электронной почте
+разрешение Лицензиара конкретному получателю, с указанием цели и даты. Ничто
+иное разрешением не является: ни публичность репозитория, ни комментарий в
+issue, ни молчание, ни прежнее поведение.
+
+1. ПО УМОЛЧАНИЮ НЕ ПРЕДОСТАВЛЯЕТСЯ НИКАКИХ ПРАВ
+
+Произведение проприетарно. Настоящий документ, публикация Произведения, его
+размещение на любом хостинге и сама возможность его прочитать не предоставляют
+Вам никаких прав, лицензий, разрешений или иммунитетов.
+
+Доступность исходного кода НЕ является предложением лицензии. Чтение
+опубликованного исходного кода использованием не считается и настоящим разделом
+не ограничивается; каждое действие из раздела 2 — ограничивается.
+
+Любое право, которым Вы хотите воспользоваться, должно быть сначала получено в
+виде Письменного разрешения.
+
+2. ЗАПРЕЩЕНО БЕЗ ПИСЬМЕННОГО РАЗРЕШЕНИЯ
+
+Без предварительного Письменного разрешения Вы не вправе, полностью или частично,
+прямо или через посредника:
+
+  а) копировать, публиковать, зеркалировать, загружать, размещать, распространять,
+     сублицензировать, передавать во временное пользование, продавать,
+     перепродавать, включать в комплекты или иным образом делать Произведение
+     доступным третьим лицам — в исходном или двоичном виде, бесплатно или за
+     плату;
+
+  б) форкать репозиторий, создавать производные произведения, переводить,
+     портировать, адаптировать, вливать Произведение в другой проект или включать
+     любую его часть — включая отдельные патчи, плоскости слоя совместимости,
+     скрипты, файлы конфигурации и документацию — в любое другое произведение;
+
+  в) запускать Произведение для оказания услуг третьим лицам, включая игровой
+     сервер, к которому подключаются другие, хостинг-продукт, предложение
+     «сервер под модпак», управляемый инстанс и любую иную услугу, в которой с
+     работающим экземпляром Произведения взаимодействует кто-либо кроме Вас;
+
+  г) использовать Произведение в коммерческих целях или в любой деятельности,
+     приносящей доход, донаты, подписки или внутриигровые продажи, независимо от
+     того, взимается ли плата за само Произведение;
+
+  д) осуществлять обратную разработку, декомпиляцию или дизассемблирование любых
+     двоичных артефактов Произведения, кроме случаев и ровно в тех пределах, в
+     которых такой запрет недопустим по императивным нормам применимого права;
+
+  е) удалять, скрывать, изменять или искажать любые уведомления об авторских
+     правах и лицензии, указания авторства, строки версии и отметки сборки, а
+     также выдавать Произведение или его часть за своё;
+
+  ж) использовать Произведение или любую его часть в качестве обучающих,
+     дообучающих, оценочных данных или материала для поиска для любых
+     моделей машинного обучения и систем автоматической генерации кода, а также
+     передавать его сторонним сервисам, которые это делают;
+
+  з) использовать любое наименование, знак, логотип или визуальный стиль
+     Произведения — включая название «Eturlia» и знак из docs/assets — для
+     обозначения, продвижения или создания видимости одобрения чего-либо, что не
+     опубликовано Лицензиаром;
+
+  и) подавать заявки, заявлять или предъявлять права на патент, товарный знак,
+     регистрацию авторского права или иное исключительное право в отношении
+     Произведения либо чего-либо, существенно из него производного.
+
+Запреты действуют независимо от носителя, технических средств, объёма фрагмента и
+того, виден ли результат публично.
+
+3. ЧТО РАЗРЕШЕНО
+
+Ничего сверх того, что предоставлено Вам императивными нормами права независимо
+от настоящей лицензии.
+
+Если — и только если — Лицензиар выдал Вам Письменное разрешение, Вы вправе
+осуществлять ровно те права, которые в нём названы, ровно для той цели, ровно
+столько времени, сколько в нём указано, и не более. Такое разрешение является
+персональным, непередаваемым, не подлежит сублицензированию и может быть отозвано
+Лицензиаром в любой момент с уведомлением.
+
+4. ВКЛАД
+
+Если Вы передаёте в Произведение какой-либо материал — патч, pull request,
+вложение к issue, предложение, выраженное в коде — Вы отчуждаете Лицензиару все
+права на этот материал в максимально допустимом законом объёме, а там, где
+отчуждение не допускается, предоставляете Лицензиару бессрочную, всемирную,
+безотзывную, безвозмездную, исключительную лицензию на его использование на
+настоящих условиях. Вы подтверждаете, что вправе это сделать. Никаких прав на
+Произведение взамен Вы не получаете.
+
+5. ПРЕКРАЩЕНИЕ
+
+Любое Письменное разрешение прекращается автоматически, без уведомления и без
+каких-либо действий Лицензиара, при любом нарушении Вами настоящей лицензии. С
+момента прекращения Вы обязаны немедленно прекратить всякое использование
+Произведения и уничтожить все копии, находящиеся в Вашем владении или под Вашим
+контролем, включая результаты сборки и развёрнутые экземпляры.
+
+Прекращение не ограничивает иные средства правовой защиты Лицензиара.
+
+6. МАТЕРИАЛ АПСТРИМА
+
+Произведение построено поверх материалов других проектов и распространяется
+вместе с ними — прежде всего PaperMC/Folia и Paper, серверного кода Minecraft, на
+котором они работают, и NeoForge («Материал Апстрима»).
+
+Материал Апстрима остаётся под лицензиями, на которых он был получен. Их тексты
+приведены в репозитории:
+
+    PATCHES-LICENSE
+    folia-server/LICENCE.txt
+    folia-api/LICENCE.txt
+
+Там, где лицензия Материала Апстрима предоставляет Вам права, действует именно
+она и имеет преимущество перед настоящим документом в части противоречия. Ничто в
+настоящей лицензии не ограничивает Ваши права на Материал Апстрима и не является
+заявлением прав собственности на него.
+
+Настоящий документ регулирует Произведение в значении раздела 0 — материал,
+созданный для этого проекта, — и ничего кроме него.
+
+Minecraft — товарный знак Mojang Studios. Проект не аффилирован с Mojang Studios
+и Microsoft и не одобрен ими. Использование Произведения не даёт никаких прав на
+сам Minecraft, для которого требуется лицензия Mojang.
+
+7. ОТСУТСТВИЕ ГАРАНТИЙ
+
+ПРОИЗВЕДЕНИЕ ПРЕДОСТАВЛЯЕТСЯ «КАК ЕСТЬ», БЕЗ КАКИХ-ЛИБО ГАРАНТИЙ, ЯВНЫХ ИЛИ
+ПОДРАЗУМЕВАЕМЫХ, ВКЛЮЧАЯ ГАРАНТИИ ПРИГОДНОСТИ ДЛЯ ПРОДАЖИ, ПРИГОДНОСТИ ДЛЯ
+КОНКРЕТНОЙ ЦЕЛИ, ПРАВОВОГО ТИТУЛА И НЕНАРУШЕНИЯ ПРАВ.
+
+Это экспериментальное серверное ядро. Оно может повредить миры, потерять данные
+игроков, упасть под нагрузкой или повести себя так, как никто не предполагал.
+
+8. ОТСУТСТВИЕ ОТВЕТСТВЕННОСТИ
+
+В МАКСИМАЛЬНО ДОПУСТИМОЙ ПРИМЕНИМЫМ ПРАВОМ СТЕПЕНИ ЛИЦЕНЗИАР НЕ НЕСЁТ
+ОТВЕТСТВЕННОСТИ ЗА ЛЮБЫЕ ПРЕТЕНЗИИ, УБЫТКИ, ПОТЕРЮ ДАННЫХ, ПОВРЕЖДЕНИЕ МИРОВ,
+ПЕРЕРЫВЫ В РАБОТЕ, УПУЩЕННУЮ ВЫГОДУ И ИНУЮ ОТВЕТСТВЕННОСТЬ, ВОЗНИКШУЮ ИЗ
+ПРОИЗВЕДЕНИЯ ИЛИ ЕГО ИСПОЛЬЗОВАНИЯ, БУДЬ ТО В СИЛУ ДОГОВОРА, ДЕЛИКТА ИЛИ ИНОГО
+ОСНОВАНИЯ.
+
+9. ОТСУТСТВИЕ ОБЯЗАННОСТИ ПОДДЕРЖКИ
+
+Лицензиар не обязан предоставлять поддержку, обновления, исправления, миграции
+или иную помощь и вправе прекратить развитие Произведения в любой момент.
+
+10. РАЗРЕШЕНИЯ И КОНТАКТ
+
+Запросы на Письменное разрешение и вся переписка по лицензированию:
+
+    milkycloud-dev <uberlion1@gmail.com>
+
+Укажите, кто Вы, что намерены делать и как долго. Молчание означает отказ.
