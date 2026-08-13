@@ -60,6 +60,10 @@ for _ in $(seq 1 72); do
 done
 [ "$joined" = 1 ] || { echo "RESULT join=NO"; tail -10 client.log | cut -c1-170; exit 1; }
 echo "RESULT join=YES"
+# Re-anchor here: the client killed at the start of this run logs its own "lost connection" a few
+# seconds later, and anything anchored before that reads the previous client's death as this one's.
+sleep 8
+MARK=$(wc -l < "$LOG")
 
 CPID=$(ps -eo pid,args | grep '[j]ava-runtime-delta' | awk '{print $1}' | head -1)
 export DISPLAY=$(strings /proc/$CPID/environ | grep '^DISPLAY=' | head -1 | cut -d= -f2)
@@ -99,6 +103,14 @@ phase_errors () {   # phase_errors <from-line> <label>
 # An unauthenticated or dead player cannot type: AuthMe swallows input, and the death screen eats
 # every keystroke - which is exactly how an earlier run "passed" every phase without sending one
 # command.
+say "lp user $NAME permission set minecraft.command.say true"
+say "lp user $NAME permission set minecraft.command.execute true"
+say "lp user $NAME permission set minecraft.command.summon true"
+say "lp user $NAME permission set minecraft.command.gamemode true"
+say "lp user $NAME permission set minecraft.command.tp true"
+say "lp user $NAME permission set minecraft.command.effect true"
+say "lp user $NAME permission set minecraft.command.scoreboard true"
+sleep 3
 say "authme forcelogin $NAME"
 sleep 3
 say "gamemode creative $NAME"
@@ -119,7 +131,7 @@ for attempt in 1 2 3; do
     xdotool windowfocus "$WIN"; sleep 1
     xdotool key t; sleep 1; xdotool type --delay 35 "/say ETURLIA_CANARY"; sleep 1; xdotool key Return
     sleep 4
-    if tail -n +"$P" "$LOG" | grep -aq 'ETURLIA_CANARY'; then canary=1; break; fi
+    if tail -n +"$P" "$LOG" | grep -a 'ETURLIA_CANARY' | grep -avq 'issued server command'; then canary=1; break; fi
     echo "   canary attempt $attempt: the keyboard is not reaching the game"
     shot "canary_$attempt"
     xdotool key Escape; sleep 1
@@ -139,12 +151,36 @@ chat "/sable storage find_all_sub_levels"
 chat "/sable info"
 phase_errors "$P" "sable storage/info"
 
+# --- 5. the Aeronautics airship -----------------------------------------------------------------------
+echo "== 5. the airship"
+P=$(wc -l < "$LOG")
+say "tp $NAME $((X+4)) $((Y+2)) $((Z+4))"
+sleep 8
+alive "before powering the bearing"
+say "setblock $((X+7)) $Y $Z minecraft:redstone_block"
+sleep 12
+chat "/execute if entity @e[type=aeronautics:propeller_bearing_contraption,distance=..48] run say ETURLIA_TEST airship=ASSEMBLED"
+chat "/execute unless entity @e[type=aeronautics:propeller_bearing_contraption,distance=..48] run say ETURLIA_TEST airship=MISSING"
+chat "/execute if entity @e[type=create:stationary_contraption,distance=..48] run say ETURLIA_TEST create_contraption=PRESENT"
+shot airship
+phase_errors "$P" "airship"
+
+# --- 4. assemble a structure into a sub-level --------------------------------------------------------
+echo "== 4. assemble connected"
+P=$(wc -l < "$LOG")
+say "tp $NAME $((X+15)) $((Y+3)) $Z"
+sleep 8
+alive "before assemble"
+chat "/sable assemble connected"
+sleep 6
+chat "/execute unless block $((X+15)) $((Y+1)) $Z minecraft:oak_planks run say ETURLIA_TEST assemble_took_blocks=YES"
+chat "/execute if block $((X+15)) $((Y+1)) $Z minecraft:oak_planks run say ETURLIA_TEST assemble_took_blocks=NO"
+shot assembled
+phase_errors "$P" "sable assemble"
+
 # --- 2. a physics scene ------------------------------------------------------------------------------
 echo "== 2. spawn a physics scene"
 P=$(wc -l < "$LOG")
-chat "/sable spawn joint_test"
-sleep 5
-shot joint_test
 chat "/sable spawn block"
 sleep 4
 shot spawn_block
@@ -162,32 +198,13 @@ sleep 3
 shot physics_running
 phase_errors "$P" "pause toggle"
 
-# --- 4. assemble a structure into a sub-level --------------------------------------------------------
-echo "== 4. assemble connected"
+# --- 6. the debug scene that is known to abort the JVM through Rapier - always last -----------------
+echo "== 6. sable spawn joint_test (known native abort, runs last on purpose)"
 P=$(wc -l < "$LOG")
-say "tp $NAME $((X+15)) $((Y+3)) $Z"
-sleep 8
-alive "before assemble"
-chat "/sable assemble connected"
+chat "/sable spawn joint_test"
 sleep 6
-chat "/execute unless block $((X+15)) $((Y+1)) $Z minecraft:oak_planks run say ETURLIA_TEST assemble_took_blocks=YES"
-chat "/execute if block $((X+15)) $((Y+1)) $Z minecraft:oak_planks run say ETURLIA_TEST assemble_took_blocks=NO"
-shot assembled
-phase_errors "$P" "sable assemble"
-
-# --- 5. the Aeronautics airship -----------------------------------------------------------------------
-echo "== 5. the airship"
-P=$(wc -l < "$LOG")
-say "tp $NAME $((X+4)) $((Y+2)) $((Z+4))"
-sleep 8
-alive "before powering the bearing"
-say "setblock $((X+7)) $Y $Z minecraft:redstone_block"
-sleep 12
-chat "/execute if entity @e[type=aeronautics:propeller_bearing_contraption,distance=..48] run say ETURLIA_TEST airship=ASSEMBLED"
-chat "/execute unless entity @e[type=aeronautics:propeller_bearing_contraption,distance=..48] run say ETURLIA_TEST airship=MISSING"
-chat "/execute if entity @e[type=create:stationary_contraption,distance=..48] run say ETURLIA_TEST create_contraption=PRESENT"
-shot airship
-phase_errors "$P" "airship"
+shot joint_test
+phase_errors "$P" "joint_test"
 
 # --- 6. what the client says about sable's own networking ---------------------------------------------
 echo "== 6. sable networking, client side"
@@ -195,8 +212,15 @@ grep -aE 'UDP|Sable' "$CLOG" | tail -6 | sed 's/.*\]: //' | cut -c1-120 | sed 's
 
 echo "== proof the keyboard worked: $(tail -n +$MARK "$LOG" | grep -ac "$NAME issued server command") commands issued by the tester"
 shot behind_player
+# The server can restart mid-run (sable's native side aborts the JVM), which rotates the log out
+# from under us. Harvest from the rotated one too, or a whole run reports nothing.
+# The server echoes a command as it is issued, so the text of `/execute if ... run say X` is in the
+# log whether or not the condition held. Only the broadcast counts as an answer.
+harvest () { { cat "$LOG"; zcat -f $(ls -t "$N"/server/logs/*.log.gz 2>/dev/null | grep -v debug | head -2) 2>/dev/null; } | grep -a "$1" | grep -av 'issued server command'; }
 echo "== verdicts:"
-tail -n +$MARK "$LOG" | grep -a 'ETURLIA_TEST' | sed 's/.*ETURLIA_TEST //' | sort -u
+harvest 'ETURLIA_TEST' | sed 's/.*ETURLIA_TEST //' | sort -u
+echo "== the tester's own commands this run:"
+harvest "$NAME issued server command" | sed 's/.*command: //' | sort -u | tail -14
 echo "== alarming for the whole session:"
 tail -n +$MARK "$LOG" | grep -aE 'NoSuchMethodError|AbstractMethodError|IncompatibleClassChange|ClassCastException|failed to tick|Tile is null|ctor extras' \
     | sed 's/.*\]: //' | sort -u | head -6 | cut -c1-165
