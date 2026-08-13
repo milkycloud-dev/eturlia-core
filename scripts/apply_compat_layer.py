@@ -2597,7 +2597,7 @@ def install_folia_disabled_commands():
 
     with open(path, "w", encoding="utf-8") as handle:
         handle.write(source)
-    print("  restored %d commands: %s" % (count, ", ".join(sorted(set(names)))))
+    print("  restored %d commands: %s" % (len(names), ", ".join(sorted(set(names)))))
 
 
 def install_guest_level_ctor():
@@ -3478,6 +3478,384 @@ def install_packet_thread_routing():
 
 # ----------------------------------------------------------------- quarantine
 
+def install_light_engine_fields():
+    """Paper's light rewrite deleted two fields off LevelLightEngine. Sable reads one of them.
+
+    Moonrise replaces vanilla's `blockEngine` and `skyEngine` with a single `lightEngine`
+    (StarLightInterface). A field that is gone is not a compile error for a mod - it is a
+    NoSuchFieldError the first time the code runs, and on Folia that means the region dies and the
+    server shuts down:
+
+        Class net.minecraft.world.level.lighting.LevelLightEngine
+        does not have member field 'net.minecraft.world.level.lighting.LightEngine blockEngine'
+          -> Region #16 failed to tick, on /sable spawn joint_test
+
+    That is Create Aeronautics' physics sub-level asking for the light engine of the plot it just
+    made. The fields exist again and answer null: the sub-level is lit by Starlight through the
+    parent level, so there is no per-plot engine to hand back, and null is a value a mod can survive.
+    """
+    print("light engine field plane")
+    replace(
+        SERVER + "/net/minecraft/world/level/lighting/LevelLightEngine.java",
+        """    public static final int LIGHT_SECTION_PADDING = 1;
+    protected final LevelHeightAccessor levelHeightAccessor;""",
+        """    public static final int LIGHT_SECTION_PADDING = 1;
+    protected final LevelHeightAccessor levelHeightAccessor;
+    // Eturlia start - the fields Paper's light rewrite removed
+    // Mods still read these two; Starlight has one engine instead of two and keeps it in
+    // `lightEngine` below. A read of null is survivable. A NoSuchFieldError kills the region.
+    @Nullable public final LightEngine<?, ?> blockEngine = null;
+    @Nullable public final LightEngine<?, ?> skyEngine = null;
+    // Eturlia end - the fields Paper's light rewrite removed""",
+        "LevelLightEngine keeps blockEngine and skyEngine",
+    )
+
+
+def install_sublevel_chunk_loads():
+    """A chunk no region owns can be loaded by whoever asks. Folia refused, and that aborted the JVM.
+
+    Folia only lets the region that owns a chunk load it synchronously. Create Aeronautics builds
+    its physics sub-level from the player's region thread, and the sub-level's chunks belong to no
+    region at all - nothing is ticking them, because the level has just been made. The guard fired
+    anyway:
+
+        IllegalStateException: Cannot asynchronously load chunks     (on /sable spawn joint_test)
+
+    What that costs is out of proportion: sable's native side is left half-built, Rapier's next call
+    panics ("No rigid body for id") inside a function that cannot unwind, and the JVM aborts. Every
+    attempt at a physics airship took the whole server down, and the wrapper restarted it.
+
+    The rule is unchanged where it matters - a chunk another region owns is still refused. It is
+    relaxed only when the regioniser says nobody owns the chunk, which is exactly the sub-level case
+    and cannot race with a tick that does not exist. `-Deturlia.compat.sublevel-chunks=strict`
+    restores Folia's refusal.
+    """
+    print("sublevel chunk load plane")
+    replace(
+        SERVER + "/net/minecraft/server/level/ServerChunkCache.java",
+        """    private ChunkAccess syncLoad(final int chunkX, final int chunkZ, final ChunkStatus toStatus) {
+        // Folia start - region threading
+        if (ca.spottedleaf.moonrise.common.util.TickThread.isTickThread()) {
+            ca.spottedleaf.moonrise.common.util.TickThread.ensureTickThread(this.level, chunkX, chunkZ, "Cannot asynchronously load chunks");
+        }
+        // Folia end - region threading""",
+        """    // Eturlia start - a chunk no region owns is nobody else's to tick
+    private static boolean eturlia$mayLoadFromThisThread(final ServerLevel level, final int chunkX, final int chunkZ) {
+        if (ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(level, chunkX, chunkZ)) {
+            return true;
+        }
+        if ("strict".equalsIgnoreCase(System.getProperty("eturlia.compat.sublevel-chunks", "lenient"))) {
+            return false;
+        }
+        try {
+            // No region over the chunk means no tick over the chunk: there is nothing to race with.
+            return level.regioniser.getRegionAtUnsynchronised(chunkX, chunkZ) == null;
+        } catch (Throwable thrown) {
+            return false;
+        }
+    }
+    // Eturlia end - a chunk no region owns is nobody else's to tick
+
+    private ChunkAccess syncLoad(final int chunkX, final int chunkZ, final ChunkStatus toStatus) {
+        // Folia start - region threading
+        if (ca.spottedleaf.moonrise.common.util.TickThread.isTickThread()
+            && !ServerChunkCache.eturlia$mayLoadFromThisThread(this.level, chunkX, chunkZ)) { // Eturlia - unowned chunks are loadable
+            ca.spottedleaf.moonrise.common.util.TickThread.ensureTickThread(this.level, chunkX, chunkZ, "Cannot asynchronously load chunks");
+        }
+        // Folia end - region threading""",
+        "ServerChunkCache loads chunks no region owns",
+    )
+
+
+def install_chunk_access_get_level():
+    """`ChunkAccess.getLevel()` - the accessor mods reach for on any chunk, not just a loaded one.
+
+        NoSuchMethodError: 'net.minecraft.world.level.Level ChunkAccess.getLevel()'
+          -> Region #1 failed to tick, on /sable spawn joint_test
+
+    Only `LevelChunk` declares it here, so a mod holding the `ChunkAccess` supertype - which is what
+    a chunk looks like while a sub-level is being built - links to nothing. The base class answers
+    now: the level for a chunk that has one, null for a proto-chunk that does not.
+    """
+    print("chunk access level plane")
+    replace(
+        SERVER + "/net/minecraft/world/level/chunk/ChunkAccess.java",
+        "public abstract class ChunkAccess implements BlockGetter, BiomeManager.NoiseBiomeSource, LightChunk, StructureAccess, ca.spottedleaf.moonrise.patches.starlight.chunk.StarlightChunk { // Paper - rewrite chunk system",
+        """public abstract class ChunkAccess implements BlockGetter, BiomeManager.NoiseBiomeSource, LightChunk, StructureAccess, ca.spottedleaf.moonrise.patches.starlight.chunk.StarlightChunk { // Paper - rewrite chunk system
+
+    // Eturlia start - every chunk can be asked which level it belongs to
+    // LevelChunk overrides this with the real answer. A proto-chunk is not in a level yet and says
+    // so; a mod that only holds the supertype used to link to nothing at all.
+    @Nullable
+    public net.minecraft.world.level.Level getLevel() {
+        return null;
+    }
+    // Eturlia end - every chunk can be asked which level it belongs to""",
+        "ChunkAccess answers getLevel",
+    )
+
+
+def install_chunk_status_listener_default():
+    """A mod building a chunk map for its own level has no status listener to hand in. Accept that.
+
+    `ChunkMap` keeps the `ChunkStatusUpdateListener` it is constructed with and calls it whenever a
+    chunk changes full-status. The server always passes one. Create Aeronautics' physics sub-levels
+    build their own chunk map through sable and pass null, and the first status change then throws:
+
+        NullPointerException: Cannot invoke ChunkStatusUpdateListener.onChunkStatusChange(...)
+        because "this.chunkStatusListener" is null            (on /sable spawn joint_test)
+
+    That NPE is worse than it looks. It leaves sable's native physics half-built, so Rapier's next
+    call panics with "No rigid body for id" - inside a function that cannot unwind, which aborts the
+    whole JVM. Every attempt at a physics airship took the server down with it.
+
+    A missing listener means nobody is listening. That is a no-op, not a crash.
+    """
+    print("chunk status listener plane")
+    replace(
+        SERVER + "/net/minecraft/server/level/ChunkMap.java",
+        "        this.chunkStatusListener = chunkStatusChangeListener;",
+        "        // Eturlia - a mod's own level has nobody to notify; that is a no-op, not a null\n"
+        "        this.chunkStatusListener = chunkStatusChangeListener != null ? chunkStatusChangeListener\n"
+        "            : (net.minecraft.world.level.entity.ChunkStatusUpdateListener) (eturliaChunkPos, eturliaStatus) -> { };",
+        "ChunkMap tolerates a level with no status listener",
+    )
+
+
+def install_chunk_holder_futures():
+    """The three chunk futures Moonrise's rewrite removed, which mods still inherit and read.
+
+        NoSuchFieldError: Class dev.ryanhcode.sable.sublevel.plot.PlotChunkHolder
+        does not have member field 'java.util.concurrent.CompletableFuture tickingChunkFuture'
+          -> Region #1 failed to tick, on /sable spawn joint_test
+
+    A subclass reading an inherited field it can see in the vanilla jar is not something the
+    compiler can warn about. The fields are back, and they start out as the "unloaded" future the
+    class already keeps: a mod that reads one gets an immediate, well-formed answer instead of a
+    null, and a mod that keeps its own chunk state (sable does) simply assigns over them.
+    """
+    print("chunk holder futures plane")
+    replace(
+        SERVER + "/net/minecraft/server/level/ChunkHolder.java",
+        """    private static final CompletableFuture<ChunkResult<LevelChunk>> UNLOADED_LEVEL_CHUNK_FUTURE = CompletableFuture.completedFuture(ChunkHolder.UNLOADED_LEVEL_CHUNK);""",
+        """    private static final CompletableFuture<ChunkResult<LevelChunk>> UNLOADED_LEVEL_CHUNK_FUTURE = CompletableFuture.completedFuture(ChunkHolder.UNLOADED_LEVEL_CHUNK);
+    // Eturlia start - the chunk futures Paper's rewrite removed
+    // Moonrise tracks chunk state in its own holder and deleted these three. Mods that subclass
+    // ChunkHolder - Create Aeronautics' sublevels through sable's PlotChunkHolder - still read
+    // them, and a missing inherited field is a NoSuchFieldError at first touch, which on Folia
+    // takes the region and then the server with it.
+    public volatile CompletableFuture<ChunkResult<LevelChunk>> fullChunkFuture = ChunkHolder.UNLOADED_LEVEL_CHUNK_FUTURE;
+    public volatile CompletableFuture<ChunkResult<LevelChunk>> tickingChunkFuture = ChunkHolder.UNLOADED_LEVEL_CHUNK_FUTURE;
+    public volatile CompletableFuture<ChunkResult<LevelChunk>> entityTickingChunkFuture = ChunkHolder.UNLOADED_LEVEL_CHUNK_FUTURE;
+    // Eturlia end - the chunk futures Paper's rewrite removed""",
+        "ChunkHolder keeps the three chunk futures",
+    )
+
+
+def install_chunk_section_vanilla_ctor():
+    """CraftBukkit narrowed LevelChunkSection's constructor; a mod calls the vanilla one.
+
+    Vanilla takes `PalettedContainerRO<Holder<Biome>>` for the biomes; CraftBukkit's copy takes the
+    concrete `PalettedContainer`. Same name, different descriptor, so a mod compiled against vanilla
+    links to nothing:
+
+        NoSuchMethodError: 'void LevelChunkSection.<init>(PalettedContainer, PalettedContainerRO)'
+          -> Region #1 failed to tick, on /sable spawn joint_test
+
+    That is sable building the chunk sections of a physics sub-level. The vanilla shape exists again
+    and hands the concrete container through; a read-only container that is not one already is
+    copied cell by cell - a biome container is 4x4x4, so that costs nothing.
+    """
+    print("chunk section ctor plane")
+    replace(
+        SERVER + "/net/minecraft/world/level/chunk/LevelChunkSection.java",
+        """    public LevelChunkSection(PalettedContainer<BlockState> datapaletteblock, PalettedContainer<Holder<Biome>> palettedcontainerro) {
+        // CraftBukkit end
+        this.states = datapaletteblock;
+        this.biomes = palettedcontainerro;
+        this.recalcBlockCounts();
+    }""",
+        """    public LevelChunkSection(PalettedContainer<BlockState> datapaletteblock, PalettedContainer<Holder<Biome>> palettedcontainerro) {
+        // CraftBukkit end
+        this.states = datapaletteblock;
+        this.biomes = palettedcontainerro;
+        this.recalcBlockCounts();
+    }
+
+    // Eturlia start - vanilla's own constructor shape, which CraftBukkit narrowed
+    public LevelChunkSection(PalettedContainer<BlockState> states, PalettedContainerRO<Holder<Biome>> biomes) {
+        this(states, LevelChunkSection.eturlia$asPalette(biomes));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static PalettedContainer<Holder<Biome>> eturlia$asPalette(PalettedContainerRO<Holder<Biome>> source) {
+        if (source instanceof PalettedContainer) {
+            return (PalettedContainer<Holder<Biome>>) source;
+        }
+        PalettedContainer<Holder<Biome>> target = source.recreate();
+        for (int y = 0; y < 4; ++y) {
+            for (int z = 0; z < 4; ++z) {
+                for (int x = 0; x < 4; ++x) {
+                    target.set(x, y, z, source.get(x, y, z));
+                }
+            }
+        }
+        return target;
+    }
+    // Eturlia end - vanilla's own constructor shape, which CraftBukkit narrowed""",
+        "LevelChunkSection has vanilla's constructor",
+    )
+
+
+def install_read_timeout():
+    """Thirty seconds of silence is not proof a client is gone. On a 90-mod pack it is one stall.
+
+    Netty drops a connection that has sent nothing for 30 seconds, and the server reports it as
+    "lost connection: Timed out". That number is hard-coded in vanilla and is not the configurable
+    keepalive - raising `paper.playerconnection.keepalive` does nothing for it. A client loading a
+    pack this size, on a weak machine or a software renderer, blocks its main thread for longer than
+    that while it builds the world, and gets thrown out for it: the test client here never survived
+    its first minute, and a player on an old laptop hits exactly the same wall.
+
+    `-Deturlia.compat.read-timeout=<seconds>` sets it; 0 removes the handler entirely.
+    """
+    print("read timeout plane")
+    field = """    // Eturlia start - a slow client is not a gone client
+    public static int eturlia$readTimeoutSeconds() {
+        try {
+            return Math.max(0, Integer.getInteger("eturlia.compat.read-timeout", 90));
+        } catch (Throwable ignored) {
+            return 90;
+        }
+    }
+    // Eturlia end - a slow client is not a gone client
+"""
+    for path, anchor in (
+        (SERVER + "/net/minecraft/server/network/ServerConnectionListener.java",
+         '                    ChannelPipeline channelpipeline = channel.pipeline().addLast("timeout", new ReadTimeoutHandler(30));'),
+        (SERVER + "/net/minecraft/network/Connection.java",
+         '                ChannelPipeline channelpipeline = channel.pipeline().addLast("timeout", new ReadTimeoutHandler(30));'),
+    ):
+        indent = anchor[: len(anchor) - len(anchor.lstrip())]
+        replace(
+            path,
+            anchor,
+            "%s// Eturlia - the read timeout is configurable; see eturlia.compat.read-timeout\n"
+            "%sint eturliaReadTimeout = net.minecraft.server.network.ServerConnectionListener.eturlia$readTimeoutSeconds();\n"
+            "%sChannelPipeline channelpipeline = eturliaReadTimeout > 0\n"
+            "%s    ? channel.pipeline().addLast(\"timeout\", new ReadTimeoutHandler(eturliaReadTimeout))\n"
+            "%s    : channel.pipeline();"
+            % (indent, indent, indent, indent, indent),
+            "read timeout in %s" % path.rsplit("/", 1)[-1],
+        )
+    replace(
+        SERVER + "/net/minecraft/server/network/ServerConnectionListener.java",
+        "public class ServerConnectionListener {\n",
+        "public class ServerConnectionListener {\n\n" + field,
+        "ServerConnectionListener carries the read timeout setting",
+    )
+
+
+def install_dispatch_timing():
+    """Measure how long a deferred "main thread" task waits before it runs.
+
+    Players report Create machinery behaving as if the threads talk to each other slowly - an item
+    thrown at a player lands on them ten seconds later. Every mod task that cannot run inline goes
+    through eturlia$runAsMainThread, so that is where the waiting would be. This counts it: how many
+    tasks, the average wait, the worst wait, and how many threw, once every 30 seconds and only when
+    there is something to say. `-Deturlia.compat.dispatch-timing=off` turns it off.
+    """
+    print("dispatch timing plane")
+    replace(
+        SERVER + "/net/minecraft/server/MinecraftServer.java",
+        """    // A deferred task that throws must not kill the region running it: on Folia that is a
+    // whole-server shutdown, and the mod that queued the task is long gone from the stack.
+    public static void eturlia$runGuarded(Runnable runnable) {""",
+        """    // Eturlia start - how long a deferred task waits before it runs
+    // Two queues can hold a mod's task: the region that owns the player who sent the packet, and
+    // the global region for everything else. A task waiting on either is a mod not reacting, and
+    // from in-game that reads as the machine being slow rather than as anything being wrong.
+    private static final boolean ETURLIA_DISPATCH_TIMING =
+        !"off".equalsIgnoreCase(System.getProperty("eturlia.compat.dispatch-timing", "on"));
+    private static final String[] ETURLIA_DISPATCH_NAMES = {"player region", "global region"};
+    private static final java.util.concurrent.atomic.AtomicLongArray ETURLIA_DISPATCH_COUNT = new java.util.concurrent.atomic.AtomicLongArray(2);
+    private static final java.util.concurrent.atomic.AtomicLongArray ETURLIA_DISPATCH_WAITED = new java.util.concurrent.atomic.AtomicLongArray(2);
+    private static final java.util.concurrent.atomic.AtomicLongArray ETURLIA_DISPATCH_WORST = new java.util.concurrent.atomic.AtomicLongArray(2);
+    private static final java.util.concurrent.atomic.AtomicLong ETURLIA_DISPATCH_REPORTED = new java.util.concurrent.atomic.AtomicLong();
+
+    public static void eturlia$runDeferred(Runnable runnable, long queuedAt, int path) {
+        if (!ETURLIA_DISPATCH_TIMING) {
+            MinecraftServer.eturlia$runGuarded(runnable);
+            return;
+        }
+        long waited = System.nanoTime() - queuedAt;
+        ETURLIA_DISPATCH_COUNT.incrementAndGet(path);
+        ETURLIA_DISPATCH_WAITED.addAndGet(path, waited);
+        ETURLIA_DISPATCH_WORST.accumulateAndGet(path, waited, Math::max);
+        try {
+            MinecraftServer.eturlia$runGuarded(runnable);
+        } finally {
+            MinecraftServer.eturlia$reportDispatch();
+        }
+    }
+
+    private static void eturlia$reportDispatch() {
+        long now = System.currentTimeMillis();
+        long last = ETURLIA_DISPATCH_REPORTED.get();
+        if (now - last < 30000L || !ETURLIA_DISPATCH_REPORTED.compareAndSet(last, now)) {
+            return;
+        }
+        for (int path = 0; path < 2; ++path) {
+            long count = ETURLIA_DISPATCH_COUNT.getAndSet(path, 0L);
+            long waited = ETURLIA_DISPATCH_WAITED.getAndSet(path, 0L);
+            long worst = ETURLIA_DISPATCH_WORST.getAndSet(path, 0L);
+            if (count == 0L) {
+                continue;
+            }
+            long average = (waited / count) / 1000000L;
+            long worstMillis = worst / 1000000L;
+            // One tick is 50ms. Anything a player would notice is many times that.
+            if (worstMillis >= 250L) {
+                MinecraftServer.LOGGER.warn("Eturlia: {} deferred tasks on the {} in 30s, average wait {}ms, worst {}ms",
+                    count, ETURLIA_DISPATCH_NAMES[path], average, worstMillis);
+            }
+        }
+    }
+    // Eturlia end - how long a deferred task waits before it runs
+
+    // A deferred task that throws must not kill the region running it: on Folia that is a
+    // whole-server shutdown, and the mod that queued the task is long gone from the stack.
+    public static void eturlia$runGuarded(Runnable runnable) {""",
+        "MinecraftServer counts what deferred tasks wait",
+    )
+    replace(
+        SERVER + "/net/minecraft/server/MinecraftServer.java",
+        """                    regionized.taskQueue.queueTickTaskQueue(
+                        level, pos.getX() >> 4, pos.getZ() >> 4,
+                        () -> MinecraftServer.eturlia$runGuarded(runnable)
+                    );""",
+        """                    long eturliaQueuedAt = System.nanoTime(); // Eturlia - timed, see eturlia$runDeferred
+                    regionized.taskQueue.queueTickTaskQueue(
+                        level, pos.getX() >> 4, pos.getZ() >> 4,
+                        () -> MinecraftServer.eturlia$runDeferred(runnable, eturliaQueuedAt, 0)
+                    );""",
+        "the player-region queue is timed",
+    )
+    replace(
+        SERVER + "/net/minecraft/server/MinecraftServer.java",
+        """        if (regionized != null) {
+            regionized.addTask(() -> MinecraftServer.eturlia$runGuarded(runnable));
+            return;
+        }""",
+        """        if (regionized != null) {
+            long eturliaQueuedAt = System.nanoTime(); // Eturlia - timed, see eturlia$runDeferred
+            regionized.addTask(() -> MinecraftServer.eturlia$runDeferred(runnable, eturliaQueuedAt, 1));
+            return;
+        }""",
+        "the global-region queue is timed",
+    )
+
+
 def install_quarantine():
     """Mods that replace the same internals Paper already replaced cannot be reconciled."""
     print("quarantine plane")
@@ -3566,6 +3944,14 @@ if __name__ == "__main__":
     install_container_defaults()
     install_portal_compat()
     install_packet_thread_routing()
+    install_light_engine_fields()
+    install_sublevel_chunk_loads()
+    install_chunk_access_get_level()
+    install_chunk_status_listener_default()
+    install_chunk_holder_futures()
+    install_chunk_section_vanilla_ctor()
+    install_read_timeout()
+    install_dispatch_timing()
     install_shape_compat()
     install_quarantine()
     print("done")
