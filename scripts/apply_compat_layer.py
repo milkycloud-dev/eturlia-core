@@ -3511,6 +3511,56 @@ def install_light_engine_fields():
     )
 
 
+def install_particle_probe():
+    """Name every particle the server sends, on demand. Off unless asked for.
+
+    "Something draws blue trails behind the player" is unanswerable from the outside: a particle
+    leaves no trace in any log, and the same picture can come from a plugin, a server mod, or a mod
+    that only exists on the client. This says which - `-Deturlia.debug.particles=true` prints each
+    distinct particle type the server sends, with where and how many, at most once every ten seconds
+    per type. Nothing in the log means nothing was sent, and then whatever is on screen is drawn by
+    the client alone.
+    """
+    print("particle probe plane")
+    replace(
+        SERVER + "/net/minecraft/server/level/ServerLevel.java",
+        "        ClientboundLevelParticlesPacket packetplayoutworldparticles = new ClientboundLevelParticlesPacket(t0, force, d0, d1, d2, (float) d3, (float) d4, (float) d5, (float) d6, i);",
+        """        // Eturlia start - say what is being sent, when asked
+        if (ServerLevel.ETURLIA_PARTICLE_PROBE) {
+            ServerLevel.eturlia$noteParticle(t0, d0, d1, d2, i);
+        }
+        // Eturlia end - say what is being sent, when asked
+        ClientboundLevelParticlesPacket packetplayoutworldparticles = new ClientboundLevelParticlesPacket(t0, force, d0, d1, d2, (float) d3, (float) d4, (float) d5, (float) d6, i);""",
+        "ServerLevel notes the particles it sends",
+    )
+    replace(
+        SERVER + "/net/minecraft/server/level/ServerLevel.java",
+        "    public <T extends ParticleOptions> int sendParticles(T particle, double x, double y, double z, int count, double deltaX, double deltaY, double deltaZ, double speed) {",
+        """    // Eturlia start - the particle probe
+    public static final boolean ETURLIA_PARTICLE_PROBE = Boolean.getBoolean("eturlia.debug.particles");
+    private static final java.util.Map<String, Long> ETURLIA_PARTICLE_SEEN = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static void eturlia$noteParticle(ParticleOptions particle, double x, double y, double z, int count) {
+        try {
+            String name = net.minecraft.core.registries.BuiltInRegistries.PARTICLE_TYPE.getKey(particle.getType()).toString();
+            long now = System.currentTimeMillis();
+            Long last = ETURLIA_PARTICLE_SEEN.get(name);
+            if (last != null && now - last.longValue() < 10000L) {
+                return;
+            }
+            ETURLIA_PARTICLE_SEEN.put(name, Long.valueOf(now));
+            MinecraftServer.LOGGER.info("Eturlia particle probe: {} x{} at {}, {}, {}", name, Integer.valueOf(count),
+                Long.valueOf(Math.round(x)), Long.valueOf(Math.round(y)), Long.valueOf(Math.round(z)));
+        } catch (Throwable ignored) {
+        }
+    }
+    // Eturlia end - the particle probe
+
+    public <T extends ParticleOptions> int sendParticles(T particle, double x, double y, double z, int count, double deltaX, double deltaY, double deltaZ, double speed) {""",
+        "ServerLevel carries the particle probe",
+    )
+
+
 def install_sublevel_chunk_loads():
     """A chunk no region owns can be loaded by whoever asks. Folia refused, and that aborted the JVM.
 
@@ -3945,6 +3995,7 @@ if __name__ == "__main__":
     install_portal_compat()
     install_packet_thread_routing()
     install_light_engine_fields()
+    install_particle_probe()
     install_sublevel_chunk_loads()
     install_chunk_access_get_level()
     install_chunk_status_listener_default()

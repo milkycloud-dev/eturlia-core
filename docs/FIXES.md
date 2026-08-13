@@ -459,3 +459,30 @@ players (`follow-mode: ATTACHED`, `update-interval: 1`) using `SOUL_FIRE_FLAME` 
 are exactly the cyan the screenshots show. Nothing in the compatibility layer spawns a particle
 anywhere; the generator has no reference to one. The jar is in `plugins1/` now, its config left in
 place. To keep the eyes but lose the cyan, `use-soul-flame: false` in `plugins/DemonicEye/config.yml`.
+
+### The blue trails: what they are not
+
+The report was cyan trails that stay behind a player. Every candidate was tested by removing it and
+photographing the same lit, empty stage from the same angle with a headless client
+(`tools/trailcheck.sh`, which teleports the tester onto the stage, hides the HUD, and proves the
+keyboard reaches the game before believing anything it sees):
+
+| removed | trails |
+|---|---|
+| DemonicEye (draws particle "eyes" attached to players) | still there |
+| PPC_Wings (`hide-own-wings: false`, wings drawn from END_ROD/SOUL_FIRE_FLAME every tick) | still there |
+| PlayerParticles, TrollEffects | still there |
+| **every plugin on the server** | still there |
+| AmbientEnvironment, lightdust, Distant Horizons, fallingleaves, Pretty Rain, 30 more client mods | still there |
+| Amendments (server and client) | still there |
+
+So the core got its own answer, `-Deturlia.debug.particles=true`: it names every particle the server
+sends, once per type per ten seconds. Through a whole run of walking around on that stage, the
+server sent **none at all**. Nothing in the compatibility layer spawns a particle either - the
+generator has no reference to one.
+
+The trails are drawn by the client, from the launcher pack, with no server involvement. At 1280x720
+they are the vanilla soul-family sprites arranged in a ring on the ground around the player. What is
+left to bisect is the client half of the mods that also run on the server, which cannot be removed
+one at a time without the server losing them too - `tools/trailcheck.sh <tag>` is the loop for that,
+one mod per run, comparing `/tmp/trail_<tag>_no_effects.png`.
