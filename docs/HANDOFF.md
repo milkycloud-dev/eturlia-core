@@ -358,3 +358,19 @@ either of them.
   Anything typed after that point is silently discarded, so `clienttest3.sh` checks the client is
   still connected before every keystroke and stops the run when it is not. Trust nothing it prints
   after a `!!` line.
+
+**`tools/modsweep.py`** sweeps the pack from the console, with no player and no client:
+`/bukkit:help` for every command every plugin declares (note: `bukkit:help`, not `help` — EssentialsX
+answers console `/help` with a hint and grades everything as present), `/summon` for a sample of
+modded entity types, `/setblock` plus read-back for modded blocks, `/place feature` for modded
+worldgen, the vanilla command list, and a batch of modded block entities left ticking while it
+watches for `BlockEntity threw exception`. `--only <categories>`, `--n <sample>`, `--seed <n>`.
+
+Two things it taught, worth keeping:
+
+* summoning a Twilight Forest boss outside its structure makes it compute a NaN position and spam
+  `New entity position is invalid!` once a tick for as long as its chunk is loaded. Nothing is wrong
+  with the core; do not summon bosses in a test area, and remember there is no way to `/kill` them
+  from the console afterwards.
+* `/place feature` needs ground the feature accepts. On a stone platform almost everything answers
+  `Failed to place feature`; on grass over dirt most of it works.

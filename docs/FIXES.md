@@ -371,3 +371,40 @@ times in one minute of ordinary play. With no block entity there, the plain stat
   `plugins/PPC_Wings/players.yml`. Both are off now. Nothing in the core draws it.
 * **ProtocolLib** fails reflecting into `CraftParticle.minecraftToBukkit`; that is ProtocolLib
   against this Paper version, not the core.
+
+### The thirteen commands that were never there
+
+`tools/modsweep.py` checks every vanilla command the same way it checks a plugin's. It came back
+with 36 of 49, and the missing ones were not obscure:
+
+```
+clone  data  datapack  function  loot  ride  schedule  scoreboard  spreadplayers  tag  team ...
+```
+
+They are all in `Commands.java`, and they are all commented out upstream with
+`// Folia - region threading - TODO`. Folia turned off every vanilla command it had not made
+region-safe, and nobody turned them back on — so an operator, a datapack and half the plugins on this
+server were reaching for commands that did not exist.
+
+A command a player types already runs on that player's region: the thread that owns the blocks and
+entities the command is about to touch. The case Folia was guarding against is the console, and the
+console already refuses entity selectors for exactly this reason. So seventeen of them are registered
+again — `/scoreboard`, `/team`, `/tag`, `/data`, `/clone`, `/function`, `/loot`, `/ride`, `/schedule`,
+`/spreadplayers`, `/datapack`, `/bossbar`, `/item`, `/trigger`, `/spectate`, `/teammsg`, `/return`.
+`/reload`, `/save-all`, `/tick`, `/perf`, `/debug` and `/jfr` stay off: Bukkit already provides the
+first two, and the rest are not per-region ideas at all.
+
+`-Deturlia.compat.folia-commands=strict` puts Folia's silence back. `/clone` across regions from the
+console still fails, loudly and without touching anything - Folia's own thread check catches it.
+
+### What the sweep says about the pack
+
+| | |
+|---|---|
+| Plugin commands registered | 224 of 225 declared (only PlugManX's `/plugman` is absent) |
+| WorldEdit from the console | 4 of 4 |
+| Vanilla commands | 48 of 48 that exist in 1.21.1 |
+| Modded entities summoned | 17 of 20 sampled; the other 3 are lang keys with no entity type behind them |
+| Modded blocks placed and read back | 16 of 20 sampled; 3 are optional content the mod only registers with another mod present, 1 is a bush that needs its own soil |
+| Modded block entities left ticking | 40 placed, no exceptions |
+| Modded worldgen features | placed where their conditions allow, `Failed to place feature` on a flat test platform otherwise |

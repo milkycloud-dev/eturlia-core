@@ -121,9 +121,9 @@ xdotool mousemove 203 210 click 1; sleep 4
 # --- 2. AuthMe, typed by the player rather than run from the console ------------------------------
 echo "== 2. AuthMe"
 MARK1=$(wc -l < "$LOG")
-# AuthMe resumes the previous session on join, so there is nothing to log in to unless the session
-# is ended first. This is the state a returning player is actually in.
-say "authme logout $NAME"
+# AuthMe resumes the previous session on join, so there is nothing to log in to unless the
+# account is cleared first. This puts the tester in the state a brand new player is in.
+say "authme unregister $NAME"
 sleep 3
 chat "ETURLIA_CHAT_BEFORE_LOGIN"
 if [ "$MODE" = register ]; then chat "/register $PASS $PASS"; else chat "/login $PASS"; fi

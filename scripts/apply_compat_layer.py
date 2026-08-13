@@ -2535,6 +2535,71 @@ def install_subclassable_core():
         print("  %s: %d methods are overridable again" % (name, changed))
 
 
+def install_folia_disabled_commands():
+    """Folia comments out the vanilla commands it has not made region-safe. Give them back.
+
+    `/scoreboard`, `/team`, `/tag`, `/data`, `/clone`, `/function`, `/loot`, `/ride`, `/rotate`,
+    `/schedule`, `/spreadplayers` and `/datapack` are all registered in vanilla and all commented out
+    in Folia's Commands.java with "region threading - TODO". Thirteen commands an operator, a
+    datapack and half the plugins on this server expect to exist, and none of them are there.
+
+    A command typed by a player already runs on that player's region, which is the thread that owns
+    the blocks and entities the command is about to touch - the case Folia was worried about is the
+    console, and the console already refuses entity selectors for exactly this reason. So they are
+    registered again. `-Deturlia.compat.folia-commands=strict` puts Folia's silence back.
+    """
+    print("folia command plane")
+    path = SERVER + "/net/minecraft/commands/Commands.java"
+    with open(path, encoding="utf-8") as handle:
+        source = handle.read()
+
+    if "ETURLIA_FOLIA_COMMANDS" in source:
+        print("  already applied")
+        return
+
+    disabled = re.compile(r"^(\s*)//(\s*)(\w+\.register\([^\n]*?);(\s*)// Folia - region threading[^\n]*$",
+                          re.MULTILINE)
+    names = []
+
+    # These stay off. Bukkit already provides /reload and /save-all, and the rest reach past a
+    # single region by design - freezing the tick or profiling the server is not a per-region idea.
+    leave_alone = ("ReloadCommand", "SaveAllCommand", "SaveOffCommand", "SaveOnCommand",
+                   "TickCommand", "PerfCommand", "DebugCommand", "JfrCommand", "StopCommand")
+
+    def restore(match):
+        indent, _, call, _ = match.group(1), match.group(2), match.group(3), match.group(4)
+        owner = call.split(".register")[0]
+        if owner in leave_alone:
+            return match.group(0)
+        names.append(owner)
+        return "%sif (ETURLIA_FOLIA_COMMANDS) %s; // Eturlia - Folia leaves this out; see ETURLIA_FOLIA_COMMANDS" % (indent, call)
+
+    source, count = disabled.subn(restore, source)
+    if count == 0:
+        print("!! anchor missing: no commented-out Folia command registrations")
+        return
+
+    field = (
+        "public class Commands {\n"
+        "\n"
+        "    // Eturlia - Folia comments out every vanilla command it has not made region-safe yet, so\n"
+        "    // /scoreboard, /team, /tag, /data, /clone, /function, /loot, /ride, /rotate, /schedule,\n"
+        "    // /spreadplayers and /datapack simply do not exist on it. A command a player types runs on\n"
+        "    // that player's region - the thread that owns what the command is about to touch - and the\n"
+        "    // console already refuses entity selectors, which is the case Folia was guarding against.\n"
+        "    // -Deturlia.compat.folia-commands=strict restores Folia's behaviour.\n"
+        "    public static final boolean ETURLIA_FOLIA_COMMANDS = !\"strict\".equalsIgnoreCase(\n"
+        "        System.getProperty(\"eturlia.compat.folia-commands\", \"lenient\"));\n")
+    if "public class Commands {\n" not in source:
+        print("!! anchor missing: Commands class declaration")
+        return
+    source = source.replace("public class Commands {\n", field, 1)
+
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(source)
+    print("  restored %d commands: %s" % (count, ", ".join(sorted(set(names)))))
+
+
 def install_guest_level_ctor():
     """A Level that is not a ServerLevel has to be constructible. Create builds one per contraption.
 
@@ -3487,6 +3552,7 @@ if __name__ == "__main__":
     install_level_subclass_compat()
     install_level_is_subclassable()
     install_subclassable_core()
+    install_folia_disabled_commands()
     install_guest_level_ctor()
     install_missing_interface_defaults()
     install_block_state_without_tile()
