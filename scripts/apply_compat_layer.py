@@ -3624,15 +3624,63 @@ def install_world_preset_diagnostics():
             // WorldDimensions.bake() prefers whatever the datapacks put in the LevelStem registry
             // over the preset's own dimensions, so a single stray overworld entry silently decides
             // how every new world generates. Both halves of that decision are printed here.
-            org.slf4j.LoggerFactory.getLogger("Eturlia").warn(
-                    "Eturlia: level-type '{}' -> preset {} (registry has {} presets); datapack stems: {}",
+            DedicatedServerProperties.LOGGER.warn(
+                    "Eturlia: level-type '{}' -> preset {} (registry has {} presets: {})",
                     this.levelType,
-                    holder.unwrapKey().map(k -> k.location().toString()).orElse("<unkeyed>"),
+                    holder.unwrapKey().map((key) -> key.location().toString()).orElse("<unkeyed>"),
                     iregistry.size(),
-                    dynamicRegistryManager.registryOrThrow(Registries.LEVEL_STEM).keySet());
+                    iregistry.keySet());
             // Eturlia end - name the preset a new world is built from
             WorldDimensions worlddimensions = ((WorldPreset) holder.value()).createWorldDimensions();""",
         "DedicatedServerProperties names the preset it picked",
+    )
+
+
+def install_world_preset_fallback():
+    """A missing level-type falls back to a vanilla preset, never to an arbitrary one."""
+    print("world preset fallback plane")
+    replace(
+        SERVER + "/net/minecraft/server/dedicated/DedicatedServerProperties.java",
+        """            Holder.Reference<WorldPreset> holder_c = (Holder.Reference) iregistry.getHolder(WorldPresets.NORMAL).or(() -> {
+                return iregistry.holders().findAny();
+            }).orElseThrow(() -> {""",
+        """            // Eturlia start - a missing preset falls back to a vanilla one
+            // Vanilla takes holders().findAny() here, which on a modded server is whichever entry
+            // the registry hands over first. On this pack that was simulated:airship_ready, a flat
+            // airship testbed, and it decided how every new world generated - the overworld came
+            // out a superflat with 125 layers of dirt, and locate could not find a desert anywhere.
+            // Wover reaches this path on every boot: it asks for wover:normal, which is missing
+            // because its own registration mixins do not apply here.
+            Holder.Reference<WorldPreset> holder_c = (Holder.Reference) iregistry.getHolder(WorldPresets.NORMAL).or(() -> {
+                return DedicatedServerProperties.WorldDimensionData.eturlia$firstVanillaPreset(iregistry);
+            }).or(() -> {
+                return iregistry.holders().findAny();
+            }).orElseThrow(() -> {""",
+        "the world preset fallback prefers vanilla",
+    )
+
+    replace(
+        SERVER + "/net/minecraft/server/dedicated/DedicatedServerProperties.java",
+        """    public static record WorldDimensionData(JsonObject generatorSettings, String levelType) {""",
+        """    public static record WorldDimensionData(JsonObject generatorSettings, String levelType) {
+
+        // Eturlia start - the vanilla presets worth defaulting to
+        /** The lowest-keyed vanilla preset that actually generates a world, if the registry has one. */
+        private static Optional<Holder.Reference<WorldPreset>> eturlia$firstVanillaPreset(Registry<WorldPreset> registry) {
+            // In order of how close each one is to what a plain server.properties asks for. Flat,
+            // debug and single-biome are left out: they are worlds nobody means to get by accident.
+            java.util.List<String> preferred = java.util.List.of("normal", "large_biomes", "amplified");
+            for (String path : preferred) {
+                Optional<Holder.Reference<WorldPreset>> found = registry.getHolder(
+                        ResourceKey.create(Registries.WORLD_PRESET, ResourceLocation.withDefaultNamespace(path)));
+                if (found.isPresent()) {
+                    return found;
+                }
+            }
+            return Optional.empty();
+        }
+        // Eturlia end - the vanilla presets worth defaulting to""",
+        "WorldDimensionData knows which presets are vanilla",
     )
 
 def install_portal_compat():
@@ -4347,6 +4395,7 @@ if __name__ == "__main__":
     install_neoforge_entity_fields()
     install_abstract_villager_handle()
     install_world_preset_diagnostics()
+    install_world_preset_fallback()
     install_portal_compat()
     install_packet_thread_routing()
     install_light_engine_fields()
