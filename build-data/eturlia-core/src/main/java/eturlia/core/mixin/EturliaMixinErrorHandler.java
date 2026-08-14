@@ -46,6 +46,13 @@ public final class EturliaMixinErrorHandler implements IMixinErrorHandler {
     private static final Set<String> REPORTED = ConcurrentHashMap.newKeySet();
     private static final AtomicInteger DOWNGRADED = new AtomicInteger();
 
+    /** Every skipped mixin, in the order they were skipped, for logs/eturlia-mixins.tsv. */
+    private static final java.util.List<String> MANIFEST =
+            java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+
+    private static final java.nio.file.Path MANIFEST_PATH =
+            java.nio.file.Paths.get("logs", "eturlia-mixins.tsv");
+
     /** Mixin instantiates error handlers reflectively. */
     public EturliaMixinErrorHandler() {
     }
@@ -78,6 +85,7 @@ public final class EturliaMixinErrorHandler implements IMixinErrorHandler {
         }
 
         DOWNGRADED.incrementAndGet();
+        record(config, name, stage, th);
         if (!"quiet".equalsIgnoreCase(mode) && REPORTED.add(name)) {
             LOGGER.warning("mixin " + name + " could not " + stage
                     + " and was skipped so the server can start (" + describe(th) + "). "
@@ -97,6 +105,43 @@ public final class EturliaMixinErrorHandler implements IMixinErrorHandler {
             }
         }
         return false;
+    }
+
+    /**
+     * Append one row to the manifest and rewrite it. The file is small - a bad pack produces a few
+     * dozen rows - and writing it as it goes means a boot that dies later still leaves the record.
+     */
+    private static void record(String config, String mixin, String stage, Throwable th) {
+        String mod = modOf(config, mixin);
+        MANIFEST.add(mod + "\t" + (config == null ? "-" : config) + "\t" + mixin
+                + "\t" + stage + "\t" + (th == null ? "-" : th.getClass().getSimpleName())
+                + "\t" + describe(th).replace('\t', ' '));
+        try {
+            java.nio.file.Path parent = MANIFEST_PATH.getParent();
+            if (parent != null) {
+                java.nio.file.Files.createDirectories(parent);
+            }
+            java.util.List<String> rows;
+            synchronized (MANIFEST) {
+                rows = new java.util.ArrayList<>(MANIFEST);
+            }
+            java.nio.file.Files.write(MANIFEST_PATH, rows, java.nio.charset.StandardCharsets.UTF_8);
+        } catch (java.io.IOException | RuntimeException ignored) {
+            // a manifest that cannot be written must never be the reason a server does not start
+        }
+    }
+
+    /** The mod a mixin config belongs to: the first segment of its name, which is the mod id. */
+    private static String modOf(String config, String mixin) {
+        if (config != null && !config.isBlank()) {
+            int dot = config.indexOf('.');
+            return dot > 0 ? config.substring(0, dot) : config;
+        }
+        if (mixin != null) {
+            int dot = mixin.indexOf('.');
+            return dot > 0 ? mixin.substring(0, dot) : mixin;
+        }
+        return "unknown";
     }
 
     private static String describe(Throwable th) {

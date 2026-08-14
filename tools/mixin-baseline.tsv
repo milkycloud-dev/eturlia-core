@@ -1,0 +1,11 @@
+betterend	apply-failed	betterend.mixins.common.json	EndDragonFightMixin	net.minecraft.world.level.dimension.end.EndDragonFight
+emotecraft	apply-failed	emotecraft-arch.mixins.json	ServerChunkCacheAccessor	net.minecraft.server.level.ChunkMap
+unknown	class-missing	-	-	com/teamabnormals/blueprint/common/world/modification/ModdedBiomeSource
+unknown	class-missing	-	-	net/minecraft/client/multiplayer/ClientLevel
+unknown	class-missing	-	-	net/minecraftforge/common/ForgeTier
+unknown	class-missing	-	-	traben/entity_model_features/models/animation/EMFAnimationEntityContext
+unknown	class-missing	-	-	tschipp/carryon/common/carry/PickupHandler
+unknown	class-missing	-	-	tschipp/carryon/common/config/ListHandler
+unknown	critical-injection	-	LVT	net/minecraft/world/level/block/SpreadingSnowyDirtBlock
+wover	apply-failed	wover.core.mixins.common.json	registry.RegistryDataLoaderMixin	net.minecraft.resources.RegistryDataLoader
+wover	apply-failed	wover.event.mixins.common.json	MinecraftServerMixin	net.minecraft.server.MinecraftServer
