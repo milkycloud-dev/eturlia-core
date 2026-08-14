@@ -1,0 +1,9 @@
+name: EturliaProbe
+version: 1.0.0
+main: eturlia.probe.EturliaProbe
+api-version: '1.21'
+description: Walks the modded half of the registries and reports what the server produces for each entry.
+commands:
+  eprobe:
+    description: entities | menus | biomes
+    usage: /eprobe <entities|menus|biomes>
