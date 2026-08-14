@@ -3683,6 +3683,33 @@ def install_world_preset_fallback():
         "WorldDimensionData knows which presets are vanilla",
     )
 
+
+def install_hard_colliding_guard():
+    """The hard-colliding flag survives a mod that reads its own state too early."""
+    print("hard colliding plane")
+    replace(
+        SERVER + "/net/minecraft/world/entity/Entity.java",
+        """    private final boolean isHardColliding = this.moonrise$isHardCollidingUncached();""",
+        """    private final boolean isHardColliding = this.eturlia$hardCollidingAtBirth();
+
+    // Eturlia start - a mod's canBeCollidedWith() runs before its entity exists
+    // This flag is computed in a field initialiser, so it calls canBeCollidedWith() - which mods
+    // override - before the constructor body has run: entityData is still null and so is the level.
+    // Five Alex's Mobs entities threw here and could not be created at all. The flag is a hint for
+    // collision lookups, so a mod that cannot answer yet gets vanilla's answer for its shape.
+    private boolean eturlia$hardCollidingAtBirth() {
+        try {
+            return this.moonrise$isHardCollidingUncached();
+        } catch (Throwable thrown) {
+            return this instanceof net.minecraft.world.entity.vehicle.Boat
+                    || this instanceof net.minecraft.world.entity.vehicle.AbstractMinecart
+                    || this instanceof net.minecraft.world.entity.monster.Shulker;
+        }
+    }
+    // Eturlia end - a mod's canBeCollidedWith() runs before its entity exists""",
+        "the hard-colliding flag tolerates an unfinished entity",
+    )
+
 def install_portal_compat():
     """A modded portal teleports instead of killing the region the player stands in."""
     print("portal plane")
@@ -4396,6 +4423,7 @@ if __name__ == "__main__":
     install_abstract_villager_handle()
     install_world_preset_diagnostics()
     install_world_preset_fallback()
+    install_hard_colliding_guard()
     install_portal_compat()
     install_packet_thread_routing()
     install_light_engine_fields()
