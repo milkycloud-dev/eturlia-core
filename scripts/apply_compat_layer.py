@@ -3613,6 +3613,28 @@ def install_abstract_villager_handle():
         "CraftAbstractVillager.getHandle stops assuming Villager",
     )
 
+
+def install_world_preset_diagnostics():
+    """A new world says which preset built it, and which dimensions a datapack overrode."""
+    print("world preset diagnostics plane")
+    replace(
+        SERVER + "/net/minecraft/server/dedicated/DedicatedServerProperties.java",
+        """            WorldDimensions worlddimensions = ((WorldPreset) holder.value()).createWorldDimensions();""",
+        """            // Eturlia start - name the preset a new world is built from
+            // WorldDimensions.bake() prefers whatever the datapacks put in the LevelStem registry
+            // over the preset's own dimensions, so a single stray overworld entry silently decides
+            // how every new world generates. Both halves of that decision are printed here.
+            org.slf4j.LoggerFactory.getLogger("Eturlia").warn(
+                    "Eturlia: level-type '{}' -> preset {} (registry has {} presets); datapack stems: {}",
+                    this.levelType,
+                    holder.unwrapKey().map(k -> k.location().toString()).orElse("<unkeyed>"),
+                    iregistry.size(),
+                    dynamicRegistryManager.registryOrThrow(Registries.LEVEL_STEM).keySet());
+            // Eturlia end - name the preset a new world is built from
+            WorldDimensions worlddimensions = ((WorldPreset) holder.value()).createWorldDimensions();""",
+        "DedicatedServerProperties names the preset it picked",
+    )
+
 def install_portal_compat():
     """A modded portal teleports instead of killing the region the player stands in."""
     print("portal plane")
@@ -4324,6 +4346,7 @@ if __name__ == "__main__":
     install_menu_view_default()
     install_neoforge_entity_fields()
     install_abstract_villager_handle()
+    install_world_preset_diagnostics()
     install_portal_compat()
     install_packet_thread_routing()
     install_light_engine_fields()
