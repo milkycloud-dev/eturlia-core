@@ -510,6 +510,73 @@ def install_bukkit_type_bridges():
         //
         // A plugin asking about a modded mob now gets a LivingEntity or a plain Entity: less than
         // the truth, but every method it can call still works.
+        // The wrapper of the nearest vanilla ancestor first: vanilla code casts a Bukkit handle to
+        // the interface the entity's class implies. Slime's own jumping goal casts to
+        // org.bukkit.entity.Slime, Boat.push casts to Vehicle. A modded subclass handed the generic
+        // wrapper fails that cast inside a region tick, and Folia answers a region tick failure by
+        // stopping the server - which is what a Twilight Forest knight phantom pushing a modded
+        // boat did on 13 August. getType() still answers UNKNOWN, which remains the truth.
+        CraftEntityTypes.EntityTypeData<?, T> eturlia$ancestor = eturlia$nearestVanillaTypeData(entity);
+        if (eturlia$ancestor != null) {
+            try {
+                return (CraftEntity) eturlia$ancestor.convertFunction().apply(server, entity);
+            } catch (RuntimeException | LinkageError ignored) {
+                // a Craft wrapper that refuses this subclass falls through to the generic ones
+            }
+        }
+        // Then the vanilla classes no EntityType names. A mod that extends AbstractHorse, Raider or
+        // AbstractVillager inherits vanilla behaviour that casts the Bukkit handle to the matching
+        // interface: Vinery's mule reached AbstractHorse's own code, Supplementaries' red merchant
+        // reached the trading code, and both ended the tick with a ClassCastException.
+        if (entity instanceof net.minecraft.world.entity.animal.horse.AbstractHorse horse) {
+            return new EturliaUnknownHorse(server, horse);
+        }
+        if (entity instanceof net.minecraft.world.entity.npc.AbstractVillager villager) {
+            // AbstractVillager's own field initialiser casts this handle to CraftAbstractVillager,
+            // so a modded merchant needs exactly that class and nothing more general.
+            return new CraftAbstractVillager(server, villager);
+        }
+        if (entity instanceof net.minecraft.world.entity.monster.AbstractSkeleton skeleton) {
+            return new EturliaUnknownSkeleton(server, skeleton);
+        }
+        if (entity instanceof net.minecraft.world.entity.raid.Raider raider) {
+            return new EturliaUnknownRaider(server, raider);
+        }
+        if (entity instanceof net.minecraft.world.entity.TamableAnimal tamable) {
+            return new CraftTameableAnimal(server, tamable);
+        }
+        if (entity instanceof net.minecraft.world.entity.animal.AbstractFish fish) {
+            return new CraftFish(server, fish);
+        }
+        if (entity instanceof net.minecraft.world.entity.animal.WaterAnimal water) {
+            return new CraftWaterMob(server, water);
+        }
+        if (entity instanceof net.minecraft.world.entity.animal.Animal animal) {
+            return new CraftAnimals(server, animal);
+        }
+        if (entity instanceof net.minecraft.world.entity.ambient.AmbientCreature ambient) {
+            return new CraftAmbient(server, ambient);
+        }
+        if (entity instanceof net.minecraft.world.entity.monster.Monster monster) {
+            return new CraftMonster(server, monster);
+        }
+        if (entity instanceof net.minecraft.world.entity.AgeableMob ageable) {
+            return new CraftAgeable(server, ageable);
+        }
+        if (entity instanceof net.minecraft.world.entity.vehicle.AbstractMinecart minecart) {
+            return new EturliaUnknownMinecart(server, minecart);
+        }
+        if (entity instanceof net.minecraft.world.entity.vehicle.VehicleEntity vehicle) {
+            // Boat.push casts the entity it collides with to Vehicle; a modded boat used to end the
+            // server the first time a mob walked into it.
+            return new EturliaUnknownVehicle(server, vehicle);
+        }
+        if (entity instanceof net.minecraft.world.entity.projectile.AbstractArrow arrow) {
+            return new CraftAbstractArrow(server, arrow);
+        }
+        if (entity instanceof net.minecraft.world.entity.Mob mob) {
+            return new EturliaUnknownMob(server, mob);
+        }
         if (entity instanceof net.minecraft.world.entity.projectile.Projectile projectile) {
             // CraftBukkit's own event code casts the wrapper of anything that flies to Projectile -
             // ProjectileHitEvent and ProjectileCollideEvent both do it unconditionally - so a
@@ -536,6 +603,61 @@ def install_bukkit_type_bridges():
         }
     }
 
+    /** Wrappers for the vanilla classes CraftBukkit leaves abstract. Each adds nothing but a name. */
+    public static final class EturliaUnknownHorse extends CraftAbstractHorse {
+
+        public EturliaUnknownHorse(CraftServer server, net.minecraft.world.entity.animal.horse.AbstractHorse entity) {
+            super(server, entity);
+        }
+
+        @Override
+        public org.bukkit.entity.Horse.Variant getVariant() {
+            // The Bukkit enum has no entry for a variant a mod invented; HORSE is the shape of the
+            // class the mod extended, which is the closest true answer available.
+            return org.bukkit.entity.Horse.Variant.HORSE;
+        }
+    }
+
+    public static final class EturliaUnknownSkeleton extends CraftAbstractSkeleton {
+
+        public EturliaUnknownSkeleton(CraftServer server, net.minecraft.world.entity.monster.AbstractSkeleton entity) {
+            super(server, entity);
+        }
+
+        @Override
+        public org.bukkit.entity.Skeleton.SkeletonType getSkeletonType() {
+            return org.bukkit.entity.Skeleton.SkeletonType.NORMAL;
+        }
+    }
+
+    public static final class EturliaUnknownRaider extends CraftRaider {
+
+        public EturliaUnknownRaider(CraftServer server, net.minecraft.world.entity.raid.Raider entity) {
+            super(server, entity);
+        }
+    }
+
+    public static final class EturliaUnknownMinecart extends CraftMinecart {
+
+        public EturliaUnknownMinecart(CraftServer server, net.minecraft.world.entity.vehicle.AbstractMinecart entity) {
+            super(server, entity);
+        }
+    }
+
+    public static final class EturliaUnknownVehicle extends CraftVehicle {
+
+        public EturliaUnknownVehicle(CraftServer server, net.minecraft.world.entity.Entity entity) {
+            super(server, entity);
+        }
+    }
+
+    public static final class EturliaUnknownMob extends CraftMob {
+
+        public EturliaUnknownMob(CraftServer server, net.minecraft.world.entity.Mob entity) {
+            super(server, entity);
+        }
+    }
+
     /** The wrapper for an entity type Bukkit has no class for — anything a mod adds. */
     public static final class EturliaUnknownEntity extends CraftEntity {
 
@@ -548,6 +670,65 @@ def install_bukkit_type_bridges():
         @Override
         public String toString() {
             return "EturliaUnknownEntity{" + this.getHandle().getClass().getName() + "}";
+        }
+    }
+
+    /** The type data of the nearest vanilla class a modded entity inherits from, or null. */
+    private static <T extends Entity> CraftEntityTypes.EntityTypeData<?, T> eturlia$nearestVanillaTypeData(T entity) {
+        org.bukkit.entity.EntityType nearest = EturliaVanillaAncestry.nearest(entity.getClass());
+        return nearest == null ? null : CraftEntityTypes.getEntityTypeData(nearest);
+    }
+
+    /** Which vanilla entity class each Bukkit type belongs to, and the walk up a modded ancestry. */
+    private static final class EturliaVanillaAncestry {
+
+        private static final java.util.Map<Class<?>, org.bukkit.entity.EntityType> DIRECT = index();
+        private static final java.util.Map<Class<?>, org.bukkit.entity.EntityType> RESOLVED =
+                new java.util.concurrent.ConcurrentHashMap<>();
+
+        static org.bukkit.entity.EntityType nearest(Class<?> handleClass) {
+            org.bukkit.entity.EntityType cached = RESOLVED.get(handleClass);
+            if (cached == null) {
+                org.bukkit.entity.EntityType found = null;
+                for (Class<?> walk = handleClass; walk != null && found == null; walk = walk.getSuperclass()) {
+                    found = DIRECT.get(walk);
+                }
+                // the map cannot hold null, so "no vanilla ancestor" is recorded as UNKNOWN
+                cached = found == null ? org.bukkit.entity.EntityType.UNKNOWN : found;
+                RESOLVED.put(handleClass, cached);
+            }
+            return cached == org.bukkit.entity.EntityType.UNKNOWN ? null : cached;
+        }
+
+        private static java.util.Map<Class<?>, org.bukkit.entity.EntityType> index() {
+            java.util.Map<Class<?>, org.bukkit.entity.EntityType> index = new java.util.HashMap<>();
+            // EntityType's fields keep their type argument in the class file's Signature attribute,
+            // so every registered type's vanilla handle class is readable without touching a registry.
+            for (java.lang.reflect.Field field : net.minecraft.world.entity.EntityType.class.getDeclaredFields()) {
+                if (!java.lang.reflect.Modifier.isStatic(field.getModifiers())
+                        || field.getType() != net.minecraft.world.entity.EntityType.class) {
+                    continue;
+                }
+                if (!(field.getGenericType() instanceof java.lang.reflect.ParameterizedType parameterized)) {
+                    continue;
+                }
+                if (!(parameterized.getActualTypeArguments()[0] instanceof Class<?> handleClass)) {
+                    continue;
+                }
+                try {
+                    field.setAccessible(true);
+                    if (!(field.get(null) instanceof net.minecraft.world.entity.EntityType<?> vanilla)) {
+                        continue;
+                    }
+                    org.bukkit.entity.EntityType bukkit = CraftEntityType.minecraftToBukkit(vanilla);
+                    if (bukkit != null && bukkit != org.bukkit.entity.EntityType.UNKNOWN) {
+                        index.putIfAbsent(handleClass, bukkit);
+                    }
+                } catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {
+                    // a type this build cannot resolve simply gets no ancestry entry
+                }
+            }
+            return index;
         }
         // Eturlia end - wrap a modded entity in the nearest Bukkit type""",
         "CraftEntity.getEntity wraps modded entities",
@@ -3284,6 +3465,154 @@ def install_container_defaults():
     )
 
 
+
+def install_menu_view_default():
+    """A menu a mod wrote can be opened: getBukkitView() stops being abstract."""
+    print("menu view plane")
+    replace(
+        SERVER + "/net/minecraft/world/inventory/AbstractContainerMenu.java",
+        """    public abstract InventoryView getBukkitView();""",
+        """    // Eturlia start - a menu written by a mod has no Bukkit view
+    // CraftBukkit declares this abstract and implements it in every vanilla menu. A mod extends the
+    // vanilla class it found in its own jar, where the method does not exist, so the class loads and
+    // the JVM throws AbstractMethodError the moment the menu is opened - inside a region tick, which
+    // on Folia ends the server. Every backpack, altar and machine screen in the pack was unopenable
+    // for that reason, and the log said only "Missing implementation of resolved method".
+    //
+    // The default builds a view out of the menu's own slots: the player is the one whose inventory
+    // the menu already carries, and the top inventory is every slot that is not theirs. Vanilla
+    // menus all override this, so nothing about them changes.
+    private InventoryView eturlia$genericView;
+
+    public InventoryView getBukkitView() {
+        if (this.eturlia$genericView == null) {
+            this.eturlia$genericView = this.eturlia$buildGenericView();
+        }
+        return this.eturlia$genericView;
+    }
+
+    private InventoryView eturlia$buildGenericView() {
+        net.minecraft.world.entity.player.Player owner = null;
+        java.util.List<Slot> foreign = new java.util.ArrayList<>();
+        for (Slot slot : this.slots) {
+            if (slot.container instanceof net.minecraft.world.entity.player.Inventory inventory) {
+                owner = inventory.player;
+            } else {
+                foreign.add(slot);
+            }
+        }
+        org.bukkit.entity.HumanEntity human = owner == null
+                ? null
+                : (org.bukkit.entity.HumanEntity) owner.getBukkitEntity();
+        org.bukkit.inventory.Inventory top = new CraftInventory(new EturliaMenuContainer(foreign));
+        return new org.bukkit.craftbukkit.inventory.CraftInventoryView<>(human, top, this);
+    }
+
+    /** A live view of the slots a menu owns, so a modded menu can answer the Bukkit inventory API. */
+    public static final class EturliaMenuContainer implements net.minecraft.world.Container {
+
+        private final java.util.List<Slot> slots;
+
+        EturliaMenuContainer(java.util.List<Slot> slots) {
+            this.slots = slots;
+        }
+
+        @Override
+        public int getContainerSize() {
+            return this.slots.size();
+        }
+
+        @Override
+        public boolean isEmpty() {
+            for (Slot slot : this.slots) {
+                if (!slot.getItem().isEmpty()) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        @Override
+        public ItemStack getItem(int index) {
+            return index >= 0 && index < this.slots.size() ? this.slots.get(index).getItem() : ItemStack.EMPTY;
+        }
+
+        @Override
+        public ItemStack removeItem(int index, int count) {
+            return index >= 0 && index < this.slots.size() ? this.slots.get(index).remove(count) : ItemStack.EMPTY;
+        }
+
+        @Override
+        public ItemStack removeItemNoUpdate(int index) {
+            ItemStack existing = this.getItem(index);
+            this.setItem(index, ItemStack.EMPTY);
+            return existing;
+        }
+
+        @Override
+        public void setItem(int index, ItemStack stack) {
+            if (index >= 0 && index < this.slots.size()) {
+                this.slots.get(index).set(stack);
+            }
+        }
+
+        @Override
+        public void setChanged() {
+            for (Slot slot : this.slots) {
+                slot.setChanged();
+            }
+        }
+
+        @Override
+        public boolean stillValid(net.minecraft.world.entity.player.Player player) {
+            return true;
+        }
+
+        @Override
+        public void clearContent() {
+            for (Slot slot : this.slots) {
+                slot.set(ItemStack.EMPTY);
+            }
+        }
+    }
+    // Eturlia end - a menu written by a mod has no Bukkit view""",
+        "AbstractContainerMenu.getBukkitView has a default",
+    )
+
+
+def install_neoforge_entity_fields():
+    """The fields NeoForge adds to vanilla entities exist here too."""
+    print("neoforge entity fields plane")
+    replace(
+        SERVER + "/net/minecraft/world/entity/item/ItemEntity.java",
+        """    public int age;
+    public int pickupDelay;""",
+        """    public int age;
+    // Eturlia start - NeoForge adds lifespan to ItemEntity
+    // A mod that subclasses ItemEntity is compiled against NeoForge's version of the class, where
+    // this field exists and the constructor assigns it. Without it the subclass loads and then
+    // throws NoSuchFieldError from its own constructor - Traveler's Backpack could not drop a
+    // backpack on the ground. The default is NeoForge's own.
+    public int lifespan = 6000;
+    // Eturlia end - NeoForge adds lifespan to ItemEntity
+    public int pickupDelay;""",
+        "ItemEntity carries NeoForge's lifespan field",
+    )
+
+
+def install_abstract_villager_handle():
+    """A merchant a mod wrote is an AbstractVillager, not necessarily a Villager."""
+    print("abstract villager plane")
+    replace(
+        SERVER + "/org/bukkit/craftbukkit/entity/CraftAbstractVillager.java",
+        """        return (Villager) this.entity;""",
+        """        // Eturlia - the method returns AbstractVillager; only the two vanilla subclasses that
+        // override it are Villagers. Supplementaries' red merchant is neither, and the cast threw
+        // from inside AbstractVillager's constructor, which ends the region tick that spawned it.
+        return (net.minecraft.world.entity.npc.AbstractVillager) this.entity;""",
+        "CraftAbstractVillager.getHandle stops assuming Villager",
+    )
+
 def install_portal_compat():
     """A modded portal teleports instead of killing the region the player stands in."""
     print("portal plane")
@@ -3992,6 +4321,9 @@ if __name__ == "__main__":
     install_remap_fallbacks()
     install_spawn_egg_compat()
     install_container_defaults()
+    install_menu_view_default()
+    install_neoforge_entity_fields()
+    install_abstract_villager_handle()
     install_portal_compat()
     install_packet_thread_routing()
     install_light_engine_fields()
