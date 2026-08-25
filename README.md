@@ -165,7 +165,7 @@ before compilation by `scripts/apply_compat_layer.py`, so what ships is an ordin
 
 ## 6. Where it stands right now
 
-Measured on the test rig on **2026-08-13**, build `2026-08-13T11:46:07Z`:
+Measured on the test rig on **2026-08-25**. Full history: [`CHANGELOG.md`](CHANGELOG.md).
 
 | | |
 |---|---|
@@ -178,7 +178,11 @@ Measured on the test rig on **2026-08-13**, build `2026-08-13T11:46:07Z`:
 | Vanilla commands present | **48 of 48** that exist in 1.21.1 |
 | Create machinery | a bearing driven through a shaft chain assembles and lifts its blocks; 10 assemble/disassemble cycles with 0 errors |
 | Create: Aeronautics | contraptions assemble on a world border; physics sub-levels construct and tick |
-| Regions | tick in parallel, one thread per region |
+| Regions | tick in parallel, one thread per region — all four levels measured at 20 ticks/s on their own region threads |
+| Modded entities, with a client watching | **347 of 347** spawned, **0** threw, **0** packets the client could not decode |
+| Modded menus | **128** modded menu classes, **0** without a working `getBukkitView()` |
+| Entity data serializers | 36 modded serializers numbered the way a stock NeoForge client numbers them (`registry id + 256`) |
+| Player session | 240 s soak with a real client: stable, no disconnect |
 
 The per-failure-class account of every fix is [`docs/FIXES.md`](docs/FIXES.md). The live state
 document — what is open, what was already ruled out — is [`docs/HANDOFF.md`](docs/HANDOFF.md).
@@ -533,6 +537,7 @@ Stated plainly, because a README that only lists successes is not useful.
 | **ImageFrame** fails to enable (`ExceptionInInitializerError`), **KartaAutoAnnouncer** fails to enable (missing embedded `config.yml`). | Third-party bugs, reproducible off Eturlia. |
 | **Cyan trails behind players** reported as a visual artefact. | Not the server. `-Deturlia.debug.particles=true` proved the core sends **zero** particles through a full run of walking; removing all 38 plugins and ~35 client mods changed nothing, and it reproduces in a brand-new world. It is drawn by the client half of a mod. |
 | **Datagen classes cannot bind** — 15 final-overrides and 10 unimplemented interface methods, all in recipe/data generators (Create's Registrate, PuzzlesLib, Twilight Forest's recipe book). | Harmless: those classes only run in a development data-generation environment, never on a server. |
+| **A Create: Aeronautics airship does not move.** Sable maps its physics sub-levels into the same world ~20.5 million blocks out, so they get Folia regions of their own, then drives them from the *player's* region thread. Folia refuses that cross-region write; sable catches the refusal per block (`Failed to mark & notify block`) and the contraption is assembled but never driven. | Open, and diagnosed. Handing the write to the owning region was tried and reverted — the queue reaches the right thread, but a tick later sable's plot holder is gone and its own mixin throws `Cannot change blocks in nonexistent plot holder` into the region tick, which stops the server. A real fix has to come from sable driving its sub-level from that sub-level's region, or from the regioniser treating the two areas as one region. Neither is a guard tweak. |
 | **Mods that assume a single server thread.** | Inherent to the design. The region guard (`-Deturlia.region.guard=STRICT`) is how you find them. |
 
 ---
@@ -782,7 +787,11 @@ eturlia-1.21.1-neoforge-21.1.248.jar
 | Ванильных команд на месте | **48 из 48**, существующих в 1.21.1 |
 | Механика Create | подшипник, приводимый цепочкой валов, собирает контрапцию и поднимает блоки; 10 циклов сборки/разборки без ошибок |
 | Create: Aeronautics | контрапции собираются на границе мира; физические под-миры создаются и тикают |
-| Регионы | тикают параллельно, по потоку на регион |
+| Регионы | тикают параллельно, по потоку на регион — все четыре уровня замерены на 20 тиков/с на своих региональных потоках |
+| Модовые сущности, при живом клиенте | **347 из 347** заспавнены, **0** упали, **0** пакетов, которые клиент не смог раскодировать |
+| Модовые меню | **128** классов, **0** без рабочего  |
+| Entity data serializer | 36 модовых сериализаторов нумеруются так же, как их нумерует обычный клиент NeoForge (`id реестра + 256`) |
+| Сессия игрока | 240 с с живым клиентом: стабильно, без отключений |
 
 Разбор каждого исправления по классам поломок — [`docs/FIXES.md`](docs/FIXES.md). Живой документ
 состояния (что открыто, что уже исключено) — [`docs/HANDOFF.md`](docs/HANDOFF.md).
@@ -1126,6 +1135,16 @@ threads:
 ---
 
 ## 12. Известные ограничения и открытые проблемы
+
+> **Дирижабль Create: Aeronautics не летит.** Sable размещает физические под-уровни в том же мире
+> примерно в 20,5 млн блоков, поэтому у них появляются собственные регионы Folia, а управляет он ими
+> с потока региона **игрока**. Folia такую межрегиональную запись запрещает; sable ловит отказ на
+> каждом блоке (`Failed to mark & notify block`), и конструкция собирается, но ничем не приводится в
+> движение. Передачу записи в регион-владелец пробовали и откатили: тиком позже plot holder у sable
+> уже нет, и его mixin бросает `Cannot change blocks in nonexistent plot holder` прямо в тик региона.
+> Настоящее решение — либо sable ведёт под-уровень из его собственного региона, либо регионизатор
+> считает эти две области одним регионом. Открыто.
+
 
 Названы прямо, потому что README, в котором одни успехи, бесполезен.
 

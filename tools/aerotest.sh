@@ -125,17 +125,30 @@ xdotool mousemove 203 210 click 1; sleep 4
 xdotool mousemove 160 141 click 1; sleep 4      # "Respawn", if the tester died on the way in
 xdotool key Escape; sleep 2
 
+# The canary has to assert on something the server actually writes down. /say is not it: the log
+# keeps chat.type.announcement and drops the text, so the only line carrying the marker is the
+# "issued server command" echo excluded just below - the check could never pass. Command feedback
+# from a player is logged in full ("[EturliaTester: Changed the block at ...]"), so the canary
+# changes a block under the floor and looks for that.
+CANARY_X=$((X-10)); CANARY_Y=$((Y-2)); CANARY_Z=$((Z-10))
 canary=0
 for attempt in 1 2 3; do
     P=$(wc -l < "$LOG")
     xdotool windowfocus "$WIN"; sleep 1
-    xdotool key t; sleep 1; xdotool type --delay 35 "/say ETURLIA_CANARY"; sleep 1; xdotool key Return
+    # If a menu is open every keystroke goes to it. Escape closes an open menu - and opens one when
+    # none is open, so it is only safe here, where the previous attempt already told us something is
+    # in the way. Attempt 1 types straight into the game.
+    if [ "$attempt" != 1 ]; then
+        xdotool key Escape; sleep 2
+        xdotool windowfocus "$WIN"; sleep 1
+    fi
+    xdotool key t; sleep 1
+    xdotool type --delay 35 "/minecraft:setblock $CANARY_X $CANARY_Y $CANARY_Z minecraft:sea_lantern"
+    sleep 1; xdotool key Return
     sleep 4
-    if tail -n +"$P" "$LOG" | grep -a 'ETURLIA_CANARY' | grep -avq 'issued server command'; then canary=1; break; fi
+    if tail -n +"$P" "$LOG" | grep -a "Changed the block at $CANARY_X" | grep -avq 'issued server command'; then canary=1; break; fi
     echo "   canary attempt $attempt: the keyboard is not reaching the game"
     shot "canary_$attempt"
-    xdotool key Escape; sleep 1
-    xdotool mousemove 160 141 click 1; sleep 3
 done
 [ "$canary" = 1 ] || { echo "RESULT keyboard=NO (see the canary screenshots)"; exit 4; }
 echo "RESULT keyboard=YES"

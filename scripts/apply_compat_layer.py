@@ -563,6 +563,12 @@ def install_bukkit_type_bridges():
         if (entity instanceof net.minecraft.world.entity.AgeableMob ageable) {
             return new CraftAgeable(server, ageable);
         }
+        if (entity instanceof net.minecraft.world.entity.decoration.HangingEntity hanging) {
+            // Paintings and item frames from mods: HangingEntity.tick() and the block-break path
+            // both cast getBukkitEntity() to Hanging, so the plain wrapper takes the region down
+            // the moment the block behind one changes.
+            return new CraftHanging(server, hanging);
+        }
         if (entity instanceof net.minecraft.world.entity.vehicle.AbstractMinecart minecart) {
             return new EturliaUnknownMinecart(server, minecart);
         }
@@ -883,8 +889,98 @@ def install_extensible_enums():
 # ------------------------------------------------------------------ serializers
 
 def install_data_serializers():
-    """Modded entity data serializers get a wire id, so modded mobs can spawn."""
+    """Modded entity data serializer wire ids follow NeoForge's contract, so clients can decode them."""
     print("serializer plane")
+
+    # The wire id is whatever SynchedEntityData writes, so that is where the contract belongs.
+    path = SERVER + "/net/minecraft/network/syncher/SynchedEntityData.java"
+    replace(
+        path,
+        """        public void write(RegistryFriendlyByteBuf buf) {
+            int i = EntityDataSerializers.getSerializedId(this.serializer);""",
+        """        public void write(RegistryFriendlyByteBuf buf) {
+            int i = SynchedEntityData.eturlia$serializerId(this.serializer); // Eturlia - number modded serializers the way NeoForge does""",
+        "DataValue.write asks Eturlia for the id",
+    )
+
+    replace(
+        path,
+        """            EntityDataSerializer<?> datawatcherserializer = EntityDataSerializers.getSerializer(j);""",
+        """            EntityDataSerializer<?> datawatcherserializer = SynchedEntityData.eturlia$serializerById(j); // Eturlia - and back again""",
+        "DataValue.read asks Eturlia for the serializer",
+    )
+
+    replace(
+        path,
+        """            } else if (EntityDataSerializers.getSerializedId(data.serializer()) < 0) {""",
+        """            } else if (SynchedEntityData.eturlia$serializerId(data.serializer()) < 0) { // Eturlia - a modded serializer is not unregistered""",
+        "Builder.define accepts a modded serializer",
+    )
+
+    replace(
+        path,
+        """    public static record DataValue<T>(int id, EntityDataSerializer<T> serializer, T value) {""",
+        """    // Eturlia start - NeoForge's entity data serializer numbering
+    /**
+     * NeoForge keeps modded serializers in a registry of its own and puts them on the wire as
+     * {@code registry id + 256}, leaving vanilla's table alone below 256. Its clients decode with
+     * the same rule, so this is not a choice: an id this server invents decodes to nothing there,
+     * and the player is dropped with "Unknown serializer type NN" on the first modded mob it sees.
+     *
+     * <p>Resolved lazily and reflectively - a Folia server with no NeoForge on it keeps vanilla's
+     * answers, and nothing here loads NeoForge's classes earlier than it would load them anyway.</p>
+     */
+    private static volatile net.minecraft.core.Registry<EntityDataSerializer<?>> eturlia$moddedSerializers;
+    private static volatile boolean eturlia$moddedSerializersResolved;
+
+    @SuppressWarnings("unchecked")
+    private static net.minecraft.core.Registry<EntityDataSerializer<?>> eturlia$moddedSerializers() {
+        if (!SynchedEntityData.eturlia$moddedSerializersResolved) {
+            net.minecraft.core.Registry<EntityDataSerializer<?>> resolved = null;
+            try {
+                resolved = (net.minecraft.core.Registry<EntityDataSerializer<?>>) Class
+                        .forName("net.neoforged.neoforge.registries.NeoForgeRegistries")
+                        .getField("ENTITY_DATA_SERIALIZERS").get(null);
+            } catch (ReflectiveOperationException | RuntimeException | LinkageError noNeoForge) {
+                resolved = null;
+            }
+            // Publish the registry before the flag, so another thread never reads the flag alone.
+            SynchedEntityData.eturlia$moddedSerializers = resolved;
+            SynchedEntityData.eturlia$moddedSerializersResolved = true;
+        }
+        return SynchedEntityData.eturlia$moddedSerializers;
+    }
+
+    /** The wire id for a serializer, or -1 if neither vanilla nor a mod owns it. */
+    public static int eturlia$serializerId(EntityDataSerializer<?> serializer) {
+        int vanilla = EntityDataSerializers.getSerializedId(serializer);
+        if (vanilla >= 0) {
+            return vanilla;
+        }
+        net.minecraft.core.Registry<EntityDataSerializer<?>> registry = SynchedEntityData.eturlia$moddedSerializers();
+        if (registry == null) {
+            return -1;
+        }
+        int modded = registry.getId(serializer);
+        return modded < 0 ? -1 : modded + 256;
+    }
+
+    /** The serializer a wire id names, or null if this server does not have it. */
+    public static EntityDataSerializer<?> eturlia$serializerById(int id) {
+        EntityDataSerializer<?> vanilla = EntityDataSerializers.getSerializer(id);
+        if (vanilla != null) {
+            return vanilla;
+        }
+        net.minecraft.core.Registry<EntityDataSerializer<?>> registry = SynchedEntityData.eturlia$moddedSerializers();
+        return registry == null ? null : registry.byId(id - 256);
+    }
+    // Eturlia end
+
+    public static record DataValue<T>(int id, EntityDataSerializer<T> serializer, T value) {""",
+        "SynchedEntityData carries the serializer numbering",
+    )
+
+    # Vanilla's table is left exactly as vanilla built it; Main only reports what mods added.
     path = SERVER + "/net/minecraft/server/Main.java"
     replace(
         path,
@@ -898,18 +994,18 @@ def install_data_serializers():
                         eturliaError);
             }
             // Eturlia end
-            // Eturlia start - and the same for entity data serializers
+            // Eturlia start - say how modded entity data serializers will be numbered
             try {
-                int eturliaSerializers = eturlia$rebuildDataSerializers();
+                int eturliaSerializers = eturlia$reportDataSerializers();
                 if (eturliaSerializers > 0) {
-                    LOGGER.info("Eturlia: gave {} modded entity data serializers a wire id", eturliaSerializers);
+                    LOGGER.info("Eturlia: {} modded entity data serializers will go out as NeoForge numbers them",
+                            eturliaSerializers);
                 }
             } catch (RuntimeException | LinkageError eturliaError) {
-                LOGGER.error("Eturlia: failed to register modded entity data serializers; "
-                        + "mobs from mods will fail to spawn", eturliaError);
+                LOGGER.error("Eturlia: could not read the modded entity data serializer registry", eturliaError);
             }
             // Eturlia end""",
-        "Main rebuilds entity data serializers",
+        "Main reports entity data serializers",
     )
 
     replace(
@@ -917,19 +1013,14 @@ def install_data_serializers():
         "    public static void eturlia$bootFromOptions(",
         """    // Eturlia start - modded entity data serializers
     /**
-     * Gives every modded {@code EntityDataSerializer} the wire id it never got.
+     * Lists the modded entity data serializers and the wire id each one will travel under.
      *
-     * <p>NeoForge keeps these in a registry of its own and patches
-     * {@code EntityDataSerializers} to read ids from there. Eturlia's copy of that class is
-     * vanilla, so a mod's serializer is unknown to it and every mob using one dies at spawn with
-     * "Unregistered serializer ... for 8!".</p>
-     *
-     * <p>The ids have to agree with the client, which is a stock NeoForge client reading ids from
-     * the registry. So the registry is the authority here: if it disagrees with vanilla's table
-     * about any serializer both know, the table is rebuilt in registry order; otherwise the
-     * missing entries are simply appended, which lands them on the same numbers.</p>
+     * <p>Nothing is registered or renumbered here. NeoForge's rule - vanilla's own table below
+     * 256, everything modded at {@code registry id + 256} - is implemented in
+     * {@code SynchedEntityData}, and both sides of the connection follow it. This is only so a
+     * kicked client can be compared against what the server believed.</p>
      */
-    private static int eturlia$rebuildDataSerializers() {
+    private static int eturlia$reportDataSerializers() {
         final Object raw;
         try {
             raw = Class.forName("net.neoforged.neoforge.registries.NeoForgeRegistries")
@@ -941,65 +1032,30 @@ def install_data_serializers():
         final net.minecraft.core.Registry<net.minecraft.network.syncher.EntityDataSerializer<?>> registry =
                 (net.minecraft.core.Registry<net.minecraft.network.syncher.EntityDataSerializer<?>>) raw;
 
-        boolean agrees = true;
-        boolean knowsVanilla = false;
+        StringBuilder modded = new StringBuilder();
+        int count = 0;
         for (net.minecraft.network.syncher.EntityDataSerializer<?> serializer : registry) {
-            int vanillaId = net.minecraft.network.syncher.EntityDataSerializers.getSerializedId(serializer);
-            if (vanillaId < 0) {
-                continue;
+            if (net.minecraft.network.syncher.EntityDataSerializers.getSerializedId(serializer) >= 0) {
+                continue; // vanilla owns it already, and keeps its low id
             }
-            knowsVanilla = true;
-            if (vanillaId != registry.getId(serializer)) {
-                agrees = false;
-                break;
-            }
+            net.minecraft.resources.ResourceLocation key = registry.getKey(serializer);
+            modded.append(modded.length() == 0 ? "" : ", ")
+                    .append(registry.getId(serializer) + 256)
+                    .append('=')
+                    .append(key == null ? serializer.getClass().getName() : key.toString());
+            count++;
         }
-
-        if (!agrees && knowsVanilla) {
-            LOGGER.warn("Eturlia: NeoForge numbers entity data serializers differently from vanilla; "
-                    + "rebuilding the table in registry order so clients agree");
-            return eturlia$mirrorDataSerializers(registry);
+        if (count > 0) {
+            LOGGER.info("Eturlia: modded entity data serializers on the wire: {}", modded);
         }
-
-        int added = 0;
-        for (net.minecraft.network.syncher.EntityDataSerializer<?> serializer : registry) {
-            if (net.minecraft.network.syncher.EntityDataSerializers.getSerializedId(serializer) < 0) {
-                net.minecraft.network.syncher.EntityDataSerializers.registerSerializer(serializer);
-                added++;
-            }
-        }
-        return added;
+        return count;
     }
-
-    /** Replaces vanilla's serializer table with the registry's, entry for entry. */
-    private static int eturlia$mirrorDataSerializers(
-            net.minecraft.core.Registry<net.minecraft.network.syncher.EntityDataSerializer<?>> registry) {
-        try {
-            java.lang.reflect.Field field = net.minecraft.network.syncher.EntityDataSerializers.class
-                    .getDeclaredField("SERIALIZERS");
-            field.setAccessible(true);
-            Object table = field.get(null);
-            java.lang.reflect.Method clear = table.getClass().getMethod("clear");
-            clear.invoke(table);
-        } catch (ReflectiveOperationException | RuntimeException e) {
-            LOGGER.error("Eturlia: could not clear vanilla's entity data serializer table", e);
-            return 0;
-        }
-        int added = 0;
-        for (net.minecraft.network.syncher.EntityDataSerializer<?> serializer : registry) {
-            net.minecraft.network.syncher.EntityDataSerializers.registerSerializer(serializer);
-            added++;
-        }
-        return added;
-    }
-    // Eturlia end - modded entity data serializers
+    // Eturlia end
 
     public static void eturlia$bootFromOptions(""",
-        "Main.eturlia$rebuildDataSerializers",
+        "Main carries the serializer report",
     )
 
-
-# ----------------------------------------------------------------- folia stubs
 
 def install_tick_count():
     """Folia has no single tick counter; mods ask for one every tick anyway."""
@@ -4374,6 +4430,326 @@ def install_quarantine():
     )
 
 
+def install_holder_or_throw_shape():
+    """holderOrThrow answers Holder, the way NeoForge declares it."""
+    print("holderOrThrow plane")
+    replace(
+        SERVER + "/net/minecraft/core/HolderLookup.java",
+        """        default <T> Holder.Reference<T> holderOrThrow(ResourceKey<T> key) {""",
+        """        // Eturlia - NeoForge's IHolderLookupProviderExtension declares this as Holder<T>, and a
+        // return type is part of the descriptor: answering Holder.Reference made every mod compiled
+        // against NeoForge fail with
+        //   NoSuchMethodError: net.minecraft.core.Holder RegistryAccess.holderOrThrow(ResourceKey)
+        default <T> Holder<T> holderOrThrow(ResourceKey<T> key) {""",
+        "holderOrThrow returns Holder",
+    )
+
+
+def install_internal_exception_detail():
+    """An internal-exception disconnect says what actually threw."""
+    print("internal exception plane")
+    replace(
+        SERVER + "/net/minecraft/network/Connection.java",
+        """                } else {
+                    MutableComponent ichatmutablecomponent = Component.translatable("disconnect.genericReason", "Internal Exception: " + String.valueOf(throwable));""",
+        """                } else {
+                    // Eturlia start - say what actually threw
+                    // Vanilla puts the exception's toString in the kick screen and logs the stack at
+                    // DEBUG, so a codec that cannot encode a modded payload leaves one truncated line
+                    // and nothing to chase. A codec fault is a bug in the server's own compatibility
+                    // layer, so it is worth an ERROR with the whole chain; a dropped socket is not.
+                    if (throwable instanceof io.netty.handler.codec.EncoderException
+                            || throwable instanceof io.netty.handler.codec.DecoderException) {
+                        Connection.LOGGER.error("Eturlia: {} while talking to {}",
+                                throwable.getClass().getSimpleName(), this.getLoggableAddress(true), throwable);
+                    }
+                    // Eturlia end - say what actually threw
+                    MutableComponent ichatmutablecomponent = Component.translatable("disconnect.genericReason", "Internal Exception: " + String.valueOf(throwable));""",
+        "internal exception carries its cause",
+    )
+
+
+def install_sendable_recipes():
+    """A recipe the server cannot encode is left out of update_recipes instead of killing the join."""
+    print("sendable recipes plane")
+    path = SERVER + "/net/minecraft/server/players/PlayerList.java"
+
+    replace(
+        path,
+        """        playerconnection.send(new ClientboundUpdateRecipesPacket(this.server.getRecipeManager().getOrderedRecipes()));""",
+        """        playerconnection.send(new ClientboundUpdateRecipesPacket(this.eturlia$sendableRecipes())); // Eturlia - skip what cannot be encoded""",
+        "join sends only sendable recipes",
+    )
+
+    replace(
+        path,
+        """        ClientboundUpdateRecipesPacket packetplayoutrecipeupdate = new ClientboundUpdateRecipesPacket(this.server.getRecipeManager().getOrderedRecipes());""",
+        """        PlayerList.eturlia$sendableRecipes = null; // Eturlia - a reload can change the recipe list
+        ClientboundUpdateRecipesPacket packetplayoutrecipeupdate = new ClientboundUpdateRecipesPacket(this.eturlia$sendableRecipes()); // Eturlia - skip what cannot be encoded""",
+        "reload sends only sendable recipes",
+    )
+
+    replace(
+        path,
+        """    private static final Logger LOGGER = LogUtils.getLogger();""",
+        """    private static final Logger LOGGER = LogUtils.getLogger();
+
+    // Eturlia start - a recipe the server cannot write must not cost the player their session
+    private static volatile java.util.List<net.minecraft.world.item.crafting.RecipeHolder<?>> eturlia$sendableRecipes;
+
+    /**
+     * The ordered recipe list, minus every recipe that throws while being written to the network.
+     *
+     * <p>A datapack recipe with an empty result - this pack has one, from malum through Create's
+     * milling - makes the recipe's own serializer throw "Empty ItemStack not allowed", and the whole
+     * {@code clientbound/minecraft:update_recipes} packet dies with it. That packet is sent on join,
+     * so a single unserialisable recipe drops every player who logs in.</p>
+     *
+     * <p>Each recipe is written to a scratch buffer once and kept only if that worked, so this
+     * catches any serializer fault rather than the empty-result one alone. The answer is cached
+     * until a datapack reload clears it.</p>
+     */
+    private java.util.Collection<net.minecraft.world.item.crafting.RecipeHolder<?>> eturlia$sendableRecipes() {
+        java.util.List<net.minecraft.world.item.crafting.RecipeHolder<?>> cached = PlayerList.eturlia$sendableRecipes;
+        if (cached != null) {
+            return cached;
+        }
+
+        java.util.Collection<net.minecraft.world.item.crafting.RecipeHolder<?>> ordered =
+                this.server.getRecipeManager().getOrderedRecipes();
+        java.util.List<net.minecraft.world.item.crafting.RecipeHolder<?>> sendable =
+                new java.util.ArrayList<>(ordered.size());
+        java.util.List<net.minecraft.resources.ResourceLocation> dropped = new java.util.ArrayList<>();
+
+        io.netty.buffer.ByteBuf scratch = io.netty.buffer.Unpooled.buffer();
+        try {
+            net.minecraft.network.RegistryFriendlyByteBuf probe =
+                    new net.minecraft.network.RegistryFriendlyByteBuf(scratch, this.server.registryAccess());
+            for (net.minecraft.world.item.crafting.RecipeHolder<?> holder : ordered) {
+                scratch.clear();
+                try {
+                    net.minecraft.world.item.crafting.RecipeHolder.STREAM_CODEC.encode(probe, holder);
+                    sendable.add(holder);
+                } catch (RuntimeException | LinkageError unsendable) {
+                    dropped.add(holder.id());
+                }
+            }
+        } finally {
+            scratch.release();
+        }
+
+        if (!dropped.isEmpty()) {
+            LOGGER.warn("Eturlia: {} recipe(s) cannot be written to the network and were left out of "
+                    + "update_recipes; without this every join would fail: {}", dropped.size(), dropped);
+        }
+        PlayerList.eturlia$sendableRecipes = sendable;
+        return sendable;
+    }
+    // Eturlia end - sendable recipes""",
+        "PlayerList carries the sendable recipe filter",
+    )
+
+
+def install_encoder_failure_is_not_fatal():
+    """A packet the server cannot encode is dropped; the player stays connected."""
+    print("encoder failure plane")
+    replace(
+        SERVER + "/net/minecraft/network/Connection.java",
+        """                    if (throwable instanceof io.netty.handler.codec.EncoderException
+                            || throwable instanceof io.netty.handler.codec.DecoderException) {
+                        Connection.LOGGER.error("Eturlia: {} while talking to {}",
+                                throwable.getClass().getSimpleName(), this.getLoggableAddress(true), throwable);
+                    }
+                    // Eturlia end - say what actually threw""",
+        """                    if (throwable instanceof io.netty.handler.codec.EncoderException
+                            || throwable instanceof io.netty.handler.codec.DecoderException) {
+                        Connection.LOGGER.error("Eturlia: {} while talking to {}",
+                                throwable.getClass().getSimpleName(), this.getLoggableAddress(true), throwable);
+                    }
+                    // A packet this server cannot encode is this server's bug, and every mod payload
+                    // travels the same pipe: one unencodable payload would otherwise drop the player.
+                    // Netty has already released the buffer, so nothing half-written reached the
+                    // socket - the packet is simply lost, which beats losing the session. A packet we
+                    // cannot *decode* still disconnects: that one is malformed input from outside.
+                    if (throwable instanceof io.netty.handler.codec.EncoderException
+                            && !(throwable instanceof PacketEncoder.PacketTooLargeException)) {
+                        this.handlingFault = false;
+                        return;
+                    }
+                    // Eturlia end - say what actually threw""",
+        "an unencodable packet is dropped, not the player",
+    )
+
+
+def install_block_snapshot_fields():
+    """Level carries NeoForge's block-snapshot fields, so mods that touch them can load."""
+    print("block snapshot plane")
+    replace(
+        SERVER + "/net/minecraft/world/level/Level.java",
+        """    public final boolean isClientSide;""",
+        """    public final boolean isClientSide;
+
+    // Eturlia start - NeoForge's block snapshot family
+    // NeoForge puts these three on Level and mods read and write them directly; without them the
+    // first mod to touch one dies with
+    //   NoSuchFieldError: Class net.minecraft.world.level.Level does not have member field
+    //   'boolean captureBlockSnapshots'
+    // Eturlia does not record snapshots itself - CraftBukkit's captureBlockStates already covers
+    // that ground - so a mod that turns capture on reads an empty list back, which is exactly what
+    // it would see if nothing had happened. That is inert, and it binds.
+    public boolean restoringBlockSnapshots;
+    public boolean captureBlockSnapshots;
+    public java.util.ArrayList<net.neoforged.neoforge.common.util.BlockSnapshot> capturedBlockSnapshots = new java.util.ArrayList<>();
+    // Eturlia end - NeoForge's block snapshot family""",
+        "Level carries the block snapshot fields",
+    )
+
+
+def install_handle_portal_shape():
+    """handlePortal answers void, the way every mod compiled against NeoForge calls it."""
+    print("handlePortal plane")
+
+    path = SERVER + "/net/minecraft/world/entity/Entity.java"
+    replace(
+        path,
+        """    public boolean handlePortal() { // Folia - region threading - public, ret type -> boolean""",
+        """    // Eturlia start - handlePortal keeps NeoForge's signature
+    // Folia widened this to `public boolean` so ServerLevel can see whether the entity went
+    // through. A return type is part of the descriptor, so every mod that inherits and calls it
+    // died with
+    //   NoSuchMethodError: 'void <their entity>.handlePortal()'
+    // The answer Folia needs now lives under its own name, and handlePortal() is void again.
+    public void handlePortal() {
+        this.eturlia$handlePortalTick();
+    }
+
+    public boolean eturlia$handlePortalTick() { // Folia - region threading - public, ret type -> boolean
+    // Eturlia end - handlePortal keeps NeoForge's signature""",
+        "Entity.handlePortal is void again",
+    )
+
+    path = SERVER + "/net/minecraft/server/level/ServerLevel.java"
+    replace(
+        path,
+        """        if (entity.handlePortal()) {
+            // portalled
+            return;""",
+        """        if (entity.eturlia$handlePortalTick()) { // Eturlia - handlePortal() itself is void again
+            // portalled
+            return;""",
+        "ServerLevel asks the entity directly",
+    )
+
+    replace(
+        path,
+        """                if (passenger.handlePortal()) {
+                    // portalled
+                    return;
+                }""",
+        """                if (passenger.eturlia$handlePortalTick()) { // Eturlia - handlePortal() itself is void again
+                    // portalled
+                    return;
+                }""",
+        "ServerLevel asks the passenger directly",
+    )
+
+
+def install_sublevel_block_writes():
+    """A block in a level no region owns is nobody else's to tick, so writing it cannot race.
+
+    This is the block-update twin of install_sublevel_chunk_loads, and it is what stops a Create
+    Aeronautics airship from moving. Sable builds its physics sub-level from the player's region
+    thread and then writes blocks into it. Folia refuses twice over:
+
+        IllegalStateException: Updating block asynchronously        (ensureTickThread)
+        IllegalStateException: World mismatch: expected ... but got ...   (getCurrentWorldData)
+
+    Sable catches the first one per block and logs "Failed to mark & notify block", so the
+    contraption is assembled but never marked, and nothing drives it - the airship sits still with
+    no error a player can see. The second one aborts /sable spawn outright.
+
+    Both are relaxed on the same condition as the chunk-load plane: the regioniser says no region
+    covers the chunk, so there is no tick to race with. A chunk another region owns is still
+    refused. `-Deturlia.compat.sublevel-chunks=strict` restores Folia's refusal here too.
+    """
+    print("sublevel block write plane")
+
+    path = SERVER + "/net/minecraft/world/level/Level.java"
+    replace(
+        path,
+        """    public io.papermc.paper.threadedregions.RegionizedWorldData eturlia$offRegionWorldData() {""",
+        """    // Eturlia start - may this thread write the block at pos in this level?
+    /**
+     * True when writing {@code pos} from this thread cannot race a region tick: either this thread
+     * ticks the region that owns it, or no region owns it at all. A sub-level a mod has just built
+     * is the second case - it has chunks, but nothing is ticking them yet.
+     */
+    public static boolean eturlia$mayWriteBlock(Level level, BlockPos pos) {
+        if (!(((Object) level) instanceof net.minecraft.server.level.ServerLevel serverLevel)) {
+            return false;
+        }
+        if (ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(serverLevel, pos)) {
+            return true;
+        }
+        if ("strict".equalsIgnoreCase(System.getProperty("eturlia.compat.sublevel-chunks", "lenient"))) {
+            return false;
+        }
+        try {
+            return serverLevel.regioniser.getRegionAtUnsynchronised(pos.getX() >> 4, pos.getZ() >> 4) == null;
+        } catch (Throwable thrown) {
+            return false;
+        }
+    }
+    // Eturlia end - may this thread write the block at pos in this level?
+
+    public io.papermc.paper.threadedregions.RegionizedWorldData eturlia$offRegionWorldData() {""",
+        "Level can say whether a block write is safe",
+    )
+
+    replace(
+        path,
+        """        ca.spottedleaf.moonrise.common.util.TickThread.ensureTickThread((ServerLevel)this, pos, "Updating block asynchronously"); // Folia - region threading""",
+        """        if (!Level.eturlia$mayWriteBlock((ServerLevel) this, pos)) { // Eturlia - a chunk no region owns has no tick to race
+            ca.spottedleaf.moonrise.common.util.TickThread.ensureTickThread((ServerLevel)this, pos, "Updating block asynchronously"); // Folia - region threading
+        }""",
+        "Level.setBlock allows a write no region owns",
+    )
+
+    replace(
+        path,
+        """            if (!net.minecraft.server.MinecraftServer.eturlia$strictFoliaStubs() && !(((Object) this) instanceof ServerLevel)) {
+                return ret;
+            }
+            // Eturlia end - a wrapper level borrows the region it is being used from
+            throw new IllegalStateException("World mismatch: expected " + this.getWorld().getName() + " but got " + world.getWorld().getName());""",
+        """            if (!net.minecraft.server.MinecraftServer.eturlia$strictFoliaStubs() && !(((Object) this) instanceof ServerLevel)) {
+                return ret;
+            }
+            // A sub-level a mod built and is driving itself is a ServerLevel, so it does not take
+            // the branch above - and lending it another world's capture state would be wrong, since
+            // that state belongs to the region actually being ticked. Its own empty off-region data
+            // is the honest answer: no capture in progress, nothing captured.
+            if (!net.minecraft.server.MinecraftServer.eturlia$strictFoliaStubs()) {
+                io.papermc.paper.threadedregions.RegionizedWorldData own = this.eturlia$offRegionWorldData();
+                if (own != null) {
+                    return own;
+                }
+            }
+            // Eturlia end - a wrapper level borrows the region it is being used from
+            throw new IllegalStateException("World mismatch: expected " + this.getWorld().getName() + " but got " + world.getWorld().getName());""",
+        "a sub-level answers with its own data instead of throwing",
+    )
+
+    replace(
+        SERVER + "/net/minecraft/world/level/chunk/LevelChunk.java",
+        """        ca.spottedleaf.moonrise.common.util.TickThread.ensureTickThread(this.level, blockposition, "Updating block asynchronously"); // Folia - region threading""",
+        """        if (!net.minecraft.world.level.Level.eturlia$mayWriteBlock(this.level, blockposition)) { // Eturlia - a chunk no region owns has no tick to race
+            ca.spottedleaf.moonrise.common.util.TickThread.ensureTickThread(this.level, blockposition, "Updating block asynchronously"); // Folia - region threading
+        }""",
+        "LevelChunk.setBlockState allows a write no region owns",
+    )
+
+
 if __name__ == "__main__":
     install_mixin_compat()
     install_plugin_compat()
@@ -4386,6 +4762,12 @@ if __name__ == "__main__":
     install_bukkit_type_bridges()
     install_capability_accessors()
     install_data_serializers()
+    install_holder_or_throw_shape()
+    install_internal_exception_detail()
+    install_sendable_recipes()
+    install_encoder_failure_is_not_fatal()
+    install_block_snapshot_fields()
+    install_handle_portal_shape()
     install_tick_count()
     install_tag_diagnostics()
     install_plugin_remapping()
@@ -4437,4 +4819,5 @@ if __name__ == "__main__":
     install_dispatch_timing()
     install_shape_compat()
     install_quarantine()
+    install_sublevel_block_writes()
     print("done")
