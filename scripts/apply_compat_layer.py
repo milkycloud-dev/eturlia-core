@@ -4750,6 +4750,169 @@ def install_sublevel_block_writes():
     )
 
 
+
+def install_loot_unknown_key_summary():
+    """A mod's loot table naming content it never registered is dead data, not 100 errors.
+
+    letsdo-furniture ships loot tables for grandfather clocks it does not register - the id is in
+    neither the block registry nor the item registry - so every boot printed over a hundred
+
+        Couldn't parse element minecraft:loot_table/furniture:blocks/aspen_grandfather_clock
+            - Unknown registry key in ResourceKey[minecraft:root / minecraft:item]: furniture:...
+
+    Nothing is broken by it: the block does not exist either, so no drop is lost. But a console
+    that cries a hundred times a boot is a console nobody reads, and the next real loot error
+    would be buried in it. The failures are still counted and still named - once, per namespace,
+    with the first id as evidence - and anything that is not an unknown registry key is still
+    reported line by line exactly as vanilla reports it.
+    """
+    print("loot noise plane")
+    path = SERVER + "/net/minecraft/world/level/storage/loot/LootDataType.java"
+    replace(
+        path,
+        """        dataresult.error().ifPresent((error) -> {
+            LootDataType.LOGGER.error("Couldn't parse element {}/{} - {}", new Object[]{this.registryKey.location(), id, error.message()});
+        });""",
+        """        dataresult.error().ifPresent((error) -> {
+            // Eturlia start - content this server does not have is summarised, not shouted
+            if (LootDataType.eturlia$isUnknownRegistryKey(error.message())) {
+                LootDataType.eturlia$countUnknownKey(id, error.message());
+                return;
+            }
+            // Eturlia end - content this server does not have is summarised, not shouted
+            LootDataType.LOGGER.error("Couldn't parse element {}/{} - {}", new Object[]{this.registryKey.location(), id, error.message()});
+        });""",
+        "LootDataType summarises unknown registry keys",
+    )
+
+    replace(
+        path,
+        """    public static Stream<LootDataType<?>> values() {""",
+        """    // Eturlia start - loot data that names content this server does not have
+    private static final java.util.Map<String, int[]> ETURLIA_UNKNOWN_KEYS = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.Map<String, String> ETURLIA_UNKNOWN_FIRST = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** True for the "there is no such block/item/... " failure, and only for that one. */
+    private static boolean eturlia$isUnknownRegistryKey(String message) {
+        return message != null && message.contains("Unknown registry key");
+    }
+
+    /** Counts one such failure against the namespace that shipped it. */
+    private static void eturlia$countUnknownKey(ResourceLocation id, String message) {
+        String namespace = id == null ? "unknown" : id.getNamespace();
+        ETURLIA_UNKNOWN_KEYS.computeIfAbsent(namespace, (key) -> new int[1])[0]++;
+        ETURLIA_UNKNOWN_FIRST.putIfAbsent(namespace, String.valueOf(id) + " - " + message);
+    }
+
+    /**
+     * Says once, per namespace, how much loot data pointed at content that is not here.
+     *
+     * <p>Called when the reload that produced them has finished, so the count is the whole
+     * picture rather than whatever had been parsed by the time the first one failed.</p>
+     */
+    public static void eturlia$reportUnknownKeys() {
+        if (ETURLIA_UNKNOWN_KEYS.isEmpty()) {
+            return;
+        }
+        for (java.util.Map.Entry<String, int[]> entry : ETURLIA_UNKNOWN_KEYS.entrySet()) {
+            LootDataType.LOGGER.warn(
+                    "Eturlia: {} loot entries from '{}' name content this server does not have, "
+                            + "so they were skipped; nothing drops them and nothing else is affected. First: {}",
+                    entry.getValue()[0], entry.getKey(), ETURLIA_UNKNOWN_FIRST.get(entry.getKey()));
+        }
+        ETURLIA_UNKNOWN_KEYS.clear();
+        ETURLIA_UNKNOWN_FIRST.clear();
+    }
+    // Eturlia end - loot data that names content this server does not have
+
+    public static Stream<LootDataType<?>> values() {""",
+        "LootDataType carries the unknown-key census",
+    )
+
+    # Say it when the reload that produced them has finished parsing everything.
+    replace(
+        SERVER + "/net/minecraft/server/ReloadableServerRegistries.java",
+        """        collector.get().forEach((path, message) -> LOGGER.warn("Found loot table element validation problem in {}: {}", path, message));
+        return layeredRegistryAccess;""",
+        """        collector.get().forEach((path, message) -> LOGGER.warn("Found loot table element validation problem in {}: {}", path, message));
+        // Eturlia start - one line for loot data naming content this server does not have
+        try {
+            net.minecraft.world.level.storage.loot.LootDataType.eturlia$reportUnknownKeys();
+        } catch (RuntimeException | LinkageError ignored) {
+            // a summary is never worth failing a reload over
+        }
+        // Eturlia end - one line for loot data naming content this server does not have
+        return layeredRegistryAccess;""",
+        "ReloadableServerRegistries says the loot summary once",
+    )
+
+
+def install_nested_loot_table_alias():
+    """A nested loot table entry may still say "name", the way it did before 1.21.
+
+    1.21 renamed the field on a `minecraft:loot_table` pool entry from `name` to `value`. Mods
+    shipping loot data written for 1.20 still say `name`, and vanilla answers
+
+        Couldn't parse element minecraft:loot_table/beautify:blocks/crimson_trellis
+            - No key value in MapLike[{"type":"minecraft:loot_table","name":"beautify:blocks/...
+
+    which is not cosmetic: the whole table fails, so the block drops nothing at all. beautify's
+    trellises are the case that found it - every flowering variant drops air.
+
+    The entry now reads `value`, and falls back to `name`. Writing is unchanged: it always emits
+    `value`, so nothing is propagated back out in the old shape. `-Deturlia.compat.loot-alias=strict`
+    restores the 1.21-only field.
+    """
+    print("nested loot table alias plane")
+    import shutil
+
+    target = SERVER + "/net/minecraft/world/level/storage/loot/entries/NestedLootTable.java"
+    if not os.path.exists(target):
+        source = ("Folia-Server/.gradle/caches/paperweight/mc-dev-sources"
+                  "/net/minecraft/world/level/storage/loot/entries/NestedLootTable.java")
+        if not os.path.exists(source):
+            raise SystemExit("!! anchor missing: decompiled NestedLootTable.java not in the "
+                             "paperweight cache - run applyPatches first")
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        shutil.copyfile(source, target)
+        print("  materialised NestedLootTable.java from the mc-dev sources")
+
+    replace(
+        target,
+        """                    Codec.either(ResourceKey.codec(Registries.LOOT_TABLE), LootTable.DIRECT_CODEC).fieldOf("value").forGetter(entry -> entry.contents)""",
+        """                    eturlia$contentsCodec().forGetter(entry -> entry.contents) // Eturlia - "name" is what this field was called before 1.21""",
+        "NestedLootTable reads the aliased field",
+    )
+
+    replace(
+        target,
+        """    private final Either<ResourceKey<LootTable>, LootTable> contents;""",
+        """    private final Either<ResourceKey<LootTable>, LootTable> contents;
+
+    // Eturlia start - a nested loot table entry may still say "name"
+    /**
+     * Reads {@code value}, falling back to {@code name}.
+     *
+     * <p>Always writes {@code value}: the old spelling is accepted, never produced.</p>
+     */
+    private static MapCodec<Either<ResourceKey<LootTable>, LootTable>> eturlia$contentsCodec() {
+        Codec<Either<ResourceKey<LootTable>, LootTable>> codec =
+                Codec.either(ResourceKey.codec(Registries.LOOT_TABLE), LootTable.DIRECT_CODEC);
+        if ("strict".equalsIgnoreCase(System.getProperty("eturlia.compat.loot-alias", "lenient"))) {
+            return codec.fieldOf("value");
+        }
+        MapCodec<Either<Either<ResourceKey<LootTable>, LootTable>, Either<ResourceKey<LootTable>, LootTable>>> aliased =
+                Codec.mapEither(codec.fieldOf("value"), codec.fieldOf("name"));
+        return aliased.xmap(
+                (read) -> read.map(
+                        (modern) -> modern,
+                        (legacy) -> legacy),
+                (write) -> Either.left(write));
+    }
+    // Eturlia end - the old field name is accepted, never produced""",
+        "NestedLootTable carries the aliased codec",
+    )
+
 if __name__ == "__main__":
     install_mixin_compat()
     install_plugin_compat()
@@ -4820,4 +4983,6 @@ if __name__ == "__main__":
     install_shape_compat()
     install_quarantine()
     install_sublevel_block_writes()
+    install_loot_unknown_key_summary()
+    install_nested_loot_table_alias()
     print("done")
