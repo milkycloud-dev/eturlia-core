@@ -52,6 +52,7 @@ public final class EturliaProbe extends JavaPlugin {
             case "registryaudit" -> this.registryAudit(sender, args);
             case "track" -> this.track(sender, args);
             case "sublevels" -> this.subLevels(sender, args);
+            case "blockstate" -> this.blockStates(sender, args);
             default -> sender.sendMessage("eprobe entities | menus | biomes | worldgen | levels | item <id>");
         }
         return true;
@@ -673,6 +674,67 @@ public final class EturliaProbe extends JavaPlugin {
         } catch (Throwable thrown) {
             return "could not read sable's sub-levels: " + thrown;
         }
+    }
+
+    // ------------------------------------------------------------------ block states
+
+    /**
+     * Places each block next to a player and asks it for its Bukkit state, the way a plugin does.
+     *
+     * <p>Every plugin that listens for an interact or a break calls {@code block.getState()}. A
+     * modded block entity borrowing a vanilla Material used to hand back a wrong-typed state and
+     * throw a ClassCastException inside the plugin - WorldGuard and CoreProtect both - so the
+     * handler never finished and the action silently failed for the player. This is the test for
+     * that: no exception here means the plugins see a state they can read.</p>
+     */
+    private void blockStates(CommandSender sender, String[] args) {
+        Player player = sender instanceof Player p ? p : firstOnline();
+        if (player == null) {
+            sender.sendMessage("eprobe blockstate: needs one player online");
+            return;
+        }
+        if (args.length < 4) {
+            sender.sendMessage("usage: eprobe blockstate <x> <y> <z> [count-along-x]");
+            return;
+        }
+        final int bx;
+        final int by;
+        final int bz;
+        final int span;
+        try {
+            bx = Integer.parseInt(args[1]);
+            by = Integer.parseInt(args[2]);
+            bz = Integer.parseInt(args[3]);
+            span = args.length > 4 ? Math.max(1, Integer.parseInt(args[4])) : 1;
+        } catch (NumberFormatException bad) {
+            sender.sendMessage("eprobe blockstate: " + bad.getMessage());
+            return;
+        }
+        Path report = this.getDataFolder().toPath().resolve("blockstates.tsv");
+        org.bukkit.World world = player.getWorld();
+        Location at = new Location(world, bx, by, bz);
+        this.getServer().getRegionScheduler().execute(this, at, () -> {
+            List<String> rows = new ArrayList<>();
+            rows.add("position	block	outcome");
+            int threw = 0;
+            for (int i = 0; i < span; i++) {
+                org.bukkit.block.Block block = world.getBlockAt(bx + i, by, bz);
+                String what = block.getType().getKey().toString();
+                String outcome;
+                try {
+                    Object state = block.getState();
+                    outcome = "state " + shortName(state.getClass().getName());
+                } catch (Throwable thrown) {
+                    outcome = describe(thrown);
+                    threw++;
+                }
+                rows.add((bx + i) + "," + by + "," + bz + "	" + what + "	" + outcome);
+                sender.sendMessage("eprobe blockstate: " + (bx + i) + "," + by + "," + bz
+                        + " " + what + " -> " + outcome);
+            }
+            write(report, rows);
+            sender.sendMessage("eprobe blockstate: " + span + " read, " + threw + " threw -> " + report);
+        });
     }
 
     // ------------------------------------------------------------------ menus
