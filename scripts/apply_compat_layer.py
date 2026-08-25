@@ -5077,6 +5077,73 @@ def install_sublevel_plot_writes():
         "a plot position is writable from a region thread",
     )
 
+
+def install_modded_block_entity_states():
+    """A modded block entity borrowing a vanilla Material must not be cast to that vanilla type.
+
+    `CraftBlockStates.getBlockState` picks the factory by block entity type first and falls back to
+    the block's Material. A modded block entity is in neither table, so the Material decides - and
+    vinery's fermentation barrel reports a Material whose factory builds a `CraftChest`, which casts
+    the handle:
+
+        ClassCastException: net.satisfy.vinery.core.block.entity.FermentationBarrelBlockEntity
+            cannot be cast to net.minecraft.world.level.block.entity.ChestBlockEntity
+
+    Plugins read `block.getState()` on every interact and break, so this fires inside WorldGuard and
+    CoreProtect rather than in the mod, and the handler dies with it. What a player sees is a block
+    that will not open, and blocks that come back after being broken or placed - the event handler
+    that was supposed to allow the action never finished, so the client and server disagree.
+
+    An earlier plane already covered the case where the block entity is *missing*. This is the other
+    half: it is present, and it is not what the factory expects. When the block entity type is not
+    the one the factory was registered with, the plain state is the honest answer - a plugin gets a
+    `BlockState` it can read position and type from instead of an exception.
+
+    `-Deturlia.compat.block-entity-states=strict` restores the cast.
+    """
+    print("modded block entity state plane")
+    replace(
+        SERVER + "/org/bukkit/craftbukkit/block/CraftBlockStates.java",
+        """    private static final Map<BlockEntityType<?>, BlockStateFactory<?>> FACTORIES_BY_BLOCK_ENTITY_TYPE = new HashMap<>();""",
+        """    // Eturlia start - a plain state for a block entity this server cannot interpret
+    // DEFAULT_FACTORY asserts the block entity is null, so it cannot be reused for a block entity
+    // that is present and simply is not the one the Material's factory expects. This one answers
+    // the block's own data and leaves the block entity alone.
+    private static final BlockStateFactory<?> ETURLIA_PLAIN_FACTORY = new BlockStateFactory<CraftBlockState>(CraftBlockState.class) {
+        @Override
+        public CraftBlockState createBlockState(World world, BlockPos blockPosition, net.minecraft.world.level.block.state.BlockState blockData, BlockEntity tileEntity) {
+            return new CraftBlockState(world, blockPosition, blockData);
+        }
+    };
+    // Eturlia end - a plain state for a block entity this server cannot interpret
+
+    private static final Map<BlockEntityType<?>, BlockStateFactory<?>> FACTORIES_BY_BLOCK_ENTITY_TYPE = new HashMap<>();""",
+        "CraftBlockStates carries a plain factory",
+    )
+
+    replace(
+        SERVER + "/org/bukkit/craftbukkit/block/CraftBlockStates.java",
+        """        if (world != null && tileEntity == null && factory instanceof BlockEntityStateFactory) {
+            factory = CraftBlockStates.DEFAULT_FACTORY;
+        }
+        // Eturlia end - a modded block borrows a vanilla Material, not its block entity""",
+        """        if (world != null && tileEntity == null && factory instanceof BlockEntityStateFactory) {
+            factory = CraftBlockStates.DEFAULT_FACTORY;
+        }
+        // And the other half: the block entity is there, but it is not the one this factory casts
+        // to. A modded block entity is in neither lookup table, so the Material picked the factory,
+        // and the Material is only a stand-in.
+        if (tileEntity != null && factory instanceof BlockEntityStateFactory<?, ?> eturlia$typed
+                && !"strict".equalsIgnoreCase(System.getProperty("eturlia.compat.block-entity-states", "lenient"))) {
+            BlockEntityType<?> eturlia$wanted = eturlia$typed.tileEntityConstructor;
+            if (eturlia$wanted != null && tileEntity.getType() != eturlia$wanted) {
+                factory = CraftBlockStates.ETURLIA_PLAIN_FACTORY;
+            }
+        }
+        // Eturlia end - a modded block borrows a vanilla Material, not its block entity""",
+        "CraftBlockStates refuses a mismatched block entity",
+    )
+
 if __name__ == "__main__":
     install_mixin_compat()
     install_plugin_compat()
@@ -5151,4 +5218,5 @@ if __name__ == "__main__":
     install_nested_loot_table_alias()
     install_sublevel_plot_writes()
     install_virtual_chunk_lookup()
+    install_modded_block_entity_states()
     print("done")
