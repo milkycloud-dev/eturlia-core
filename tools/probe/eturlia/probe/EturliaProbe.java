@@ -54,6 +54,7 @@ public final class EturliaProbe extends JavaPlugin {
             case "sublevels" -> this.subLevels(sender, args);
             case "blockstate" -> this.blockStates(sender, args);
             case "openblock" -> this.openBlock(sender, args);
+            case "dynreg" -> this.dynamicRegistries(sender, args);
             default -> sender.sendMessage("eprobe entities | menus | biomes | worldgen | levels | item <id>");
         }
         return true;
@@ -793,6 +794,74 @@ public final class EturliaProbe extends JavaPlugin {
             write(this.getDataFolder().toPath().resolve("openblock.tsv"),
                     List.of("position\toutcome", bx + "," + by + "," + bz + "\t" + outcome));
         });
+    }
+
+    // ------------------------------------------------------------------ dynamic registries
+
+    /**
+     * Counts the entries in every datapack registry the server loaded.
+     *
+     * <p>A mod can define its own datapack registry - Create keeps potato cannon ammunition in
+     * {@code create:potato_projectile/type}, thirty-three files shipped inside the jar. If such a
+     * registry comes up empty, everything that reads it silently gets null: a potato projectile
+     * with no type throws NullPointerException on its first tick, every tick, and the player who
+     * fired it sees the server stumble. Nothing in the log says "this registry is empty", so the
+     * count has to be asked for.</p>
+     */
+    private void dynamicRegistries(CommandSender sender, String[] args) {
+        String filter = args.length > 1 ? args[1].toLowerCase(java.util.Locale.ROOT) : "";
+        Path report = this.getDataFolder().toPath().resolve("dynreg.tsv");
+        try {
+            Object server = this.getServer().getClass().getMethod("getServer").invoke(this.getServer());
+            Object access = null;
+            for (java.lang.reflect.Method method : server.getClass().getMethods()) {
+                if ("registryAccess".equals(method.getName()) && method.getParameterCount() == 0) {
+                    access = method.invoke(server);
+                    break;
+                }
+            }
+            if (access == null) {
+                sender.sendMessage("eprobe dynreg: no registryAccess on this server");
+                return;
+            }
+            // registries() gives every registry the server holds, dynamic ones included.
+            Object stream = access.getClass().getMethod("registries").invoke(access);
+            List<String> rows = new ArrayList<>();
+            rows.add("registry\tentries");
+            List<String> empty = new ArrayList<>();
+            int counted = 0;
+            for (Object entry : ((java.util.stream.Stream<?>) stream).toList()) {
+                Object key = entry.getClass().getMethod("key").invoke(entry);
+                Object registry = entry.getClass().getMethod("value").invoke(entry);
+                String id = String.valueOf(callByName(key, "location", null));
+                if (id == null || id.equals("null")) {
+                    id = String.valueOf(key);
+                }
+                if (!filter.isEmpty() && !id.toLowerCase(java.util.Locale.ROOT).contains(filter)) {
+                    continue;
+                }
+                int size = -1;
+                try {
+                    Object set = registry.getClass().getMethod("size").invoke(registry);
+                    size = ((Number) set).intValue();
+                } catch (ReflectiveOperationException | RuntimeException ignored) {
+                    // some registries answer only through keySet()
+                }
+                counted++;
+                rows.add(id + "\t" + size);
+                if (size == 0) {
+                    empty.add(id);
+                }
+            }
+            write(report, rows);
+            sender.sendMessage("eprobe dynreg: " + counted + " registries, " + empty.size()
+                    + " empty -> " + report);
+            for (String id : empty.subList(0, Math.min(empty.size(), 15))) {
+                sender.sendMessage("  empty: " + id);
+            }
+        } catch (Throwable thrown) {
+            sender.sendMessage("eprobe dynreg: " + thrown);
+        }
     }
 
     // ------------------------------------------------------------------ menus

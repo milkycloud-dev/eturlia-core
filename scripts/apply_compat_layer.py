@@ -5144,6 +5144,96 @@ def install_modded_block_entity_states():
         "CraftBlockStates refuses a mismatched block entity",
     )
 
+
+def install_tag_enchantments():
+    """A missing enchantment accessor took the whole region down when a potato cannon was fired.
+
+    NeoForge adds {@code ItemStack.getTagEnchantments()} and its own
+    {@code IItemExtension.getEnchantmentLevel} calls it. Eturlia's ItemStack implements
+    IItemStackExtension but never had that method, so the first mod to ask an item for an
+    enchantment level died with
+
+        NoSuchMethodError: ItemEnchantments net.minecraft.world.item.ItemStack.getTagEnchantments()
+            at IItemExtension.getEnchantmentLevel
+            at PotatoProjectileEntity.setEnchantmentEffectsFromCannon
+            at PotatoCannonItem.use
+
+    That runs while handling the player's use packet, which on Folia happens inside the region tick -
+    so firing a potato cannon did not throw an item error, it failed the region, and a failed region
+    takes the server with it. That is the tester's "potato cannon drops the server", and it was never
+    about potatoes: any mod asking any item for an enchantment level would have done it.
+
+    NeoForge's own version delegates straight to getEnchantments(), so this does too.
+    """
+    print("tag enchantments plane")
+    replace(
+        SERVER + "/net/minecraft/world/item/ItemStack.java",
+        """    public ItemEnchantments getEnchantments() {""",
+        """    // Eturlia start - NeoForge's spelling of the same question
+    /**
+     * The enchantments on this stack, under the name NeoForge gives the accessor.
+     *
+     * <p>Delegates to {@link #getEnchantments()}, which is what NeoForge's own copy does.</p>
+     */
+    public ItemEnchantments getTagEnchantments() {
+        return this.getEnchantments();
+    }
+    // Eturlia end - NeoForge's spelling of the same question
+
+    public ItemEnchantments getEnchantments() {""",
+        "ItemStack answers getTagEnchantments",
+    )
+
+
+def install_complex_entity_spawn():
+    """An entity that carries its own spawn data has to be allowed to send it.
+
+    NeoForge lets an entity ship extra state at spawn time through
+    {@code IEntityWithComplexSpawn}: after the add-entity packet, the server sends an
+    {@code AdvancedAddEntityPayload} carrying whatever the entity wrote, and the client reads it
+    before the first tick. Eturlia's {@code ServerEntity.sendPairingData} sent the add-entity packet
+    and the tracked data values, and nothing else - so every such entity reached the client with
+    that state missing.
+
+    Create's potato cannon is where it showed: the projectile keeps its ammunition type in a plain
+    field written into the spawn data, so the client got a projectile whose type was null and died
+    on the first tick with
+
+        NullPointerException: PotatoCannonProjectileType.gravityMultiplier() because "this.type" is null
+
+    The player firing the cannon sees their own game close. Nothing is logged server-side, because
+    from the server's side nothing went wrong - it simply never sent the second half.
+
+    This is not specific to potatoes. Any modded entity with complex spawn data - and there are
+    plenty - was arriving incomplete.
+    """
+    print("complex entity spawn plane")
+    replace(
+        SERVER + "/net/minecraft/server/level/ServerEntity.java",
+        """        Packet<ClientGamePacketListener> packet = this.entity.getAddEntityPacket(this);
+
+        sender.accept(packet);""",
+        """        Packet<ClientGamePacketListener> packet = this.entity.getAddEntityPacket(this);
+
+        sender.accept(packet);
+        // Eturlia start - the entity's own spawn data, which NeoForge sends right after the packet
+        if (this.entity instanceof net.neoforged.neoforge.entity.IEntityWithComplexSpawn) {
+            try {
+                @SuppressWarnings("unchecked") // a common packet is carried on the game listener here
+                Packet<ClientGamePacketListener> eturlia$spawnData =
+                        (Packet<ClientGamePacketListener>) (Packet<?>) new net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket(
+                                new net.neoforged.neoforge.network.payload.AdvancedAddEntityPayload(this.entity));
+                sender.accept(eturlia$spawnData);
+            } catch (RuntimeException | LinkageError eturlia$noSpawnData) {
+                // An entity that cannot describe itself is still better sent than not sent at all.
+                ServerEntity.LOGGER.warn("Eturlia: {} could not write its spawn data; the client will "
+                        + "see it without that state", this.entity.getType(), eturlia$noSpawnData);
+            }
+        }
+        // Eturlia end - the entity's own spawn data, which NeoForge sends right after the packet""",
+        "ServerEntity sends complex spawn data",
+    )
+
 if __name__ == "__main__":
     install_mixin_compat()
     install_plugin_compat()
@@ -5219,4 +5309,6 @@ if __name__ == "__main__":
     install_sublevel_plot_writes()
     install_virtual_chunk_lookup()
     install_modded_block_entity_states()
+    install_tag_enchantments()
+    install_complex_entity_spawn()
     print("done")
