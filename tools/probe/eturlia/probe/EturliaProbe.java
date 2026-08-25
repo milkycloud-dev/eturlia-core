@@ -50,6 +50,8 @@ public final class EturliaProbe extends JavaPlugin {
             case "levels" -> this.levelTickRates(sender, args);
             case "item" -> this.itemLookup(sender, args);
             case "registryaudit" -> this.registryAudit(sender, args);
+            case "track" -> this.track(sender, args);
+            case "sublevels" -> this.subLevels(sender, args);
             default -> sender.sendMessage("eprobe entities | menus | biomes | worldgen | levels | item <id>");
         }
         return true;
@@ -422,6 +424,255 @@ public final class EturliaProbe extends JavaPlugin {
 
     private static String stripJson(String fileName) {
         return fileName.endsWith(".json") ? fileName.substring(0, fileName.length() - 5) : fileName;
+    }
+
+    // ------------------------------------------------------------------ track
+
+    /**
+     * Samples the position of every entity of a type twice, and says whether any of them moved.
+     *
+     * <p>Written because the airship phase of the suite asserted with
+     * {@code /execute if entity ... run say}, and this build drops /say text from the log - so it
+     * reported "no errors" whether or not anything ever flew. This asks the entities themselves,
+     * on the region thread that owns them, and reports the distance each one covered.</p>
+     *
+     * <p>The client is not involved at all: the rig is built and powered from the console, so a
+     * verdict here cannot be an artefact of a keystroke that never landed.</p>
+     */
+    private void track(CommandSender sender, String[] args) {
+        if (args.length < 6) {
+            sender.sendMessage("usage: eprobe track <entity-type> <x> <y> <z> [radius] [seconds]");
+            return;
+        }
+        String wanted = args[1].toLowerCase(java.util.Locale.ROOT);
+        double x;
+        double y;
+        double z;
+        double radius = 64.0D;
+        long seconds = 10L;
+        try {
+            x = Double.parseDouble(args[2]);
+            y = Double.parseDouble(args[3]);
+            z = Double.parseDouble(args[4]);
+            if (args.length > 5) {
+                radius = Double.parseDouble(args[5]);
+            }
+            if (args.length > 6) {
+                seconds = Long.parseLong(args[6]);
+            }
+        } catch (NumberFormatException bad) {
+            sender.sendMessage("eprobe track: " + bad.getMessage());
+            return;
+        }
+
+        org.bukkit.World world = this.getServer().getWorlds().get(0);
+        Location at = new Location(world, x, y, z);
+        final double range = radius;
+        java.util.Map<String, double[]> first = new java.util.concurrent.ConcurrentHashMap<>();
+        java.util.Map<String, double[]> second = new java.util.concurrent.ConcurrentHashMap<>();
+
+        this.getServer().getRegionScheduler().execute(this, at,
+                () -> sampleInto(world, at, range, wanted, first));
+        sender.sendMessage("eprobe track: watching '" + wanted + "' within " + range + " of "
+                + x + "," + y + "," + z + " for " + seconds + "s");
+
+        Path report = this.getDataFolder().toPath().resolve("track.tsv");
+        this.getServer().getAsyncScheduler().runDelayed(this, (task) -> {
+            this.getServer().getRegionScheduler().execute(this, at,
+                    () -> sampleInto(world, at, range, wanted, second));
+            this.getServer().getAsyncScheduler().runDelayed(this, (finish) -> {
+                List<String> rows = new ArrayList<>();
+                rows.add("entity\tx0\ty0\tz0\tx1\ty1\tz1\tdistance\tverdict");
+                int moved = 0;
+                for (java.util.Map.Entry<String, double[]> entry : first.entrySet()) {
+                    double[] a = entry.getValue();
+                    double[] b = second.get(entry.getKey());
+                    if (b == null) {
+                        rows.add(entry.getKey() + "\t" + a[0] + "\t" + a[1] + "\t" + a[2]
+                                + "\t-\t-\t-\t-\tGONE");
+                        continue;
+                    }
+                    double distance = Math.sqrt((b[0] - a[0]) * (b[0] - a[0])
+                            + (b[1] - a[1]) * (b[1] - a[1]) + (b[2] - a[2]) * (b[2] - a[2]));
+                    String verdict = distance > 0.05D ? "MOVED" : "still";
+                    if (distance > 0.05D) {
+                        moved++;
+                    }
+                    rows.add(entry.getKey() + "\t" + a[0] + "\t" + a[1] + "\t" + a[2]
+                            + "\t" + b[0] + "\t" + b[1] + "\t" + b[2]
+                            + "\t" + String.format(java.util.Locale.ROOT, "%.3f", distance)
+                            + "\t" + verdict);
+                }
+                write(report, rows);
+                if (first.isEmpty()) {
+                    sender.sendMessage("eprobe track: NONE - no entity of that type is there");
+                } else {
+                    sender.sendMessage("eprobe track: " + first.size() + " found, " + moved
+                            + " moved -> " + report);
+                }
+            }, 1500L, java.util.concurrent.TimeUnit.MILLISECONDS);
+        }, Math.max(1000L, seconds * 1000L), java.util.concurrent.TimeUnit.MILLISECONDS);
+    }
+
+    /** Records position by entity uuid for everything of the wanted type in range. */
+    private static void sampleInto(org.bukkit.World world, Location at, double radius,
+            String wanted, java.util.Map<String, double[]> into) {
+        try {
+            for (org.bukkit.entity.Entity entity : world.getNearbyEntities(at, radius, radius, radius)) {
+                String type = entity.getType().getKey().toString().toLowerCase(java.util.Locale.ROOT);
+                // A modded entity often answers UNKNOWN through the Bukkit type, so accept the
+                // handle's own id too.
+                String alternate = entity.getClass().getSimpleName().toLowerCase(java.util.Locale.ROOT);
+                if (!type.contains(wanted) && !alternate.contains(wanted) && !"*".equals(wanted)) {
+                    continue;
+                }
+                Location where = entity.getLocation();
+                into.put(entity.getUniqueId() + " " + type,
+                        new double[] {where.getX(), where.getY(), where.getZ()});
+            }
+        } catch (RuntimeException thrown) {
+            into.put("error " + thrown, new double[] {0.0D, 0.0D, 0.0D});
+        }
+    }
+
+    // ------------------------------------------------------------------ sub-levels
+
+    /**
+     * Lists sable's physics sub-levels and whether they moved.
+     *
+     * <p>An Aeronautics airship is not an entity - it is a sub-level, a structure sable keeps in a
+     * plot of its own and drives with a physics pipeline. Nothing in Bukkit can see one, so the
+     * only way to answer "did the airship fly" is to ask sable, which is what this does: read the
+     * container's sub-levels, take each one's logical pose now and again later, and report the
+     * distance covered.</p>
+     *
+     * <p>Everything is bound by name at runtime. Sable absent, or a version that renamed any of
+     * this, gives a clean "not available" instead of a stack trace.</p>
+     */
+    private void subLevels(CommandSender sender, String[] args) {
+        long seconds = 10L;
+        if (args.length > 1) {
+            try {
+                seconds = Math.max(1L, Long.parseLong(args[1]));
+            } catch (NumberFormatException ignored) {
+                // keep the default
+            }
+        }
+        org.bukkit.World world = this.getServer().getWorlds().get(0);
+        java.util.Map<String, double[]> first = new java.util.LinkedHashMap<>();
+        java.util.Map<String, double[]> second = new java.util.LinkedHashMap<>();
+
+        String problem = poseSubLevels(world, first);
+        if (problem != null) {
+            sender.sendMessage("eprobe sublevels: " + problem);
+            return;
+        }
+        sender.sendMessage("eprobe sublevels: " + first.size() + " now; sampling again in "
+                + seconds + "s");
+
+        Path report = this.getDataFolder().toPath().resolve("sublevels.tsv");
+        final long window = seconds;
+        this.getServer().getAsyncScheduler().runDelayed(this, (task) -> {
+            poseSubLevels(world, second);
+            List<String> rows = new ArrayList<>();
+            rows.add("sublevel\tx0\ty0\tz0\tx1\ty1\tz1\tdistance\tverdict");
+            int moved = 0;
+            for (java.util.Map.Entry<String, double[]> entry : first.entrySet()) {
+                double[] a = entry.getValue();
+                double[] b = second.get(entry.getKey());
+                if (b == null) {
+                    rows.add(entry.getKey() + "\t" + a[0] + "\t" + a[1] + "\t" + a[2]
+                            + "\t-\t-\t-\t-\tGONE");
+                    continue;
+                }
+                double distance = Math.sqrt((b[0] - a[0]) * (b[0] - a[0])
+                        + (b[1] - a[1]) * (b[1] - a[1]) + (b[2] - a[2]) * (b[2] - a[2]));
+                if (distance > 0.05D) {
+                    moved++;
+                }
+                rows.add(entry.getKey() + "\t" + a[0] + "\t" + a[1] + "\t" + a[2]
+                        + "\t" + b[0] + "\t" + b[1] + "\t" + b[2]
+                        + "\t" + String.format(java.util.Locale.ROOT, "%.3f", distance)
+                        + "\t" + (distance > 0.05D ? "MOVED" : "still"));
+            }
+            write(report, rows);
+            if (first.isEmpty()) {
+                sender.sendMessage("eprobe sublevels: NONE - no sub-level exists in this world");
+            } else {
+                sender.sendMessage("eprobe sublevels: " + first.size() + " sub-levels, " + moved
+                        + " moved over " + window + "s -> " + report);
+            }
+        }, Math.max(1000L, seconds * 1000L), java.util.concurrent.TimeUnit.MILLISECONDS);
+    }
+
+    /**
+     * Fills {@code into} with each sub-level's world position; returns a reason on failure.
+     *
+     * <p>Every lookup is by exact signature through {@link java.lang.invoke.MethodHandles}, never
+     * by enumerating methods. {@code SubLevelContainer.getContainer} is overloaded on
+     * {@code ClientLevel} as well as {@code ServerLevel}, and merely listing the class's methods
+     * resolves that parameter - which on a server is a {@code NoClassDefFoundError} for
+     * {@code net/minecraft/client/multiplayer/ClientLevel}.</p>
+     */
+    private static String poseSubLevels(org.bukkit.World world, java.util.Map<String, double[]> into) {
+        try {
+            Object handle = world.getClass().getMethod("getHandle").invoke(world);
+            Class<?> containerClass = Class.forName("dev.ryanhcode.sable.api.sublevel.SubLevelContainer");
+            Class<?> serverContainer = Class.forName("dev.ryanhcode.sable.api.sublevel.ServerSubLevelContainer");
+            Class<?> serverLevel = Class.forName("net.minecraft.server.level.ServerLevel");
+            Class<?> subLevelClass = Class.forName("dev.ryanhcode.sable.sublevel.SubLevel");
+            Class<?> poseClass = Class.forName("dev.ryanhcode.sable.companion.math.Pose3dc");
+            Class<?> vectorClass = Class.forName("org.joml.Vector3dc");
+
+            java.lang.invoke.MethodHandles.Lookup lookup = java.lang.invoke.MethodHandles.publicLookup();
+            java.lang.invoke.MethodHandle getContainer = lookup.findStatic(containerClass, "getContainer",
+                    java.lang.invoke.MethodType.methodType(serverContainer, serverLevel));
+            Object container = getContainer.invoke(handle);
+            if (container == null) {
+                return "no sub-level container in this world";
+            }
+
+            java.lang.reflect.Field field = containerClass.getDeclaredField("subLevels");
+            field.setAccessible(true);
+            Object array = field.get(container);
+            if (array == null) {
+                return "the container holds no sub-level array";
+            }
+
+            java.lang.invoke.MethodHandle isRemoved = lookup.findVirtual(subLevelClass, "isRemoved",
+                    java.lang.invoke.MethodType.methodType(boolean.class));
+            java.lang.invoke.MethodHandle logicalPose = lookup.findVirtual(subLevelClass, "logicalPose",
+                    java.lang.invoke.MethodType.methodType(poseClass));
+            java.lang.invoke.MethodHandle getUniqueId = lookup.findVirtual(subLevelClass, "getUniqueId",
+                    java.lang.invoke.MethodType.methodType(java.util.UUID.class));
+            java.lang.invoke.MethodHandle position = lookup.findVirtual(poseClass, "position",
+                    java.lang.invoke.MethodType.methodType(vectorClass));
+            java.lang.invoke.MethodHandle vx = lookup.findVirtual(vectorClass, "x",
+                    java.lang.invoke.MethodType.methodType(double.class));
+            java.lang.invoke.MethodHandle vy = lookup.findVirtual(vectorClass, "y",
+                    java.lang.invoke.MethodType.methodType(double.class));
+            java.lang.invoke.MethodHandle vz = lookup.findVirtual(vectorClass, "z",
+                    java.lang.invoke.MethodType.methodType(double.class));
+
+            int length = java.lang.reflect.Array.getLength(array);
+            for (int i = 0; i < length; i++) {
+                Object subLevel = java.lang.reflect.Array.get(array, i);
+                if (subLevel == null || (boolean) isRemoved.invoke(subLevel)) {
+                    continue;
+                }
+                Object pose = logicalPose.invoke(subLevel);
+                Object where = position.invoke(pose);
+                into.put(String.valueOf(getUniqueId.invoke(subLevel)), new double[] {
+                        (double) vx.invoke(where),
+                        (double) vy.invoke(where),
+                        (double) vz.invoke(where)});
+            }
+            return null;
+        } catch (ClassNotFoundException noSable) {
+            return "sable is not installed (" + noSable.getMessage() + ")";
+        } catch (Throwable thrown) {
+            return "could not read sable's sub-levels: " + thrown;
+        }
     }
 
     // ------------------------------------------------------------------ menus
