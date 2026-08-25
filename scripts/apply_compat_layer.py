@@ -4079,6 +4079,11 @@ def install_sublevel_chunk_loads():
         if ("strict".equalsIgnoreCase(System.getProperty("eturlia.compat.sublevel-chunks", "lenient"))) {
             return false;
         }
+        // Eturlia - a plot's chunks are the mod's own data, the same as the blocks in them: the
+        // region that drives the sub-level is the one asking, and it asks one at a time.
+        if (net.minecraft.world.level.Level.eturlia$insideSubLevelPlot(level, chunkX, chunkZ)) {
+            return true;
+        }
         try {
             // No region over the chunk means no tick over the chunk: there is nothing to race with.
             return level.regioniser.getRegionAtUnsynchronised(chunkX, chunkZ) == null;
@@ -4684,6 +4689,12 @@ def install_sublevel_block_writes():
      * ticks the region that owns it, or no region owns it at all. A sub-level a mod has just built
      * is the second case - it has chunks, but nothing is ticking them yet.
      */
+    /** The same question asked of a chunk, for the guards that work in chunk coordinates. */
+    public static boolean eturlia$insideSubLevelPlot(Level level, int chunkX, int chunkZ) {
+        return Level.eturlia$insideSubLevelPlot(level,
+                new BlockPos((chunkX << 4) + 8, 0, (chunkZ << 4) + 8));
+    }
+
     public static boolean eturlia$mayWriteBlock(Level level, BlockPos pos) {
         if (!(((Object) level) instanceof net.minecraft.server.level.ServerLevel serverLevel)) {
             return false;
@@ -4913,6 +4924,159 @@ def install_nested_loot_table_alias():
         "NestedLootTable carries the aliased codec",
     )
 
+
+def install_virtual_chunk_lookup():
+    """A mod may answer for a chunk this level never loaded, and it has to be asked.
+
+    Create Aeronautics keeps a physics sub-level in a plot of its own, twenty million blocks out,
+    and the blocks in it are not `LevelChunk`s the server loaded - they live in sable's own
+    container. Sable serves them by injecting into `ServerChunkCache.getChunkNow`, which is the
+    documented seam for exactly this.
+
+    `Level.getChunk(int, int)` never goes through that seam. Paper's fast path asks the loaded-chunk
+    map, which has nothing for a plot, and then falls through to a full load of a chunk that does not
+    exist. Sable's own fast path (`LevelAccelerator.grabChunkFast`) is worse off still: it reaches
+    for `getVisibleChunkIfPresent` and `getFullChunkFuture`, both of which Moonrise's rewrite
+    changed, so it comes back with null and hands that to `markAndNotifyBlock`:
+
+        Failed to mark & notify block BlockPos{x=20481021, y=128, z=20481020} - NullPointerException
+
+    Every block of the contraption fails that way, so `/sable assemble connected` reports success and
+    then nothing exists: no sub-level, and an airship that never flies. Nothing is logged as an
+    error by the server, because from its side nothing went wrong.
+
+    So the lookup asks `getChunkNow` between the two: after the loaded-chunk fast path, which is
+    unchanged and still answers first for every ordinary chunk, and before deciding a chunk has to be
+    loaded from disk. A mod serving its own chunks gets to answer for them; everything else takes
+    exactly the path it took before.
+    """
+    print("virtual chunk lookup plane")
+    replace(
+        SERVER + "/net/minecraft/world/level/Level.java",
+        """        LevelChunk ifLoaded = cps.getChunkAtIfLoadedImmediately(chunkX, chunkZ);
+        if (ifLoaded != null) {
+            return ifLoaded;
+        }
+        return (LevelChunk) cps.getChunk(chunkX, chunkZ, ChunkStatus.FULL, true); // Paper - avoid a method jump""",
+        """        LevelChunk ifLoaded = cps.getChunkAtIfLoadedImmediately(chunkX, chunkZ);
+        if (ifLoaded != null) {
+            return ifLoaded;
+        }
+        // Eturlia start - a mod may be serving this chunk itself
+        if (!"strict".equalsIgnoreCase(System.getProperty("eturlia.compat.virtual-chunks", "lenient"))) {
+            try {
+                LevelChunk eturlia$served = cps.getChunkNow(chunkX, chunkZ);
+                if (eturlia$served != null) {
+                    return eturlia$served;
+                }
+            } catch (RuntimeException | LinkageError eturlia$notServed) {
+                // no mod answered for it; fall through to the ordinary load
+            }
+        }
+        // Eturlia end - a mod may be serving this chunk itself
+        return (LevelChunk) cps.getChunk(chunkX, chunkZ, ChunkStatus.FULL, true); // Paper - avoid a method jump""",
+        "Level asks the chunk source for a served chunk",
+    )
+
+
+def install_sublevel_plot_writes():
+    """A chunk Folia does not own the data for is not Folia's to arbitrate.
+
+    This is the one place the project patches for a named mod, and the reason is that the thing
+    being guarded is not what the guard thinks it is.
+
+    Create Aeronautics' physics sub-levels do not live in the chunk system at all. Sable mixes into
+    `ServerChunkCache.getChunkNow` and `blockChanged`, and for any position inside one of its plots
+    it serves the chunk out of its own `SubLevelContainer` - a plot is a 128x128-chunk tile on a
+    grid starting twenty million blocks out, and the blocks in it are sable's data structure, not a
+    `LevelChunk` Folia loaded. Folia's ownership check still fires on the coordinates, so a
+    contraption assembled from the player's region is refused:
+
+        IllegalStateException: Updating block asynchronously
+
+    sable catches that per block and logs `Failed to mark & notify block`, which is why an airship
+    assembles and then never moves - every block write that would drive it is dropped.
+
+    Deferring those writes to the region that owns the coordinates was tried first and reverted. It
+    reaches the right thread, but sable expects the write inside its own operation; a tick later its
+    plot holder is gone and its own mixin throws `Cannot change blocks in nonexistent plot holder`
+    straight into the region tick, which stops the server. The write has to happen now or not at all.
+
+    So the rule is narrowed instead of moved: a position inside a sub-level plot is writable from a
+    region thread, because the data behind it belongs to the mod. A sub-level is driven by its
+    holder - the controller block or entity in the real world - so the operations on one plot come
+    from the region that owns that holder, one at a time. Nothing outside a plot is affected, and
+    `-Deturlia.compat.sublevel-plots=strict` restores Folia's refusal.
+    """
+    print("sublevel plot write plane")
+    path = SERVER + "/net/minecraft/world/level/Level.java"
+    replace(
+        path,
+        """    public static boolean eturlia$mayWriteBlock(Level level, BlockPos pos) {""",
+        """    /**
+     * True when this position is inside a sub-level plot, whose blocks the mod stores itself.
+     *
+     * <p>Asked of sable's own container, so it stays right if the mod moves its grid, and answers
+     * false the moment sable is not installed.</p>
+     */
+    private static Boolean eturlia$plotsPresent;
+    private static java.lang.invoke.MethodHandle eturlia$plotContainerOf;
+    private static java.lang.invoke.MethodHandle eturlia$plotInBounds;
+
+    private static boolean eturlia$insideSubLevelPlot(Level level, BlockPos pos) {
+        if ("strict".equalsIgnoreCase(System.getProperty("eturlia.compat.sublevel-plots", "lenient"))) {
+            return false;
+        }
+        if (eturlia$plotsPresent == null) {
+            try {
+                // Every lookup is by exact signature. getMethod would enumerate the class, and
+                // getContainer is overloaded on ClientLevel too - listing it on a server is a
+                // NoClassDefFoundError, which would quietly turn this whole plane off.
+                Class<?> container = Class.forName("dev.ryanhcode.sable.api.sublevel.SubLevelContainer");
+                Class<?> serverContainer = Class.forName("dev.ryanhcode.sable.api.sublevel.ServerSubLevelContainer");
+                java.lang.invoke.MethodHandles.Lookup lookup = java.lang.invoke.MethodHandles.publicLookup();
+                eturlia$plotContainerOf = lookup.findStatic(container, "getContainer",
+                        java.lang.invoke.MethodType.methodType(serverContainer,
+                                net.minecraft.server.level.ServerLevel.class));
+                eturlia$plotInBounds = lookup.findVirtual(container, "inBounds",
+                        java.lang.invoke.MethodType.methodType(boolean.class, BlockPos.class));
+                eturlia$plotsPresent = Boolean.TRUE;
+            } catch (Throwable noSable) {
+                eturlia$plotsPresent = Boolean.FALSE;
+            }
+        }
+        if (!eturlia$plotsPresent.booleanValue()
+                || !(((Object) level) instanceof net.minecraft.server.level.ServerLevel serverLevel)) {
+            return false;
+        }
+        try {
+            Object container = eturlia$plotContainerOf.invoke(serverLevel);
+            return container != null && (boolean) eturlia$plotInBounds.invoke(container, pos);
+        } catch (Throwable thrown) {
+            return false;
+        }
+    }
+
+    public static boolean eturlia$mayWriteBlock(Level level, BlockPos pos) {""",
+        "Level can tell a sub-level plot from a chunk",
+    )
+
+    replace(
+        path,
+        """        if (ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(serverLevel, pos)) {
+            return true;
+        }""",
+        """        if (ca.spottedleaf.moonrise.common.util.TickThread.isTickThreadFor(serverLevel, pos)) {
+            return true;
+        }
+        // Eturlia - a plot's blocks are the mod's own data, and its holder drives them one at a time
+        if (ca.spottedleaf.moonrise.common.util.TickThread.isTickThread()
+                && Level.eturlia$insideSubLevelPlot(level, pos)) {
+            return true;
+        }""",
+        "a plot position is writable from a region thread",
+    )
+
 if __name__ == "__main__":
     install_mixin_compat()
     install_plugin_compat()
@@ -4985,4 +5149,6 @@ if __name__ == "__main__":
     install_sublevel_block_writes()
     install_loot_unknown_key_summary()
     install_nested_loot_table_alias()
+    install_sublevel_plot_writes()
+    install_virtual_chunk_lookup()
     print("done")
