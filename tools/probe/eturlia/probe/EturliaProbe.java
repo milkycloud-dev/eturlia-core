@@ -47,12 +47,28 @@ public final class EturliaProbe extends JavaPlugin {
             case "worldgen" -> this.worldgen(sender);
             case "presets" -> this.presets(sender);
             case "stems" -> this.stems(sender);
-            default -> sender.sendMessage("eprobe entities | menus | biomes | worldgen");
+            case "levels" -> this.levelTickRates(sender, args);
+            default -> sender.sendMessage("eprobe entities | menus | biomes | worldgen | levels");
         }
         return true;
     }
 
     // ------------------------------------------------------------------ entities
+
+    /**
+     * Entity types a bare {@code create()} cannot build well enough for a client to tick.
+     *
+     * <p>Create's potato projectile reads its ammunition type on the first client tick. Summoned
+     * with no data that field is null, and the client dies inside its own tick loop with
+     * {@code NullPointerException: ... PotatoCannonProjectileType.gravityMultiplier()}. Firing the
+     * cannon is what supplies it, so no player can reach this state - and the wrapper and packet
+     * questions this sweep exists to answer are already answered by every other entity in it.</p>
+     *
+     * <p>Add to this list only when a type crashes the client for want of data the server cannot
+     * invent, and say which data. Anything else belongs in the results.</p>
+     */
+    private static final java.util.Set<String> NEEDS_MOD_DATA = java.util.Set.of(
+            "create:potato_projectile");
 
     /**
      * Spawn every modded entity type once, next to the world spawn, and record the class of the
@@ -77,6 +93,10 @@ public final class EturliaProbe extends JavaPlugin {
             int ok = 0;
             int failed = 0;
             for (ResourceLocation id : modded) {
+                if (NEEDS_MOD_DATA.contains(id.toString())) {
+                    rows.add(id + "\t-\tskipped-needs-mod-data");
+                    continue;
+                }
                 EntityType<?> type = BuiltInRegistries.ENTITY_TYPE.get(id);
                 String wrapper = "-";
                 String outcome;
@@ -103,6 +123,87 @@ public final class EturliaProbe extends JavaPlugin {
             write(report, rows);
             sender.sendMessage("eprobe entities: " + ok + " handled, " + failed + " threw -> " + report);
         });
+    }
+
+    // ------------------------------------------------------------------ levels
+
+    /**
+     * Sample every level's game time twice, on the region thread, and report the ticks it advanced.
+     *
+     * <p>The sampling has to happen on a region thread. {@code Level.getGameTime()} reads
+     * {@code getCurrentWorldData()}, which is thread-local to the region being ticked; asked from a
+     * plugin thread it finds none and falls back to the saved level data, which does not move. A
+     * probe that ignores this reports every level in the server as stalled and is measuring nothing
+     * but its own thread.</p>
+     *
+     * <p>A level that is ticking keeps pace with the window - 20 ticks a second. One that does not
+     * is either unloaded, has no region alive in it (nothing is keeping a chunk loaded there), or is
+     * being ticked by something that has stopped.</p>
+     */
+    private void levelTickRates(CommandSender sender, String[] args) {
+        long windowMillis = 3000L;
+        if (args.length > 1) {
+            try {
+                windowMillis = Math.max(1000L, Long.parseLong(args[1]));
+            } catch (NumberFormatException ignored) {
+                // keep the default
+            }
+        }
+        final long window = windowMillis;
+
+        java.util.Map<String, long[]> samples = new java.util.concurrent.ConcurrentHashMap<>();
+        List<org.bukkit.World> worlds = new ArrayList<>(this.getServer().getWorlds());
+        for (org.bukkit.World world : worlds) {
+            ServerLevel level = ((CraftWorld) world).getHandle();
+            String key = level.dimension().location().toString();
+            samples.put(key, new long[] {-1L, -1L});
+            this.getServer().getRegionScheduler().execute(this, world.getSpawnLocation(),
+                    () -> samples.get(key)[0] = level.getGameTime());
+        }
+        sender.sendMessage("eprobe levels: sampling " + worlds.size() + " levels over " + window + "ms");
+
+        Path report = this.getDataFolder().toPath().resolve("levels.tsv");
+        this.getServer().getAsyncScheduler().runDelayed(this, (first) -> {
+            for (org.bukkit.World world : worlds) {
+                ServerLevel level = ((CraftWorld) world).getHandle();
+                String key = level.dimension().location().toString();
+                this.getServer().getRegionScheduler().execute(this, world.getSpawnLocation(),
+                        () -> samples.get(key)[1] = level.getGameTime());
+            }
+            // Give those region tasks a tick or two to land before reading them.
+            this.getServer().getAsyncScheduler().runDelayed(this, (second) -> {
+                List<String> rows = new ArrayList<>();
+                rows.add("level\tticks_in_window\texpected\tverdict");
+                long expected = window / 50L;
+                int bad = 0;
+                for (org.bukkit.World world : worlds) {
+                    String key = ((CraftWorld) world).getHandle().dimension().location().toString();
+                    long[] pair = samples.get(key);
+                    String verdict;
+                    long advanced;
+                    if (pair[0] < 0L || pair[1] < 0L) {
+                        advanced = -1L;
+                        verdict = "NO-REGION";
+                        bad++;
+                    } else {
+                        advanced = pair[1] - pair[0];
+                        if (advanced <= 0L) {
+                            verdict = "STALLED";
+                            bad++;
+                        } else if (advanced * 100L < expected * 80L) {
+                            verdict = "SLOW";
+                            bad++;
+                        } else {
+                            verdict = "ok";
+                        }
+                    }
+                    rows.add(key + "\t" + advanced + "\t" + expected + "\t" + verdict);
+                }
+                write(report, rows);
+                sender.sendMessage("eprobe levels: " + bad + " of " + worlds.size()
+                        + " not keeping pace -> " + report);
+            }, 1500L, java.util.concurrent.TimeUnit.MILLISECONDS);
+        }, window, java.util.concurrent.TimeUnit.MILLISECONDS);
     }
 
     // ------------------------------------------------------------------ menus
