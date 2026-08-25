@@ -48,7 +48,8 @@ public final class EturliaProbe extends JavaPlugin {
             case "presets" -> this.presets(sender);
             case "stems" -> this.stems(sender);
             case "levels" -> this.levelTickRates(sender, args);
-            default -> sender.sendMessage("eprobe entities | menus | biomes | worldgen | levels");
+            case "item" -> this.itemLookup(sender, args);
+            default -> sender.sendMessage("eprobe entities | menus | biomes | worldgen | levels | item <id>");
         }
         return true;
     }
@@ -204,6 +205,89 @@ public final class EturliaProbe extends JavaPlugin {
                         + " not keeping pace -> " + report);
             }, 1500L, java.util.concurrent.TimeUnit.MILLISECONDS);
         }, window, java.util.concurrent.TimeUnit.MILLISECONDS);
+    }
+
+    // ------------------------------------------------------------------ item lookup
+
+    /**
+     * Says whether an id is in the block registry, the item registry, both or neither.
+     *
+     * <p>A loot table that names an item the item registry does not have fails to parse, and the
+     * block silently drops nothing. The question that separates "the core lost the item" from "the
+     * mod never registered one" is simply whether the block is there without its item.</p>
+     */
+    private void itemLookup(CommandSender sender, String[] args) {
+        if (args.length < 2) {
+            sender.sendMessage("usage: eprobe item <namespace:path> [more ids...]");
+            return;
+        }
+        Object blockRegistry = builtIn("BLOCK");
+        Object itemRegistry = builtIn("ITEM");
+        if (blockRegistry == null || itemRegistry == null) {
+            sender.sendMessage("eprobe item: could not reach BuiltInRegistries");
+            return;
+        }
+        List<String> rows = new ArrayList<>();
+        rows.add("id\tblock\titem\tverdict");
+        for (int i = 1; i < args.length; i++) {
+            String id = args[i];
+            boolean hasBlock = registryHas(blockRegistry, id);
+            boolean hasItem = registryHas(itemRegistry, id);
+            String verdict;
+            if (hasBlock && hasItem) {
+                verdict = "ok";
+            } else if (hasBlock) {
+                verdict = "BLOCK-WITHOUT-ITEM";
+            } else if (hasItem) {
+                verdict = "item-only";
+            } else {
+                verdict = "NEITHER";
+            }
+            rows.add(id + "\t" + hasBlock + "\t" + hasItem + "\t" + verdict);
+            sender.sendMessage("eprobe item: " + id + " block=" + hasBlock + " item=" + hasItem
+                    + " -> " + verdict);
+        }
+        write(this.getDataFolder().toPath().resolve("items.tsv"), rows);
+    }
+
+    /** BuiltInRegistries.<name>, or null if this build does not have it under that name. */
+    private static Object builtIn(String name) {
+        try {
+            return Class.forName("net.minecraft.core.registries.BuiltInRegistries")
+                    .getField(name).get(null);
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError absent) {
+            return null;
+        }
+    }
+
+    /**
+     * Registry.containsKey(ResourceLocation), reached by name.
+     *
+     * <p>Bound reflectively for the same reason every other registry call in this plugin is: the
+     * core's plugin remapper rewrites a Mojang-mapped call site into one this server does not
+     * have, and a normally-compiled call dies with NoSuchMethodError at runtime.</p>
+     */
+    private static boolean registryHas(Object registry, String id) {
+        try {
+            Class<?> resourceLocation = Class.forName("net.minecraft.resources.ResourceLocation");
+            Object key = resourceLocation.getMethod("tryParse", String.class).invoke(null, id);
+            if (key == null) {
+                return false;
+            }
+            for (java.lang.reflect.Method method : registry.getClass().getMethods()) {
+                if (!"containsKey".equals(method.getName())) {
+                    continue;
+                }
+                Class<?>[] parameters = method.getParameterTypes();
+                if (parameters.length == 1 && parameters[0].isAssignableFrom(resourceLocation)) {
+                    method.setAccessible(true);
+                    return Boolean.TRUE.equals(method.invoke(registry, key));
+                }
+            }
+            return false;
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError thrown) {
+            return false;
+        }
     }
 
     // ------------------------------------------------------------------ menus
