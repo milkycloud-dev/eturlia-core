@@ -49,6 +49,7 @@ public final class EturliaProbe extends JavaPlugin {
             case "stems" -> this.stems(sender);
             case "levels" -> this.levelTickRates(sender, args);
             case "item" -> this.itemLookup(sender, args);
+            case "registryaudit" -> this.registryAudit(sender, args);
             default -> sender.sendMessage("eprobe entities | menus | biomes | worldgen | levels | item <id>");
         }
         return true;
@@ -288,6 +289,139 @@ public final class EturliaProbe extends JavaPlugin {
         } catch (ReflectiveOperationException | RuntimeException | LinkageError thrown) {
             return false;
         }
+    }
+
+    // ------------------------------------------------------------------ registry audit
+
+    /**
+     * Every block and item the installed mods declare, checked against what this server registered.
+     *
+     * <p>One id missing is a mod that ships dead data. A whole namespace missing, or a mod losing a
+     * consistent slice of what it declares, is the core dropping registry entries - a completely
+     * different problem, and one that would explain far more than a few log lines. The only way to
+     * tell them apart is to count both.</p>
+     *
+     * <p>What a mod declares is read from its own resources: {@code assets/<ns>/blockstates/<name>.json}
+     * is the list of blocks it defines, and {@code assets/<ns>/models/item/<name>.json} the items.
+     * Those are written by the mod's own data generation, so they are what the mod believes it
+     * registers - independent of anything this server did.</p>
+     */
+    private void registryAudit(CommandSender sender, String[] args) {
+        Object blockRegistry = builtIn("BLOCK");
+        Object itemRegistry = builtIn("ITEM");
+        if (blockRegistry == null || itemRegistry == null) {
+            sender.sendMessage("eprobe registryaudit: could not reach BuiltInRegistries");
+            return;
+        }
+        Path mods = Path.of("mods");
+        if (!Files.isDirectory(mods)) {
+            sender.sendMessage("eprobe registryaudit: no mods directory at " + mods.toAbsolutePath());
+            return;
+        }
+
+        java.util.Map<String, java.util.Set<String>> declaredBlocks = new java.util.TreeMap<>();
+        java.util.Map<String, java.util.Set<String>> declaredItems = new java.util.TreeMap<>();
+        int jars = 0;
+        try (java.util.stream.Stream<Path> listing = Files.list(mods)) {
+            for (Path jar : listing.filter((p) -> p.toString().endsWith(".jar")).toList()) {
+                jars++;
+                collectDeclared(jar, declaredBlocks, declaredItems);
+            }
+        } catch (java.io.IOException e) {
+            sender.sendMessage("eprobe registryaudit: could not read mods: " + e);
+            return;
+        }
+
+        List<String> rows = new ArrayList<>();
+        rows.add("namespace\tdeclared_blocks\tmissing_blocks\tdeclared_items\tmissing_items\tfirst_missing");
+        List<String> detail = new ArrayList<>();
+        detail.add("id\tkind");
+
+        java.util.Set<String> namespaces = new java.util.TreeSet<>();
+        namespaces.addAll(declaredBlocks.keySet());
+        namespaces.addAll(declaredItems.keySet());
+
+        int totalMissingBlocks = 0;
+        int totalMissingItems = 0;
+        List<String> worst = new ArrayList<>();
+        for (String namespace : namespaces) {
+            java.util.Set<String> blocks = declaredBlocks.getOrDefault(namespace, java.util.Set.of());
+            java.util.Set<String> items = declaredItems.getOrDefault(namespace, java.util.Set.of());
+            int missingBlocks = 0;
+            int missingItems = 0;
+            String first = "";
+            for (String name : blocks) {
+                String id = namespace + ":" + name;
+                if (!registryHas(blockRegistry, id)) {
+                    missingBlocks++;
+                    detail.add(id + "\tblock");
+                    if (first.isEmpty()) {
+                        first = id + " (block)";
+                    }
+                }
+            }
+            for (String name : items) {
+                String id = namespace + ":" + name;
+                if (!registryHas(itemRegistry, id)) {
+                    missingItems++;
+                    detail.add(id + "\titem");
+                    if (first.isEmpty()) {
+                        first = id + " (item)";
+                    }
+                }
+            }
+            totalMissingBlocks += missingBlocks;
+            totalMissingItems += missingItems;
+            rows.add(namespace + "\t" + blocks.size() + "\t" + missingBlocks + "\t"
+                    + items.size() + "\t" + missingItems + "\t" + first);
+            if (missingBlocks + missingItems > 0) {
+                worst.add(namespace + " " + missingBlocks + "/" + blocks.size() + " blocks, "
+                        + missingItems + "/" + items.size() + " items");
+            }
+        }
+
+        write(this.getDataFolder().toPath().resolve("registryaudit.tsv"), rows);
+        write(this.getDataFolder().toPath().resolve("registryaudit-missing.tsv"), detail);
+        sender.sendMessage("eprobe registryaudit: " + jars + " jars, " + namespaces.size()
+                + " namespaces; missing " + totalMissingBlocks + " blocks and " + totalMissingItems
+                + " items -> registryaudit.tsv");
+        for (String line : worst.subList(0, Math.min(worst.size(), 12))) {
+            sender.sendMessage("  " + line);
+        }
+    }
+
+    /** Reads one jar's blockstates and item models, and its nested jars too. */
+    private static void collectDeclared(Path jar,
+            java.util.Map<String, java.util.Set<String>> blocks,
+            java.util.Map<String, java.util.Set<String>> items) {
+        try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(jar.toFile())) {
+            java.util.Enumeration<? extends java.util.zip.ZipEntry> entries = zip.entries();
+            while (entries.hasMoreElements()) {
+                java.util.zip.ZipEntry entry = entries.nextElement();
+                String name = entry.getName();
+                if (!name.endsWith(".json") || !name.startsWith("assets/")) {
+                    continue;
+                }
+                String[] parts = name.split("/");
+                if (parts.length < 4) {
+                    continue;
+                }
+                String namespace = parts[1];
+                if (parts.length == 4 && "blockstates".equals(parts[2])) {
+                    blocks.computeIfAbsent(namespace, (k) -> new java.util.TreeSet<>())
+                            .add(stripJson(parts[3]));
+                } else if (parts.length == 5 && "models".equals(parts[2]) && "item".equals(parts[3])) {
+                    items.computeIfAbsent(namespace, (k) -> new java.util.TreeSet<>())
+                            .add(stripJson(parts[4]));
+                }
+            }
+        } catch (java.io.IOException | RuntimeException ignored) {
+            // a jar we cannot read tells us nothing; the rest still do
+        }
+    }
+
+    private static String stripJson(String fileName) {
+        return fileName.endsWith(".json") ? fileName.substring(0, fileName.length() - 5) : fileName;
     }
 
     // ------------------------------------------------------------------ menus
