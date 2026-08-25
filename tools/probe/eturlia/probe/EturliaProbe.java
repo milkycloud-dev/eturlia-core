@@ -53,6 +53,7 @@ public final class EturliaProbe extends JavaPlugin {
             case "track" -> this.track(sender, args);
             case "sublevels" -> this.subLevels(sender, args);
             case "blockstate" -> this.blockStates(sender, args);
+            case "openblock" -> this.openBlock(sender, args);
             default -> sender.sendMessage("eprobe entities | menus | biomes | worldgen | levels | item <id>");
         }
         return true;
@@ -737,6 +738,63 @@ public final class EturliaProbe extends JavaPlugin {
         });
     }
 
+    // ------------------------------------------------------------------ open a block
+
+    /**
+     * Asks a placed block for its menu and opens it for a real player.
+     *
+     * <p>This is the server half of a right-click: {@code BlockState.getMenuProvider} then
+     * {@code ServerPlayer.openMenu}. Building a menu straight from {@code MenuType.create} does not
+     * test anything - that is the *client* factory, and it wants a {@code FriendlyByteBuf} that
+     * only exists on the client, so it throws for vanilla furnaces just as readily as for a modded
+     * backpack. Asking the block is what a player actually causes to happen.</p>
+     */
+    private void openBlock(CommandSender sender, String[] args) {
+        Player player = sender instanceof Player p ? p : firstOnline();
+        if (player == null) {
+            sender.sendMessage("eprobe openblock: needs one player online");
+            return;
+        }
+        if (args.length < 4) {
+            sender.sendMessage("usage: eprobe openblock <x> <y> <z>");
+            return;
+        }
+        final int bx;
+        final int by;
+        final int bz;
+        try {
+            bx = Integer.parseInt(args[1]);
+            by = Integer.parseInt(args[2]);
+            bz = Integer.parseInt(args[3]);
+        } catch (NumberFormatException bad) {
+            sender.sendMessage("eprobe openblock: " + bad.getMessage());
+            return;
+        }
+        Location at = new Location(player.getWorld(), bx, by, bz);
+        this.getServer().getRegionScheduler().execute(this, at, () -> {
+            String outcome;
+            try {
+                net.minecraft.server.level.ServerPlayer handle = ((CraftPlayer) player).getHandle();
+                net.minecraft.server.level.ServerLevel level = handle.serverLevel();
+                net.minecraft.core.BlockPos pos = new net.minecraft.core.BlockPos(bx, by, bz);
+                net.minecraft.world.level.block.state.BlockState state = level.getBlockState(pos);
+                net.minecraft.world.MenuProvider provider = state.getMenuProvider(level, pos);
+                if (provider == null) {
+                    outcome = "no menu provider for " + state.getBlock();
+                } else {
+                    java.util.OptionalInt id = handle.openMenu(provider);
+                    outcome = id.isPresent() ? "opened, container id " + id.getAsInt()
+                            : "provider refused to open";
+                }
+            } catch (Throwable thrown) {
+                outcome = describe(thrown);
+            }
+            sender.sendMessage("eprobe openblock: " + bx + "," + by + "," + bz + " -> " + outcome);
+            write(this.getDataFolder().toPath().resolve("openblock.tsv"),
+                    List.of("position\toutcome", bx + "," + by + "," + bz + "\t" + outcome));
+        });
+    }
+
     // ------------------------------------------------------------------ menus
 
     /**
@@ -750,17 +808,27 @@ public final class EturliaProbe extends JavaPlugin {
             sender.sendMessage("eprobe menus: needs one player online (the harness client will do)");
             return;
         }
+        Object registry = builtIn("MENU");
+        if (registry == null) {
+            sender.sendMessage("eprobe menus: could not reach BuiltInRegistries.MENU");
+            return;
+        }
         Path report = this.getDataFolder().toPath().resolve("menus.tsv");
         this.getServer().getRegionScheduler().execute(this, player.getLocation(), () -> {
             List<String> rows = new ArrayList<>();
+            rows.add("menu\toutcome");
             net.minecraft.world.entity.player.Inventory inventory =
                     ((CraftPlayer) player).getHandle().getInventory();
             int viewed = 0;
             int broken = 0;
-            for (ResourceLocation id : BuiltInRegistries.MENU.keySet()) {
-                MenuType<?> type = BuiltInRegistries.MENU.get(id);
+            // Iterated as an Iterable and keyed by name: the core's plugin remapper rewrites a
+            // Mojang-mapped keySet()/get() call site into one this server does not have, which is
+            // why this whole command used to die with NoSuchFieldError before it listed anything.
+            for (Object entry : (Iterable<?>) registry) {
+                String id = String.valueOf(callByName(registry, "getKey", entry));
                 String outcome;
                 try {
+                    MenuType<?> type = (MenuType<?>) entry;
                     AbstractContainerMenu menu = type.create(1, inventory);
                     Object view = menu == null ? null : menu.getBukkitView();
                     outcome = view == null ? "no-view" : "view " + shortName(view.getClass().getName());
@@ -775,8 +843,24 @@ public final class EturliaProbe extends JavaPlugin {
                 rows.add(id + "\t" + outcome);
             }
             write(report, rows);
-            sender.sendMessage("eprobe menus: " + viewed + " gave a view, " + broken + " threw -> " + report);
+            sender.sendMessage("eprobe menus: " + viewed + " gave a view, " + broken
+                    + " threw -> " + report);
         });
+    }
+
+    /** Calls a one-argument method by name, so no call site is left for the remapper to rewrite. */
+    private static Object callByName(Object target, String method, Object argument) {
+        for (java.lang.reflect.Method candidate : target.getClass().getMethods()) {
+            if (candidate.getName().equals(method) && candidate.getParameterCount() == 1) {
+                try {
+                    candidate.setAccessible(true);
+                    return candidate.invoke(target, argument);
+                } catch (ReflectiveOperationException | RuntimeException ignored) {
+                    return null;
+                }
+            }
+        }
+        return null;
     }
 
     // ------------------------------------------------------------------ biomes
