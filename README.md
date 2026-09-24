@@ -15,7 +15,7 @@
 
 ---
 
-**Русская версия — [ниже по этому же файлу](#eturlia-по-русски). Она полная, а не сокращённая.**
+**Русская версия: [ниже по этому же файлу](#eturlia-по-русски). Она полная, а не сокращённая.**
 
 ---
 
@@ -27,7 +27,7 @@
 4. [The one rule the whole project follows](#4-the-one-rule-the-whole-project-follows)
 5. [What happens when it boots](#5-what-happens-when-it-boots)
 6. [Where it stands right now](#6-where-it-stands-right-now)
-7. [The test rig — the exact pack this is measured against](#7-the-test-rig--the-exact-pack-this-is-measured-against)
+7. [The test rig: the exact pack this is measured against](#7-the-test-rig-the-exact-pack-this-is-measured-against)
 8. [Build](#8-build)
 9. [Run](#9-run)
 10. [Configuration](#10-configuration)
@@ -41,15 +41,15 @@
 
 ## 1. What this is, in one paragraph
 
-Eturlia is a **server core** — the program that runs a Minecraft server. It is a fork of
+Eturlia is a **server core**, the program that runs a Minecraft server. It is a fork of
 [Folia](https://github.com/PaperMC/Folia) (Paper's multi-threaded server) with the
 [NeoForge](https://github.com/neoforged/NeoForge) mod loader built into the same jar. You drop your
 NeoForge mods into `mods/`, your Bukkit/Paper plugins into `plugins/`, start one jar, and both halves
-run — while the world itself is ticked by several threads at once instead of one. Nothing in `mods/`
+run, while the world itself is ticked by several threads at once instead of one. Nothing in `mods/`
 or `plugins/` is patched, repackaged or renamed: every fix required to make a mod or a plugin work
 lives **inside the core**.
 
-That combination — modpack **+** plugins **+** real multi-threading — is the entire point. Every
+That combination (modpack **+** plugins **+** real multi-threading) is the entire point. Every
 other option available today gives you at most two of the three.
 
 ---
@@ -63,10 +63,10 @@ this ecosystem. If you already know what Folia is, skip to [§3](#3-the-problem-
 |---|---|
 | **Server core** | The server-side program itself. Mojang ships one (*vanilla*). Everyone else runs a modified build of it, because vanilla is slow and has no extension points. |
 | **Spigot / Paper** | The mainstream forks of the vanilla server. **Paper** is the de facto standard: faster, with thousands of bug fixes and a large configuration surface. |
-| **Plugin** | A server-side add-on written against the Bukkit/Paper API. It is installed **only on the server**; players join with an unmodified client. Permissions, land claims, chat, moderation, economy — all plugins. |
+| **Plugin** | A server-side add-on written against the Bukkit/Paper API. It is installed **only on the server**; players join with an unmodified client. Permissions, land claims, chat, moderation, economy: all plugins. |
 | **Mod (NeoForge)** | A modification that changes the game itself: new blocks, items, mobs, dimensions, machines. It must be installed on **both** the server and every player's client, and it patches game classes directly at runtime. NeoForge is the loader that makes this possible for modern versions. |
 | **Modpack** | A curated set of mods (here: 87 jars) that players install through a launcher. |
-| **Hybrid core** | A core that loads *both* mods and plugins — Cauldron, Mohist, Arclight, Youer. Historically fragile, and all of them **single-threaded**. |
+| **Hybrid core** | A core that loads *both* mods and plugins: Cauldron, Mohist, Arclight, Youer. Historically fragile, and all of them **single-threaded**. |
 | **Folia** | Paper's regionised fork. It cuts the world into independent square **regions** and ticks each region on its own thread, so a 32-core machine is actually used. The price: the entire single-thread assumption that every mod and most plugins were written under is gone. |
 | **Region** | A group of nearby loaded chunks that is owned by exactly one thread. Regions split and merge as players move. Touching a chunk that belongs to *another* region from your thread is a bug that Folia detects and refuses. |
 | **Tick** | One step of the game loop, 20 per second. In Folia each region has its own tick, on its own thread. |
@@ -94,7 +94,7 @@ The three available options and what each costs:
 | Arclight / Mohist / Youer | ✓ | ✓ | ✗ | what we run today, and the reason for the lag |
 | **Eturlia** | ✓ | ✓ | ✓ | this repository |
 
-What actually goes wrong when you naively put NeoForge on Folia — these are real failures from this
+What actually goes wrong when you naively put NeoForge on Folia. These are real failures from this
 project's logs, not hypotheticals:
 
 * **A mod inherits something Paper deleted.** Paper's chunk system rewrite (Moonrise) and its light
@@ -104,7 +104,7 @@ project's logs, not hypotheticals:
   server down.
 * **A mod builds a world of its own.** Create's contraption world, its schematic world and Sable's
   physics sub-levels all construct a `Level` that is not a `ServerLevel`. Folia's constructor threw
-  for any such level — once per tick. The visible symptom for a player: a Create machine assembles
+  for any such level, once per tick. The visible symptom for a player: a Create machine assembles
   and then does nothing, and cannot be removed.
 * **A plugin is refused for not declaring `folia-supported`.** Folia hard-gates plugins. Almost no
   plugin in the wild sets that flag, including WorldGuard, EssentialsX and LuckPerms.
@@ -113,7 +113,7 @@ project's logs, not hypotheticals:
   and half the plugin ecosystem expect them.
 * **A native library dies without a trace.** Create Aeronautics' physics is Rust (Rapier) behind
   JNI. A Java exception mid-construction leaves it half-built; its next native call panics in a
-  function that cannot unwind and **aborts the JVM** — no crash report, the wrapper just restarts.
+  function that cannot unwind and **aborts the JVM**: no crash report, the wrapper just restarts.
 
 ---
 
@@ -121,19 +121,19 @@ project's logs, not hypotheticals:
 
 > **The core absorbs the incompatibility. Mods and plugins are never touched.**
 
-The obvious alternative — patch each mod for regions — dies at the first pack update. Every jar in
+The obvious alternative (patch each mod for regions) dies at the first pack update. Every jar in
 `mods/` and `plugins/` here is byte-for-byte what its author shipped.
 
 Every change therefore has to pass one test:
 
 > *If a different mod hits the same error tomorrow, does it work without a new patch?*
 
-If the answer is no, it is not a fix — it is a workaround aimed at one mod, and it does not go in.
+If the answer is no, it is a workaround aimed at one mod, and it does not go in.
 In practice that means implementing the **whole** upstream interface rather than the one method that
 crashed, and restoring the **member** Paper removed rather than special-casing the caller.
 
 Every part of the compatibility layer is switchable, and `strict` always restores stock Folia
-behaviour — which is how you find out whose behaviour you are looking at.
+behaviour, which is how you find out whose behaviour you are looking at.
 
 ---
 
@@ -158,7 +158,7 @@ eturlia-1.21.1-neoforge-21.1.248.jar
         └─ 5. worlds load, regions begin ticking in parallel
 ```
 
-The compatibility layer is not a runtime agent — it is **source**, generated into the Folia tree
+The compatibility layer is **source**, not a runtime agent. It is generated into the Folia tree
 before compilation by `scripts/apply_compat_layer.py`, so what ships is an ordinary server jar.
 
 ---
@@ -173,19 +173,19 @@ Measured on the test rig on **2026-08-25**. Full history: [`CHANGELOG.md`](CHANG
 | Mods | **115 mods** loaded from **87 jars** (jar-in-jar included) |
 | Plugins | **37** loaded from **38 jars** |
 | Alarming lines in a full boot | **2**, both third-party plugin bugs (ImageFrame, KartaAutoAnnouncer) |
-| Mod classes that cannot bind to the core | **0** outside datagen — 15 final-overrides + 10 unimplemented interface methods, all in recipe/data generators that never run on a server (`tools/finalscan.py`, 87 jars, 36 196 mod classes against 8 674 core classes) |
+| Mod classes that cannot bind to the core | **0** outside datagen. Datagen has 15 final-overrides + 10 unimplemented interface methods, all in recipe/data generators that never run on a server (`tools/finalscan.py`, 87 jars, 36 196 mod classes against 8 674 core classes) |
 | Plugin commands registered | **224 of 225** declared |
 | Vanilla commands present | **48 of 48** that exist in 1.21.1 |
 | Create machinery | a bearing driven through a shaft chain assembles and lifts its blocks; 10 assemble/disassemble cycles with 0 errors |
 | Create: Aeronautics | contraptions assemble on a world border; physics sub-levels construct and tick |
-| Regions | tick in parallel, one thread per region — all four levels measured at 20 ticks/s on their own region threads |
+| Regions | tick in parallel, one thread per region; all four levels measured at 20 ticks/s on their own region threads |
 | Modded entities, with a client watching | **347 of 347** spawned, **0** threw, **0** packets the client could not decode |
 | Modded menus | **128** modded menu classes, **0** without a working `getBukkitView()` |
 | Entity data serializers | 36 modded serializers numbered the way a stock NeoForge client numbers them (`registry id + 256`) |
 | Player session | 240 s soak with a real client: stable, no disconnect |
 
 The per-failure-class account of every fix is [`docs/FIXES.md`](docs/FIXES.md). The live state
-document — what is open, what was already ruled out — is [`docs/HANDOFF.md`](docs/HANDOFF.md).
+document (what is open, what was already ruled out) is [`docs/HANDOFF.md`](docs/HANDOFF.md).
 
 > [!WARNING]
 > This is an experimental core. Keep world backups. Some mods assume a single server thread and
@@ -193,7 +193,7 @@ document — what is open, what was already ruled out — is [`docs/HANDOFF.md`]
 
 ---
 
-## 7. The test rig — the exact pack this is measured against
+## 7. The test rig: the exact pack this is measured against
 
 Every number in this file comes from one machine running one pack. Both are listed here in full, so
 that "it works" means something checkable.
@@ -208,15 +208,15 @@ that "it works" means something checkable.
 | Threads | `region-tick-threads: 16`, `chunk-worker-threads: 8`, `chunk-io-threads: 3` |
 | Compat flags | `mixins=soft`, `plugins=true`, `plugin-remap=true`, `registries=lenient`, `modloading=lenient`, `folia-stubs=lenient`, `bukkit-types=lenient` |
 
-The pack is **not** a curated test set — it is the production pack of a live server, copied out
+The pack is **not** a curated test set. It is the production pack of a live server, copied out
 unmodified. That is deliberate: a test pack proves nothing about a real one.
 
-### 7.1 Mods — 87 jars in `mods/`, 1:1
+### 7.1 Mods: 87 jars in `mods/`, 1:1
 
 Filenames are verbatim; the mod id and display name are read from each jar's
 `META-INF/neoforge.mods.toml`.
 
-**Create family — the reason this project exists in its current shape**
+**Create family, the reason this project exists in its current shape**
 
 | Jar | Mod id | Name |
 |---|---|---|
@@ -229,21 +229,21 @@ Filenames are verbatim; the mod id and display name are read from each jar's
 | `SSRD-1.8.5-1.21.1.jar` | `ssrd` | Separate Sable Render Distance |
 | `sim_fluid_assembly_fix-1.0.0.jar` | `sim_fluid_assembly_fix` | Sim Fluid Assembly Fix |
 
-**Content — dimensions, mobs, structures, worldgen**
+**Content: dimensions, mobs, structures, worldgen**
 
 | Jar | Mod id | Name |
 |---|---|---|
 | `twilightforest-1.21.1-4.8.3345-universal.jar` | `twilightforest` | The Twilight Forest |
-| `tf_dnv-2.0.3.jar` | `tf_dnv` | Twilight Forest — Dungeons & Villages |
+| `tf_dnv-2.0.3.jar` | `tf_dnv` | Twilight Forest: Dungeons & Villages |
 | `tfsaplingdimlock-1.0.0+1.21.1-neoforge.jar` | `tfsaplingdimlock` | TF Sapling Dim Lock |
 | `alexsmobs-1.22.17.jar` | `alexsmobs` | Alex's Mobs |
 | `malum-1.21.1-1.8.2.jar` | `malum` | Malum |
 | `BetterEnd-21.0.25.jar` | `betterend` | Better End |
 | `Terralith_1.21.1_v2.6.2_Neoforge.jar` | `lithostitched` | Terralith |
 | `Incendium_1.21.x_v5.4.4.jar` | `incendium` | Incendium |
-| `ibo-3.1.0-neoforge-1.21.jar` | — | Incendium Biomes Only |
-| `dungeons+-1.10.1.jar` | — | Dungeons+ |
-| `dungeons-and-taverns-v4.4.4.jar` | — | Dungeons and Taverns |
+| `ibo-3.1.0-neoforge-1.21.jar` | - | Incendium Biomes Only |
+| `dungeons+-1.10.1.jar` | - | Dungeons+ |
+| `dungeons-and-taverns-v4.4.4.jar` | - | Dungeons and Taverns |
 | `YungsBetterDungeons-1.21.1-NeoForge-5.1.4.jar` | `betterdungeons` | YUNG's Better Dungeons |
 | `YungsBetterNetherFortresses-1.21.1-NeoForge-3.1.5.jar` | `betterfortresses` | YUNG's Better Nether Fortresses |
 | `FarmersDelight-1.21.1-1.3.2.jar` | `farmersdelight` | Farmer's Delight |
@@ -269,12 +269,12 @@ Filenames are verbatim; the mod id and display name are read from each jar's
 | `VisualWorkbench-v21.1.1-1.21.1-NeoForge.jar` | `visualworkbench` | Visual Workbench |
 | `Almanac-1.21.1-2-neoforge-1.5.2.jar` | `almanac` | Almanac |
 
-**Libraries — loaded by the mods above, and the usual source of binding failures**
+**Libraries: loaded by the mods above, and the usual source of binding failures**
 
 | Jar | Mod id | Name |
 |---|---|---|
 | `architectury-13.0.11-neoforge.jar` | `architectury` | Architectury |
-| `kotlinforforge-5.12.0-all.jar` | — | Kotlin for Forge |
+| `kotlinforforge-5.12.0-all.jar` | - | Kotlin for Forge |
 | `geckolib-neoforge-1.21.1-4.8.4.jar` | `geckolib` | GeckoLib 4 |
 | `citadel-1.21.1-2.7.6.jar` | `citadel` | Citadel |
 | `bookshelf-neoforge-1.21.1-21.1.81.jar` | `bookshelf` | Bookshelf |
@@ -290,7 +290,7 @@ Filenames are verbatim; the mod id and display name are read from each jar's
 | `Iceberg-1.21.1-neoforge-1.3.2.jar` | `iceberg` | Iceberg |
 | `konkrete_neoforge_1.9.9_MC_1.21.jar` | `konkrete` | Konkrete |
 | `libjf-3.17.6+forge.jar` | `libjf` | LibJF |
-| `mru-1.0.19+LTS+1.21.1+neoforge.jar` | — | M.R.U |
+| `mru-1.0.19+LTS+1.21.1+neoforge.jar` | - | M.R.U |
 | `anvianslib-neoforge-1.21-1.4.2.jar` | `anvianslib` | Anvian's Lib |
 | `prickle-neoforge-1.21.1-21.1.11.jar` | `prickle` | PrickleMC |
 | `coroutil-neoforge-1.21.0-1.3.8.jar` | `coroutil` | CoroUtil |
@@ -303,7 +303,7 @@ Filenames are verbatim; the mod id and display name are read from each jar's
 | `packetfixer-3.3.1-1.20.5-1.21.X-merged.jar` | `packetfixer` | PacketFixer |
 | `respackopts-4.14.0+1.21.1.forge.4.jar` | `respackopts` | Resource Pack Options |
 
-**Client-side and quality of life — present on the server because the pack ships them**
+**Client-side and quality of life (present on the server because the pack ships them)**
 
 | Jar | Mod id | Name |
 |---|---|---|
@@ -323,7 +323,7 @@ Filenames are verbatim; the mod id and display name are read from each jar's
 | `chunkholdersafe-1.0.0+1.21.1-neoforge.jar` | `chunkholdersafe` | ChunkHolder Safe |
 | `notebuns-farmcharm-fix-1.0.0.jar` | `notebuns_farmcharm_fix` | NoteBuns FarmCharm Fix |
 
-**Skipped automatically** — the core renames these to `*.jar.eturlia-skipped` at startup and prints
+**Skipped automatically.** The core renames these to `*.jar.eturlia-skipped` at startup and prints
 the reason; the files are never deleted:
 
 | Jar | Reason printed by the core |
@@ -332,7 +332,7 @@ the reason; the files are never deleted:
 | `ferritecore-7.0.3-neoforge.jar` | it replaces the block-state tables Paper already replaced |
 | `arclight_sable_patch-1.1.1.jar` | targets Arclight; Eturlia already has the Folia bridges |
 
-### 7.2 Plugins — 38 jars in `plugins/`, 1:1
+### 7.2 Plugins: 38 jars in `plugins/`, 1:1
 
 | Jar | Plugin name | Version | What it exercises |
 |---|---|---|---|
@@ -363,9 +363,9 @@ the reason; the files are never deleted:
 | `ChunkHeatMapAdmin-1.0.2.jar` | ChunkHeatMapAdmin | 1.0.2 | its admin half |
 | `InvSee++.jar` | InvSeePlusPlus | 0.30.15 | remote inventory access |
 | `InventoryRollbackPlus-1.8.3.jar` | InventoryRollbackPlus | 1.8.3 | inventory snapshots |
-| `ImageFrame-2026.1.4.0.jar` | ImageFrame | 2026.1.4.0 | map rendering — **fails to enable, third-party bug** |
-| `KartaAutoAnnouncer-1.3.1.jar` | KartaAutoAnnouncer | 1.3.1 | announcements — **fails to enable, missing embedded config** |
-| `PlugManX-3.0.2.jar` | PlugManX | 3.0.2 | **does not load** — see [§12](#12-known-limitations-and-open-problems) |
+| `ImageFrame-2026.1.4.0.jar` | ImageFrame | 2026.1.4.0 | map rendering; **fails to enable, third-party bug** |
+| `KartaAutoAnnouncer-1.3.1.jar` | KartaAutoAnnouncer | 1.3.1 | announcements; **fails to enable, missing embedded config** |
+| `PlugManX-3.0.2.jar` | PlugManX | 3.0.2 | **does not load**, see [§12](#12-known-limitations-and-open-problems) |
 | `KotlinMC-2.2.20.jar` | Kotlin | 2.2.20 | Kotlin runtime for plugins |
 | `ConsoleSpamFixReborn-1.11.8.jar` | ConsoleSpamFixReborn | 1.11.8 | log filtering |
 | `DemonicEye-1.0.0.jar` | DemonicEye | 1.0.0 | in-house |
@@ -402,8 +402,8 @@ The order is mandatory:
 If an anchor the generator expects is missing, it stops with `!! anchor missing` and the build does
 not continue. That is intended: a silently skipped plane is worse than a failed build.
 
-The whole loop — patch, generate, build, announce the restart in chat, stop, deploy, start, grade
-the boot — is one command:
+The whole loop (patch, generate, build, announce the restart in chat, stop, deploy, start, grade
+the boot) is one command:
 
 ```bash
 tools/cycle.sh
@@ -424,7 +424,7 @@ java -Xms8G -Xmx8G -XX:+UseZGC -XX:+ZGenerational \
 ```
 
 The jar is a launcher: it unpacks its bundled libraries into `eturlia-libraries/` beside itself and
-starts the server JVM. From that point it is an ordinary server directory — `mods/`, `plugins/`,
+starts the server JVM. From that point it is an ordinary server directory: `mods/`, `plugins/`,
 `server.properties`, `config/paper-global.yml`, `spigot.yml`, `bukkit.yml`, all where you expect
 them.
 
@@ -438,7 +438,7 @@ about Eturlia is visible to the client.
 ### 10.1 Compatibility switches (JVM flags)
 
 Every plane of the layer has a flag. `strict` (or `false`) always means *give stock Folia behaviour
-back* — the fastest way to find out whether a symptom is ours or upstream's.
+back*. That is the fastest way to find out whether a symptom is ours or upstream's.
 
 | Flag | Default | What it does |
 |---|---|---|
@@ -449,12 +449,12 @@ back* — the fastest way to find out whether a symptom is ours or upstream's.
 | `-Deturlia.compat.folia-stubs` | `lenient` | `getTickCount()` answers with the global region's tick; `execute`/`tell`/`executeBlocking` schedule instead of throwing |
 | `-Deturlia.compat.bukkit-types` | `lenient` | a modded entity reads as `UNKNOWN` and a modded block as `Material.STONE` to plugins, instead of throwing |
 | `-Deturlia.compat.folia-commands` | `lenient` | re-registers the 17 vanilla commands Folia comments out: `/scoreboard`, `/team`, `/tag`, `/data`, `/clone`, `/function`, `/loot`, `/ride`, `/schedule`, `/spreadplayers`, `/datapack`, `/bossbar`, `/item`, `/trigger`, `/spectate`, `/teammsg`, `/return` |
-| `-Deturlia.compat.plugin-remap` | `true` | Spigot→Mojang remapper for plugins; a jar with classes this JVM cannot load is retried without them |
+| `-Deturlia.compat.plugin-remap` | `true` | Spigot-to-Mojang remapper for plugins; a jar with classes this JVM cannot load is retried without them |
 | `-Deturlia.compat.sublevel-chunks` | `lenient` | lets a mod-built sub-level load a chunk **no region owns** from the calling thread; `strict` restores Folia's refusal |
 | `-Deturlia.compat.read-timeout` | `90` | seconds Netty waits for a client that is still building the world; `0` removes the handler entirely |
-| `-Deturlia.compat.quarantine` | — | comma-separated mod ids to skip at load |
+| `-Deturlia.compat.quarantine` | (none) | comma-separated mod ids to skip at load |
 | `-Deturlia.lithostitched.allow-unsafe` | off | answers Lithostitched's version gate once instead of a refusal block every boot |
-| `-Deturlia.debug.particles` | off | logs each distinct particle type the **server** sends, once per 10 s — the way to prove a visual effect is or is not server-side |
+| `-Deturlia.debug.particles` | off | logs each distinct particle type the **server** sends, once per 10 s. Use it to prove whether a visual effect is server-side |
 | `-Deturlia.region.guard` | `WARN` | `STRICT` rejects cross-region calls, `WARN` logs them, `OFF` disables the guard |
 
 ### 10.2 `config/eturlia.yml`
@@ -469,7 +469,7 @@ The section that matters most:
 ```yaml
 threads:
   region-tick-threads: 16     # Folia region tickers; -1 = auto
-  region-grid-exponent: 2     # region cell = 2^n chunks per side; 2 → 4×4
+  region-grid-exponent: 2     # region cell = 2^n chunks per side; 2 gives 4×4
   chunk-worker-threads: 8     # Moonrise: generation, lighting, heavy chunk tasks
   chunk-io-threads: 3         # region-file reads/writes
 ```
@@ -486,25 +486,25 @@ booting the real thing and reading the answer back out of a running game.
 
 | Tool | What it answers |
 |---|---|
-| `tools/cycle.sh` | one turn of the loop: patch → generate → build → deploy → restart → grade |
+| `tools/cycle.sh` | one turn of the loop: patch, generate, build, deploy, restart, grade |
 | `tools/logcheck.py` | grades a boot: groups every WARN/ERROR, hides the groups already judged benign (each carries its reason), prints only what is **new** since the last run |
 | `tools/logsweep.py` | every log at every level, grouped by normalised shape; `--grep "text"` expands one shape |
-| `tools/finalscan.py` | **without starting the server**: reads the compiled core against every mod jar (nested jar-in-jar included) and reports the two ways a mod cannot bind — overriding a method Paper sealed `final` (`IncompatibleClassChangeError` at class load) and implementing an interface CraftBukkit has since added an abstract method to (`AbstractMethodError` on first call) |
+| `tools/finalscan.py` | **without starting the server**: reads the compiled core against every mod jar (nested jar-in-jar included) and reports the two ways a mod cannot bind: overriding a method Paper sealed `final` (`IncompatibleClassChangeError` at class load) and implementing an interface CraftBukkit has since added an abstract method to (`AbstractMethodError` on first call) |
 | `tools/modsweep.py` | console sweep: every command every plugin declares, `/summon` for a sample of modded entity types, `/setblock` + read-back for modded blocks, `/place feature` for modded worldgen, and modded block entities left ticking while it watches for exceptions |
 | `tools/cmdtree.py` | maps a mod's command tree by reading what Brigadier underlines as unknown |
 | `tools/aerotest.sh`, `tools/aerostress.sh` | Create and Create: Aeronautics driven by a real headless client |
-| `tools/trailcheck.sh` | a lit empty stage with screenshots front/behind/third-person — the loop for chasing a visual bug |
+| `tools/trailcheck.sh` | a lit empty stage with screenshots front/behind/third-person, the loop for chasing a visual bug |
 
 **Reading an answer back out of the game.** Three obvious channels do not work on this build, and
 each was learned expensively:
 
-* `/say` is useless as a marker — the log keeps the translation key (`chat.type.announcement`) and
+* `/say` is useless as a marker: the log keeps the translation key (`chat.type.announcement`) and
   drops the text, from the console *and* from a player.
 * **Command feedback from a player is logged in full**: `[EturliaTester: Changed the block at x, y,
-  z]`. That is the marker mechanism — give every assertion its own coordinate and read the
+  z]`. That is the marker mechanism: give every assertion its own coordinate and read the
   coordinates back.
 * The server also echoes each command as it is issued, so a naive grep matches
-  `/execute if … run …` whether or not the condition held. Always exclude `issued server command`
+  `/execute if ... run ...` whether or not the condition held. Always exclude `issued server command`
   when harvesting results.
 * Console commands cannot use entity selectors (the console runs on the global region) and
   **repeating command blocks never fire** on this build. Anything selector-shaped needs a real
@@ -513,13 +513,13 @@ each was learned expensively:
 **Driving a headless client** (portablemc under `xvfb-run`, keystrokes via `xdotool`, screenshots via
 `import`) has its own traps, all of which have cost a session at least once:
 
-* Prove the keyboard reaches the game before believing anything — type a command whose feedback is
+* Prove the keyboard reaches the game before believing anything: type a command whose feedback is
   logged, and continue only when it appears. Without that check, a run "passes" every phase with
   nothing typed at all.
 * Escape with no menu open **opens** the pause menu, and every later keystroke goes to the menu.
 * Anchor "is the client still connected" *after* the join line, or the previous client's
   `lost connection` reads as this one dying.
-* `authme register <player>` from the console **kicks the player it just registered** — register
+* `authme register <player>` from the console **kicks the player it just registered**, so register
   before the client connects, then `authme forcelogin`.
 * Vanilla op is not enough for `/say`, `/execute` or `/summon`: LuckPerms answers the
   `minecraft.command.*` permissions and has to be told.
@@ -533,11 +533,11 @@ Stated plainly, because a README that only lists successes is not useful.
 | Problem | Status |
 |---|---|
 | **Create: Aeronautics can abort the JVM.** `/sable spawn joint_test` reaches Rapier's `buoyancy.rs`, whose panic is non-unwinding: the process dies with no crash report and the wrapper restarts it. | Upstream (native) bug in the mod. The Java-side sub-level errors that used to precede it are fixed; the remaining abort is inside Rust. Run that command last in a suite, or not at all. |
-| **PlugManX does not load.** Paper's `MavenLibraryResolver` throws `NullPointerException` because its repository system is not wired in this build, so any plugin whose Paper plugin-loader downloads Maven libraries at load time is skipped. | Open. A real class of failure, not a single plugin — the next plugin that uses a library loader will hit it too. |
+| **PlugManX does not load.** Paper's `MavenLibraryResolver` throws `NullPointerException` because its repository system is not wired in this build, so any plugin whose Paper plugin-loader downloads Maven libraries at load time is skipped. | Open. A real class of failure, not a single plugin: the next plugin that uses a library loader will hit it too. |
 | **ImageFrame** fails to enable (`ExceptionInInitializerError`), **KartaAutoAnnouncer** fails to enable (missing embedded `config.yml`). | Third-party bugs, reproducible off Eturlia. |
 | **Cyan trails behind players** reported as a visual artefact. | Not the server. `-Deturlia.debug.particles=true` proved the core sends **zero** particles through a full run of walking; removing all 38 plugins and ~35 client mods changed nothing, and it reproduces in a brand-new world. It is drawn by the client half of a mod. |
-| **Datagen classes cannot bind** — 15 final-overrides and 10 unimplemented interface methods, all in recipe/data generators (Create's Registrate, PuzzlesLib, Twilight Forest's recipe book). | Harmless: those classes only run in a development data-generation environment, never on a server. |
-| **A Create: Aeronautics airship does not move.** Sable maps its physics sub-levels into the same world ~20.5 million blocks out, so they get Folia regions of their own, then drives them from the *player's* region thread. Folia refuses that cross-region write; sable catches the refusal per block (`Failed to mark & notify block`) and the contraption is assembled but never driven. | Open, and diagnosed. Handing the write to the owning region was tried and reverted — the queue reaches the right thread, but a tick later sable's plot holder is gone and its own mixin throws `Cannot change blocks in nonexistent plot holder` into the region tick, which stops the server. A real fix has to come from sable driving its sub-level from that sub-level's region, or from the regioniser treating the two areas as one region. Neither is a guard tweak. |
+| **Datagen classes cannot bind.** 15 final-overrides and 10 unimplemented interface methods, all in recipe/data generators (Create's Registrate, PuzzlesLib, Twilight Forest's recipe book). | Harmless: those classes only run in a development data-generation environment, never on a server. |
+| **A Create: Aeronautics airship does not move.** Sable maps its physics sub-levels into the same world ~20.5 million blocks out, so they get Folia regions of their own, then drives them from the *player's* region thread. Folia refuses that cross-region write; sable catches the refusal per block (`Failed to mark & notify block`) and the contraption is assembled but never driven. | Open, and diagnosed. Handing the write to the owning region was tried and reverted: the queue reaches the right thread, but a tick later sable's plot holder is gone and its own mixin throws `Cannot change blocks in nonexistent plot holder` into the region tick, which stops the server. A real fix has to come from sable driving its sub-level from that sub-level's region, or from the regioniser treating the two areas as one region. Neither is a guard tweak. |
 | **Mods that assume a single server thread.** | Inherent to the design. The region guard (`-Deturlia.region.guard=STRICT`) is how you find them. |
 
 ---
@@ -548,7 +548,7 @@ Stated plainly, because a README that only lists successes is not useful.
 patches/server/            paperweight patches over Folia; everything from 0095 up is ours
 patches/api/               patches over the Folia/Paper API
 scripts/
-  apply_compat_layer.py    the compatibility layer generator — the single source of truth
+  apply_compat_layer.py    the compatibility layer generator, the single source of truth
   selftest.sh              a quick check that needs no full classpath
   check-patches.py         structural validation of the patch tree
 build-data/
@@ -565,7 +565,7 @@ docs/archive/              superseded documents, kept for the record
 
 ## 14. Adding a fix
 
-The compatibility layer is not a pile of ad-hoc edits — it is an ordered list of **planes** in
+The compatibility layer is an ordered list of **planes** in
 `scripts/apply_compat_layer.py`, each one function:
 
 ```python
@@ -584,7 +584,7 @@ def install_my_plane():
 makes the script safe to re-run. The anchor must be copied out of the file verbatim; if it is not
 found the script stops loudly instead of quietly skipping.
 
-A new file placed under `Folia-Server/src/main/java` overrides the decompiled vanilla one — that is
+A new file placed under `Folia-Server/src/main/java` overrides the decompiled vanilla one. That is
 how `LootContext`, `RecipeBookType`, `RecipeBookSettings`, `BuiltInPackSource` and `HangingEntity`
 entered the tree, all of them classes NeoForge adds methods to that Folia's copy does not have.
 
@@ -596,14 +596,14 @@ often a case of one already solved.
 ## 15. Upstream, and the licence
 
 This repository is a fork of [`eturnercus/Core`](https://github.com/eturnercus/Core). The history is
-shared — everything up to `4e166a6` comes from there. It was created as a separate repository rather
+shared: everything up to `4e166a6` comes from there. It was created as a separate repository rather
 than with the Fork button, so GitHub does not draw the connection itself; it is declared here, in the
 repository description, and in [the upstream notice](https://github.com/eturnercus/Core/issues/31).
 Upstream is itself a fork of [PaperMC/Folia](https://github.com/PaperMC/Folia) carrying
 [NeoForge](https://github.com/neoforged/NeoForge) 21.1.248 / FancyModLoader 4.0.43.
 
-**The licence is deliberately restrictive.** Everything authored in this repository — the
-compatibility layer, the launcher, the tooling, the documentation and any binary built from it — is
+**The licence is deliberately restrictive.** Everything authored in this repository (the
+compatibility layer, the launcher, the tooling, the documentation and any binary built from it) is
 proprietary: no redistribution, no derivative works, no hosting for third parties, no commercial use,
 no republication, without written permission. Read [`LICENSE`](LICENSE) before doing anything with
 this code beyond looking at it.
@@ -635,7 +635,7 @@ makes distributing a build lawful at all. The proprietary terms cover this proje
 4. [Единственное правило проекта](#4-единственное-правило-проекта)
 5. [Что происходит при запуске](#5-что-происходит-при-запуске)
 6. [Текущее состояние](#6-текущее-состояние)
-7. [Тестовый стенд — точный состав](#7-тестовый-стенд--точный-состав)
+7. [Тестовый стенд: точный состав](#7-тестовый-стенд-точный-состав)
 8. [Сборка](#8-сборка)
 9. [Запуск](#9-запуск)
 10. [Настройка](#10-настройка)
@@ -649,15 +649,15 @@ makes distributing a build lawful at all. The proprietary terms cover this proje
 
 ## 1. Что это, в одном абзаце
 
-Eturlia — это **ядро сервера**, то есть та программа, которая держит сервер Minecraft. Форк
+Eturlia это **ядро сервера**, то есть программа, которая держит сервер Minecraft. Форк
 [Folia](https://github.com/PaperMC/Folia) (многопоточного сервера от Paper) с встроенным в тот же jar
 модлоадером [NeoForge](https://github.com/neoforged/NeoForge). Моды NeoForge кладутся в `mods/`,
-плагины Bukkit/Paper — в `plugins/`, запускается один jar, и работают обе половины, при этом мир
+плагины Bukkit/Paper в `plugins/`, запускается один jar, и работают обе половины, при этом мир
 тикается несколькими потоками сразу, а не одним. Ничего в `mods/` и `plugins/` не патчится, не
 переупаковывается и не переименовывается: любое исправление, нужное чтобы мод или плагин заработал,
 живёт **внутри ядра**.
 
-Именно эта комбинация — модпак **плюс** плагины **плюс** настоящая многопоточность — и есть смысл
+Именно эта комбинация (модпак **плюс** плагины **плюс** настоящая многопоточность) и есть смысл
 проекта. Любой другой вариант, доступный сегодня, даёт максимум два пункта из трёх.
 
 ---
@@ -670,16 +670,16 @@ Eturlia — это **ядро сервера**, то есть та програ�
 | Термин | Что это на самом деле |
 |---|---|
 | **Ядро сервера** | Сама серверная программа. У Mojang она одна (*ванильная*), все остальные запускают её модифицированные сборки, потому что ванильная медленная и не имеет точек расширения. |
-| **Spigot / Paper** | Основные форки ванильного сервера. **Paper** — фактический стандарт: быстрее, тысячи исправлений, огромная настройка. |
-| **Плагин** | Серверное дополнение на API Bukkit/Paper. Ставится **только на сервер**, игрок заходит обычным клиентом. Права, приваты, чат, модерация, экономика — это всё плагины. |
-| **Мод (NeoForge)** | Модификация самой игры: новые блоки, предметы, мобы, измерения, механизмы. Нужен **и на сервере, и у каждого игрока**, и правит классы игры прямо в рантайме. NeoForge — загрузчик, который это обеспечивает на современных версиях. |
-| **Модпак** | Собранный набор модов (здесь — 87 jar), который игроки ставят лаунчером. |
+| **Spigot / Paper** | Основные форки ванильного сервера. **Paper** стал фактическим стандартом: быстрее, тысячи исправлений, огромная настройка. |
+| **Плагин** | Серверное дополнение на API Bukkit/Paper. Ставится **только на сервер**, игрок заходит обычным клиентом. Права, приваты, чат, модерация, экономика: это всё плагины. |
+| **Мод (NeoForge)** | Модификация самой игры: новые блоки, предметы, мобы, измерения, механизмы. Нужен **и на сервере, и у каждого игрока**, и правит классы игры прямо в рантайме. NeoForge: загрузчик, который обеспечивает это на современных версиях. |
+| **Модпак** | Собранный набор модов (здесь 87 jar), который игроки ставят лаунчером. |
 | **Гибридное ядро** | Ядро, которое грузит и моды, и плагины: Cauldron, Mohist, Arclight, Youer. Исторически хрупкие, и все **однопоточные**. |
-| **Folia** | Региональный форк Paper. Режет мир на независимые квадратные **регионы** и тикает каждый своим потоком, так что 32-ядерная машина реально используется. Цена — исчезает предположение об одном потоке, под которое написаны все моды и почти все плагины. |
-| **Регион** | Группа соседних загруженных чанков, принадлежащая ровно одному потоку. Регионы делятся и сливаются по мере движения игроков. Обращение к чанку *чужого* региона со своего потока — ошибка, которую Folia ловит и запрещает. |
+| **Folia** | Региональный форк Paper. Режет мир на независимые квадратные **регионы** и тикает каждый своим потоком, так что 32-ядерная машина реально используется. Цена: исчезает предположение об одном потоке, под которое написаны все моды и почти все плагины. |
+| **Регион** | Группа соседних загруженных чанков, принадлежащая ровно одному потоку. Регионы делятся и сливаются по мере движения игроков. Обращение к чанку *чужого* региона со своего потока считается ошибкой, Folia её ловит и запрещает. |
 | **Тик** | Один шаг игрового цикла, 20 раз в секунду. В Folia у каждого региона свой тик на своём потоке. |
 
-**Почему «моды и плагины вместе» — сложно:** мод считает, что он один на единственном серверном
+**Почему «моды и плагины вместе» это сложно:** мод считает, что он один на единственном серверном
 потоке, и лезет в любую часть мира в любой момент. Плагин рассчитывает на Bukkit API и на Folia
 обязан быть помечен региональным, иначе его не загрузят. Folia рассчитывает на ванильные структуры
 данных, которые NeoForge переписывает. Каждая из трёх частей спроектирована без оглядки на две
@@ -703,25 +703,25 @@ Eturlia — это **ядро сервера**, то есть та програ�
 | Arclight / Mohist / Youer | ✓ | ✓ | ✗ | то, что работает сейчас, и причина лагов |
 | **Eturlia** | ✓ | ✓ | ✓ | этот репозиторий |
 
-Что именно ломается, если просто поставить NeoForge на Folia — это реальные поломки из логов
+Что именно ломается, если просто поставить NeoForge на Folia. Это реальные поломки из логов
 проекта, а не гипотезы:
 
 * **Мод наследует то, что Paper удалил.** Переписанная система чанков (Moonrise) и движок света
   (Starlight) *убирают* поля и методы, которые были в ванилле. Мод, собранный под ваниллу, всё ещё их
-  зовёт. При компиляции ничего не предупреждает — вылетает `NoSuchFieldError` / `NoSuchMethodError`
+  зовёт. При компиляции ничего не предупреждает: вылетает `NoSuchFieldError` / `NoSuchMethodError`
   при первом же исполнении. А на Folia упавший тик региона кладёт весь сервер.
 * **Мод строит собственный мир.** Мир контрапций Create, его мир схематик и физические под-миры Sable
   создают `Level`, который не является `ServerLevel`. Конструктор Folia на любой такой уровень
-  бросал исключение — раз в тик. Как это выглядит для игрока: механизм Create собирается и не
+  бросал исключение, раз в тик. Как это выглядит для игрока: механизм Create собирается и не
   работает, и его нельзя разобрать.
 * **Плагин не загружается из-за отсутствия `folia-supported`.** Folia жёстко отсекает плагины. Этот
   флаг не ставит почти никто, включая WorldGuard, EssentialsX и LuckPerms.
 * **Folia удаляет ванильные команды.** `/scoreboard`, `/team`, `/data`, `/clone`, `/datapack` и ещё
   десяток закомментированы в апстриме как не региональные. На них рассчитывают датапаки, картостроители
   и половина плагинов.
-* **Нативная библиотека умирает молча.** Физика Create Aeronautics — это Rust (Rapier) через JNI.
+* **Нативная библиотека умирает молча.** Физика Create Aeronautics написана на Rust (Rapier) и работает через JNI.
   Java-исключение посреди конструирования оставляет её недостроенной; следующий нативный вызов
-  паникует в функции, которая не умеет разворачивать стек, и **убивает JVM** — без crash-отчёта,
+  паникует в функции, которая не умеет разворачивать стек, и **убивает JVM** без crash-отчёта,
   обёртка просто перезапускает сервер.
 
 ---
@@ -730,19 +730,19 @@ Eturlia — это **ядро сервера**, то есть та програ�
 
 > **Несовместимость поглощает ядро. Моды и плагины не трогаем.**
 
-Очевидная альтернатива — патчить каждый мод под регионы — заканчивается на первом же обновлении
+Очевидная альтернатива (патчить каждый мод под регионы) заканчивается на первом же обновлении
 пака. Каждый jar в `mods/` и `plugins/` здесь побайтово такой, каким его выложил автор.
 
 Поэтому любое изменение проходит один критерий:
 
-> *Если завтра другой мод получит ту же ошибку — он заработает без нового патча?*
+> *Если завтра другой мод получит ту же ошибку, он заработает без нового патча?*
 
-Если нет — это не исправление, а костыль под конкретный мод, и в ядро он не идёт. На практике это
+Если нет, это костыль под конкретный мод, и в ядро он не идёт. На практике это
 значит: реализовать **весь** интерфейс апстрима, а не тот единственный метод, который упал; вернуть
 **член класса**, который убрал Paper, а не обходить его у вызывающего.
 
 Каждая плоскость слоя совместимости переключается, и `strict` всегда возвращает штатное поведение
-Folia — так и выясняется, чьё поведение вы сейчас наблюдаете.
+Folia. Так и выясняется, чьё поведение вы сейчас наблюдаете.
 
 ---
 
@@ -762,12 +762,12 @@ eturlia-1.21.1-neoforge-21.1.248.jar
         │
         ├─ 4. стартует слой CraftBukkit: грузится plugins/
         │       · снимается проверка folia-supported; старый BukkitScheduler крутится на глобальном тике
-        │       · модовая сущность видится плагинам как UNKNOWN, модовый блок — как STONE
+        │       · модовая сущность видится плагинам как UNKNOWN, модовый блок как STONE
         │
         └─ 5. загружаются миры, регионы начинают тикать параллельно
 ```
 
-Слой совместимости — не рантайм-агент, а **исходники**: он генерируется в дерево Folia до компиляции
+Слой совместимости это **исходники**, а не рантайм-агент: он генерируется в дерево Folia до компиляции
 скриптом `scripts/apply_compat_layer.py`, поэтому наружу уходит обычный серверный jar.
 
 ---
@@ -781,20 +781,20 @@ eturlia-1.21.1-neoforge-21.1.248.jar
 | Старт | `Done (12.673s)` |
 | Моды | **115 модов** из **87 jar** (с учётом вложенных jar-in-jar) |
 | Плагины | **37** из **38 jar** |
-| Тревожных строк за полную загрузку | **2**, обе — баги сторонних плагинов (ImageFrame, KartaAutoAnnouncer) |
-| Классов модов, не стыкующихся с ядром | **0** вне датагена — 15 переопределений `final` и 10 нереализованных методов интерфейсов, все в генераторах рецептов и данных, которые на сервере не исполняются (`tools/finalscan.py`, 87 jar, 36 196 классов модов против 8 674 классов ядра) |
+| Тревожных строк за полную загрузку | **2**, обе из-за багов сторонних плагинов (ImageFrame, KartaAutoAnnouncer) |
+| Классов модов, не стыкующихся с ядром | **0** вне датагена. В датагене 15 переопределений `final` и 10 нереализованных методов интерфейсов, все в генераторах рецептов и данных, которые на сервере не исполняются (`tools/finalscan.py`, 87 jar, 36 196 классов модов против 8 674 классов ядра) |
 | Команд плагинов зарегистрировано | **224 из 225** объявленных |
 | Ванильных команд на месте | **48 из 48**, существующих в 1.21.1 |
 | Механика Create | подшипник, приводимый цепочкой валов, собирает контрапцию и поднимает блоки; 10 циклов сборки/разборки без ошибок |
 | Create: Aeronautics | контрапции собираются на границе мира; физические под-миры создаются и тикают |
-| Регионы | тикают параллельно, по потоку на регион — все четыре уровня замерены на 20 тиков/с на своих региональных потоках |
+| Регионы | тикают параллельно, по потоку на регион; все четыре уровня замерены на 20 тиков/с на своих региональных потоках |
 | Модовые сущности, при живом клиенте | **347 из 347** заспавнены, **0** упали, **0** пакетов, которые клиент не смог раскодировать |
 | Модовые меню | **128** классов, **0** без рабочего  |
 | Entity data serializer | 36 модовых сериализаторов нумеруются так же, как их нумерует обычный клиент NeoForge (`id реестра + 256`) |
 | Сессия игрока | 240 с с живым клиентом: стабильно, без отключений |
 
-Разбор каждого исправления по классам поломок — [`docs/FIXES.md`](docs/FIXES.md). Живой документ
-состояния (что открыто, что уже исключено) — [`docs/HANDOFF.md`](docs/HANDOFF.md).
+Разбор каждого исправления по классам поломок: [`docs/FIXES.md`](docs/FIXES.md). Живой документ
+состояния (что открыто, что уже исключено): [`docs/HANDOFF.md`](docs/HANDOFF.md).
 
 > [!WARNING]
 > Ядро экспериментальное. Держите бэкапы миров. Часть модов рассчитывает на один серверный поток и
@@ -802,7 +802,7 @@ eturlia-1.21.1-neoforge-21.1.248.jar
 
 ---
 
-## 7. Тестовый стенд — точный состав
+## 7. Тестовый стенд: точный состав
 
 Все цифры в этом файле сняты на одной машине с одним паком. И то, и другое приведено полностью,
 чтобы фраза «работает» была проверяемой.
@@ -817,15 +817,15 @@ eturlia-1.21.1-neoforge-21.1.248.jar
 | Потоки | `region-tick-threads: 16`, `chunk-worker-threads: 8`, `chunk-io-threads: 3` |
 | Флаги совместимости | `mixins=soft`, `plugins=true`, `plugin-remap=true`, `registries=lenient`, `modloading=lenient`, `folia-stubs=lenient`, `bukkit-types=lenient` |
 
-Пак **не** подобран под тест — это продакшен-пак живого сервера, скопированный без изменений. Это
+Пак **не** подобран под тест. Это продакшен-пак живого сервера, скопированный без изменений. Это
 принципиально: тестовый пак ничего не доказывает про настоящий.
 
-### 7.1 Моды — 87 jar в `mods/`, 1 в 1
+### 7.1 Моды: 87 jar в `mods/`, 1 в 1
 
 Имена файлов приведены дословно; modId и отображаемое имя прочитаны из
 `META-INF/neoforge.mods.toml` каждого jar.
 
-**Семейство Create — ради него проект и принял нынешний вид**
+**Семейство Create: ради него проект и принял нынешний вид**
 
 | Jar | modId | Название |
 |---|---|---|
@@ -838,21 +838,21 @@ eturlia-1.21.1-neoforge-21.1.248.jar
 | `SSRD-1.8.5-1.21.1.jar` | `ssrd` | Separate Sable Render Distance |
 | `sim_fluid_assembly_fix-1.0.0.jar` | `sim_fluid_assembly_fix` | Sim Fluid Assembly Fix |
 
-**Контент — измерения, мобы, структуры, генерация мира**
+**Контент: измерения, мобы, структуры, генерация мира**
 
 | Jar | modId | Название |
 |---|---|---|
 | `twilightforest-1.21.1-4.8.3345-universal.jar` | `twilightforest` | The Twilight Forest |
-| `tf_dnv-2.0.3.jar` | `tf_dnv` | Twilight Forest — Dungeons & Villages |
+| `tf_dnv-2.0.3.jar` | `tf_dnv` | Twilight Forest: Dungeons & Villages |
 | `tfsaplingdimlock-1.0.0+1.21.1-neoforge.jar` | `tfsaplingdimlock` | TF Sapling Dim Lock |
 | `alexsmobs-1.22.17.jar` | `alexsmobs` | Alex's Mobs |
 | `malum-1.21.1-1.8.2.jar` | `malum` | Malum |
 | `BetterEnd-21.0.25.jar` | `betterend` | Better End |
 | `Terralith_1.21.1_v2.6.2_Neoforge.jar` | `lithostitched` | Terralith |
 | `Incendium_1.21.x_v5.4.4.jar` | `incendium` | Incendium |
-| `ibo-3.1.0-neoforge-1.21.jar` | — | Incendium Biomes Only |
-| `dungeons+-1.10.1.jar` | — | Dungeons+ |
-| `dungeons-and-taverns-v4.4.4.jar` | — | Dungeons and Taverns |
+| `ibo-3.1.0-neoforge-1.21.jar` | - | Incendium Biomes Only |
+| `dungeons+-1.10.1.jar` | - | Dungeons+ |
+| `dungeons-and-taverns-v4.4.4.jar` | - | Dungeons and Taverns |
 | `YungsBetterDungeons-1.21.1-NeoForge-5.1.4.jar` | `betterdungeons` | YUNG's Better Dungeons |
 | `YungsBetterNetherFortresses-1.21.1-NeoForge-3.1.5.jar` | `betterfortresses` | YUNG's Better Nether Fortresses |
 | `FarmersDelight-1.21.1-1.3.2.jar` | `farmersdelight` | Farmer's Delight |
@@ -878,12 +878,12 @@ eturlia-1.21.1-neoforge-21.1.248.jar
 | `VisualWorkbench-v21.1.1-1.21.1-NeoForge.jar` | `visualworkbench` | Visual Workbench |
 | `Almanac-1.21.1-2-neoforge-1.5.2.jar` | `almanac` | Almanac |
 
-**Библиотеки — их грузят моды выше, и именно они чаще всего не стыкуются с ядром**
+**Библиотеки: их грузят моды выше, и именно они чаще всего не стыкуются с ядром**
 
 | Jar | modId | Название |
 |---|---|---|
 | `architectury-13.0.11-neoforge.jar` | `architectury` | Architectury |
-| `kotlinforforge-5.12.0-all.jar` | — | Kotlin for Forge |
+| `kotlinforforge-5.12.0-all.jar` | - | Kotlin for Forge |
 | `geckolib-neoforge-1.21.1-4.8.4.jar` | `geckolib` | GeckoLib 4 |
 | `citadel-1.21.1-2.7.6.jar` | `citadel` | Citadel |
 | `bookshelf-neoforge-1.21.1-21.1.81.jar` | `bookshelf` | Bookshelf |
@@ -899,7 +899,7 @@ eturlia-1.21.1-neoforge-21.1.248.jar
 | `Iceberg-1.21.1-neoforge-1.3.2.jar` | `iceberg` | Iceberg |
 | `konkrete_neoforge_1.9.9_MC_1.21.jar` | `konkrete` | Konkrete |
 | `libjf-3.17.6+forge.jar` | `libjf` | LibJF |
-| `mru-1.0.19+LTS+1.21.1+neoforge.jar` | — | M.R.U |
+| `mru-1.0.19+LTS+1.21.1+neoforge.jar` | - | M.R.U |
 | `anvianslib-neoforge-1.21-1.4.2.jar` | `anvianslib` | Anvian's Lib |
 | `prickle-neoforge-1.21.1-21.1.11.jar` | `prickle` | PrickleMC |
 | `coroutil-neoforge-1.21.0-1.3.8.jar` | `coroutil` | CoroUtil |
@@ -912,7 +912,7 @@ eturlia-1.21.1-neoforge-21.1.248.jar
 | `packetfixer-3.3.1-1.20.5-1.21.X-merged.jar` | `packetfixer` | PacketFixer |
 | `respackopts-4.14.0+1.21.1.forge.4.jar` | `respackopts` | Resource Pack Options |
 
-**Клиентские и удобства — лежат на сервере потому, что их везёт пак**
+**Клиентские и удобства (лежат на сервере потому, что их везёт пак)**
 
 | Jar | modId | Название |
 |---|---|---|
@@ -932,7 +932,7 @@ eturlia-1.21.1-neoforge-21.1.248.jar
 | `chunkholdersafe-1.0.0+1.21.1-neoforge.jar` | `chunkholdersafe` | ChunkHolder Safe |
 | `notebuns-farmcharm-fix-1.0.0.jar` | `notebuns_farmcharm_fix` | NoteBuns FarmCharm Fix |
 
-**Отключаются автоматически** — ядро переименовывает их в `*.jar.eturlia-skipped` при старте и пишет
+**Отключаются автоматически.** Ядро переименовывает их в `*.jar.eturlia-skipped` при старте и пишет
 причину; файлы не удаляются:
 
 | Jar | Причина, которую печатает ядро |
@@ -941,7 +941,7 @@ eturlia-1.21.1-neoforge-21.1.248.jar
 | `ferritecore-7.0.3-neoforge.jar` | подменяет таблицы блок-стейтов, которые Paper уже подменил |
 | `arclight_sable_patch-1.1.1.jar` | рассчитан на Arclight; в Eturlia нужные мосты уже есть |
 
-### 7.2 Плагины — 38 jar в `plugins/`, 1 в 1
+### 7.2 Плагины: 38 jar в `plugins/`, 1 в 1
 
 | Jar | Имя плагина | Версия | Что нагружает |
 |---|---|---|---|
@@ -972,9 +972,9 @@ eturlia-1.21.1-neoforge-21.1.248.jar
 | `ChunkHeatMapAdmin-1.0.2.jar` | ChunkHeatMapAdmin | 1.0.2 | его админская половина |
 | `InvSee++.jar` | InvSeePlusPlus | 0.30.15 | доступ к чужим инвентарям |
 | `InventoryRollbackPlus-1.8.3.jar` | InventoryRollbackPlus | 1.8.3 | снимки инвентарей |
-| `ImageFrame-2026.1.4.0.jar` | ImageFrame | 2026.1.4.0 | картины на картах — **не включается, баг стороннего плагина** |
-| `KartaAutoAnnouncer-1.3.1.jar` | KartaAutoAnnouncer | 1.3.1 | объявления — **не включается, нет встроенного config.yml** |
-| `PlugManX-3.0.2.jar` | PlugManX | 3.0.2 | **не грузится** — см. [§12](#12-известные-ограничения-и-открытые-проблемы) |
+| `ImageFrame-2026.1.4.0.jar` | ImageFrame | 2026.1.4.0 | картины на картах; **не включается, баг стороннего плагина** |
+| `KartaAutoAnnouncer-1.3.1.jar` | KartaAutoAnnouncer | 1.3.1 | объявления; **не включается, нет встроенного config.yml** |
+| `PlugManX-3.0.2.jar` | PlugManX | 3.0.2 | **не грузится**, см. [§12](#12-известные-ограничения-и-открытые-проблемы) |
 | `KotlinMC-2.2.20.jar` | Kotlin | 2.2.20 | рантайм Kotlin для плагинов |
 | `ConsoleSpamFixReborn-1.11.8.jar` | ConsoleSpamFixReborn | 1.11.8 | фильтрация лога |
 | `DemonicEye-1.0.0.jar` | DemonicEye | 1.0.0 | собственный |
@@ -1011,14 +1011,14 @@ python3 scripts/apply_compat_layer.py
 Если якорь, которого ждёт генератор, не найден, скрипт останавливается с `!! anchor missing`, и
 сборка не продолжается. Так и задумано: молча пропущенная плоскость хуже упавшей сборки.
 
-Весь цикл — патчи, генерация, сборка, объявление рестарта в чат, остановка, деплой, старт, оценка
-загрузки — одной командой:
+Весь цикл (патчи, генерация, сборка, объявление рестарта в чат, остановка, деплой, старт, оценка
+загрузки) запускается одной командой:
 
 ```bash
 tools/cycle.sh
 ```
 
-Печатает по строке на шаг, а при падении — хвост лога именно этого шага. CI
+Печатает по строке на шаг, а при падении выводит хвост лога именно этого шага. CI
 (`.github/workflows/eturlia-ci.yml`) выполняет тот же порядок, поэтому изменение, которого нет в
 `apply_compat_layer.py`, для проекта не существует.
 
@@ -1032,9 +1032,9 @@ java -Xms8G -Xmx8G -XX:+UseZGC -XX:+ZGenerational \
      -jar eturlia-1.21.1-neoforge-21.1.248.jar --nogui
 ```
 
-Jar — это лаунчер: он распаковывает встроенные библиотеки в `eturlia-libraries/` рядом с собой и
+Jar работает как лаунчер: он распаковывает встроенные библиотеки в `eturlia-libraries/` рядом с собой и
 поднимает серверную JVM. Дальше это обычный каталог сервера: `mods/`, `plugins/`,
-`server.properties`, `config/paper-global.yml`, `spigot.yml`, `bukkit.yml` — всё там, где ожидается.
+`server.properties`, `config/paper-global.yml`, `spigot.yml`, `bukkit.yml`, всё там, где ожидается.
 
 Игроки заходят **тем же клиентским модпаком, что и на любой сервер NeoForge**. Со стороны клиента
 Eturlia никак не видна.
@@ -1046,7 +1046,7 @@ Eturlia никак не видна.
 ### 10.1 Переключатели совместимости (флаги JVM)
 
 У каждой плоскости слоя есть флаг. `strict` (или `false`) всегда означает *вернуть штатное поведение
-Folia* — самый быстрый способ понять, чей это симптом, наш или апстрима.
+Folia*. Это самый быстрый способ понять, чей это симптом, наш или апстрима.
 
 | Флаг | По умолчанию | Что делает |
 |---|---|---|
@@ -1055,14 +1055,14 @@ Folia* — самый быстрый способ понять, чей это с
 | `-Deturlia.compat.registries` | `lenient` | замороженные реестры открываются для поздней регистрации |
 | `-Deturlia.compat.plugins` | `true` | снимает проверку `folia-supported`; старый `BukkitScheduler` крутится на глобальном тике |
 | `-Deturlia.compat.folia-stubs` | `lenient` | `getTickCount()` отвечает тиком глобального региона; `execute`/`tell`/`executeBlocking` планируют задачу, а не бросают исключение |
-| `-Deturlia.compat.bukkit-types` | `lenient` | модовая сущность читается плагинами как `UNKNOWN`, модовый блок — как `Material.STONE`, вместо исключения |
+| `-Deturlia.compat.bukkit-types` | `lenient` | модовая сущность читается плагинами как `UNKNOWN`, модовый блок как `Material.STONE`, вместо исключения |
 | `-Deturlia.compat.folia-commands` | `lenient` | возвращает 17 ванильных команд, закомментированных в Folia: `/scoreboard`, `/team`, `/tag`, `/data`, `/clone`, `/function`, `/loot`, `/ride`, `/schedule`, `/spreadplayers`, `/datapack`, `/bossbar`, `/item`, `/trigger`, `/spectate`, `/teammsg`, `/return` |
-| `-Deturlia.compat.plugin-remap` | `true` | ремаппер Spigot→Mojang для плагинов; jar с классами, которые эта JVM загрузить не может, повторяется без них |
+| `-Deturlia.compat.plugin-remap` | `true` | ремаппер из Spigot в Mojang для плагинов; jar с классами, которые эта JVM загрузить не может, повторяется без них |
 | `-Deturlia.compat.sublevel-chunks` | `lenient` | разрешает под-миру, созданному модом, загрузить чанк, которым **не владеет ни один регион**, с вызывающего потока; `strict` возвращает отказ Folia |
 | `-Deturlia.compat.read-timeout` | `90` | секунды, которые Netty ждёт клиента, всё ещё строящего мир; `0` убирает обработчик совсем |
-| `-Deturlia.compat.quarantine` | — | список modId через запятую, которые не грузить |
+| `-Deturlia.compat.quarantine` | (нет) | список modId через запятую, которые не грузить |
 | `-Deturlia.lithostitched.allow-unsafe` | выкл | отвечает на проверку версии Lithostitched один раз вместо блока отказа каждую загрузку |
-| `-Deturlia.debug.particles` | выкл | печатает каждый тип частиц, который шлёт **сервер**, не чаще раза в 10 с — способ доказать, что визуальный эффект серверный или нет |
+| `-Deturlia.debug.particles` | выкл | печатает каждый тип частиц, который шлёт **сервер**, не чаще раза в 10 с. Так можно доказать, серверный визуальный эффект или нет |
 | `-Deturlia.region.guard` | `WARN` | `STRICT` отклоняет межрегиональные вызовы, `WARN` логирует, `OFF` выключает охрану |
 
 ### 10.2 `config/eturlia.yml`
@@ -1077,7 +1077,7 @@ Folia* — самый быстрый способ понять, чей это с
 ```yaml
 threads:
   region-tick-threads: 16     # тикеры регионов Folia; -1 = авто
-  region-grid-exponent: 2     # ячейка региона = 2^n чанков по стороне; 2 → 4×4
+  region-grid-exponent: 2     # ячейка региона = 2^n чанков по стороне; 2 даёт 4×4
   chunk-worker-threads: 8     # Moonrise: генерация, свет, тяжёлые задачи по чанкам
   chunk-io-threads: 3         # чтение и запись region-файлов
 ```
@@ -1094,24 +1094,24 @@ threads:
 
 | Инструмент | На какой вопрос отвечает |
 |---|---|
-| `tools/cycle.sh` | один оборот цикла: патчи → генерация → сборка → деплой → рестарт → оценка |
+| `tools/cycle.sh` | один оборот цикла: патчи, генерация, сборка, деплой, рестарт, оценка |
 | `tools/logcheck.py` | оценивает загрузку: группирует все WARN/ERROR, прячет группы, уже признанные безобидными (у каждой записана причина), печатает только **новое** с прошлого запуска |
 | `tools/logsweep.py` | все логи, все уровни, сгруппированные по нормализованной форме; `--grep "текст"` разворачивает одну форму |
-| `tools/finalscan.py` | **не запуская сервер**: читает собранное ядро против каждого jar модов (включая вложенные jar-in-jar) и показывает два способа не состыковаться — переопределение метода, который Paper пометил `final` (`IncompatibleClassChangeError` при загрузке класса), и реализацию интерфейса, в который CraftBukkit с тех пор добавил абстрактный метод (`AbstractMethodError` при первом вызове) |
+| `tools/finalscan.py` | **не запуская сервер**: читает собранное ядро против каждого jar модов (включая вложенные jar-in-jar) и показывает два способа не состыковаться: переопределение метода, который Paper пометил `final` (`IncompatibleClassChangeError` при загрузке класса), и реализацию интерфейса, в который CraftBukkit с тех пор добавил абстрактный метод (`AbstractMethodError` при первом вызове) |
 | `tools/modsweep.py` | прогон из консоли: все команды всех плагинов, `/summon` для выборки модовых сущностей, `/setblock` с обратным чтением для модовых блоков, `/place feature` для модовой генерации и партия модовых блок-энтити, оставленных тикать под наблюдением |
 | `tools/cmdtree.py` | восстанавливает дерево команд мода по тому, что Brigadier подчёркивает как неизвестное |
 | `tools/aerotest.sh`, `tools/aerostress.sh` | Create и Create: Aeronautics под управлением настоящего безголового клиента |
-| `tools/trailcheck.sh` | освещённая пустая площадка со скриншотами спереди/сзади/от третьего лица — цикл для охоты за визуальным багом |
+| `tools/trailcheck.sh` | освещённая пустая площадка со скриншотами спереди/сзади/от третьего лица; цикл для охоты за визуальным багом |
 
 **Как вычитать ответ из игры.** Три очевидных канала на этой сборке не работают, и каждый обошёлся
 дорого:
 
-* `/say` бесполезен как маркер — лог сохраняет ключ перевода (`chat.type.announcement`) и теряет
+* `/say` бесполезен как маркер: лог сохраняет ключ перевода (`chat.type.announcement`) и теряет
   текст, и из консоли, и от игрока.
 * **Обратная связь команды, поданной игроком, пишется в лог целиком**: `[EturliaTester: Changed the
-  block at x, y, z]`. Это и есть механизм маркеров — дать каждой проверке свои координаты и потом
+  block at x, y, z]`. Это и есть механизм маркеров: дать каждой проверке свои координаты и потом
   прочитать координаты обратно.
-* Сервер эхом пишет и саму поданную команду, поэтому наивный grep поймает `/execute if … run …`
+* Сервер эхом пишет и саму поданную команду, поэтому наивный grep поймает `/execute if ... run ...`
   независимо от того, выполнилось условие или нет. При сборе результатов всегда исключайте
   `issued server command`.
 * Из консоли нельзя пользоваться селекторами сущностей (консоль работает на глобальном регионе), а
@@ -1121,13 +1121,13 @@ threads:
 **Управление безголовым клиентом** (portablemc под `xvfb-run`, клавиатура через `xdotool`, скриншоты
 через `import`) имеет свои ловушки, и каждая уже стоила как минимум одной сессии:
 
-* Сначала докажите, что клавиатура доходит до игры — введите команду, чья обратная связь пишется в
+* Сначала докажите, что клавиатура доходит до игры: введите команду, чья обратная связь пишется в
   лог, и продолжайте только когда она появилась. Без этой проверки прогон «проходит» все фазы, не
   введя ни одного символа.
 * Escape при закрытом меню **открывает** меню паузы, и все следующие нажатия уходят в меню.
 * Якорь «клиент ещё подключён» ставьте *после* строки входа, иначе `lost connection` предыдущего
   клиента читается как смерть текущего.
-* `authme register <игрок>` из консоли **кикает того, кого только что зарегистрировал** — регистрируйте
+* `authme register <игрок>` из консоли **кикает того, кого только что зарегистрировал**, поэтому регистрируйте
   до подключения клиента, потом `authme forcelogin`.
 * Ванильного op недостаточно для `/say`, `/execute` и `/summon`: за права `minecraft.command.*`
   отвечает LuckPerms, и ему надо об этом сказать.
@@ -1142,7 +1142,7 @@ threads:
 > каждом блоке (`Failed to mark & notify block`), и конструкция собирается, но ничем не приводится в
 > движение. Передачу записи в регион-владелец пробовали и откатили: тиком позже plot holder у sable
 > уже нет, и его mixin бросает `Cannot change blocks in nonexistent plot holder` прямо в тик региона.
-> Настоящее решение — либо sable ведёт под-уровень из его собственного региона, либо регионизатор
+> Настоящее решение одно из двух: либо sable ведёт под-уровень из его собственного региона, либо регионизатор
 > считает эти две области одним регионом. Открыто.
 
 
@@ -1150,11 +1150,11 @@ threads:
 
 | Проблема | Состояние |
 |---|---|
-| **Create: Aeronautics умеет убить JVM.** `/sable spawn joint_test` доходит до `buoyancy.rs` в Rapier, чья паника не разворачивает стек: процесс умирает без crash-отчёта, обёртка перезапускает его. | Баг апстрима (нативная часть мода). Java-ошибки под-миров, которые раньше этому предшествовали, исправлены; оставшийся обрыв — внутри Rust. Ставьте эту команду последней в наборе или не используйте вовсе. |
-| **PlugManX не грузится.** `MavenLibraryResolver` из Paper бросает `NullPointerException`, потому что его repository system в этой сборке не собран, и любой плагин, чей paper-загрузчик тянет Maven-библиотеки при загрузке, пропускается. | Открыто. Это класс поломки, а не один плагин — следующий плагин с library loader упрётся туда же. |
+| **Create: Aeronautics умеет убить JVM.** `/sable spawn joint_test` доходит до `buoyancy.rs` в Rapier, чья паника не разворачивает стек: процесс умирает без crash-отчёта, обёртка перезапускает его. | Баг апстрима (нативная часть мода). Java-ошибки под-миров, которые раньше этому предшествовали, исправлены; оставшийся обрыв находится внутри Rust. Ставьте эту команду последней в наборе или не используйте вовсе. |
+| **PlugManX не грузится.** `MavenLibraryResolver` из Paper бросает `NullPointerException`, потому что его repository system в этой сборке не собран, и любой плагин, чей paper-загрузчик тянет Maven-библиотеки при загрузке, пропускается. | Открыто. Это класс поломки, а не один плагин: следующий плагин с library loader упрётся туда же. |
 | **ImageFrame** не включается (`ExceptionInInitializerError`), **KartaAutoAnnouncer** не включается (нет встроенного `config.yml`). | Баги сторонних плагинов, воспроизводятся и вне Eturlia. |
 | **Синие следы за игроком**, о которых сообщали как о визуальном артефакте. | Это не сервер. `-Deturlia.debug.particles=true` доказал, что ядро за весь прогон ходьбы отправило **ноль** частиц; снятие всех 38 плагинов и ~35 клиентских модов ничего не изменило, и эффект воспроизводится в новом мире. Его рисует клиентская половина мода. |
-| **Классы датагена не стыкуются** — 15 переопределений `final` и 10 нереализованных методов интерфейсов, все в генераторах рецептов и данных (Registrate из Create, PuzzlesLib, книга рецептов Twilight Forest). | Безвредно: эти классы исполняются только в средах генерации данных при разработке, на сервере — никогда. |
+| **Классы датагена не стыкуются.** 15 переопределений `final` и 10 нереализованных методов интерфейсов, все в генераторах рецептов и данных (Registrate из Create, PuzzlesLib, книга рецептов Twilight Forest). | Безвредно: эти классы исполняются только в средах генерации данных при разработке, на сервере никогда. |
 | **Моды, рассчитывающие на один серверный поток.** | Свойство самой затеи. Ищутся охраной регионов: `-Deturlia.region.guard=STRICT`. |
 
 ---
@@ -1162,10 +1162,10 @@ threads:
 ## 13. Структура репозитория
 
 ```
-patches/server/            патчи paperweight поверх Folia; всё с 0095 и выше — наше
+patches/server/            патчи paperweight поверх Folia; всё с 0095 и выше наше
 patches/api/               патчи поверх API Folia/Paper
 scripts/
-  apply_compat_layer.py    генератор слоя совместимости — единственный источник правды
+  apply_compat_layer.py    генератор слоя совместимости, единственный источник правды
   selftest.sh              быстрая проверка без полного classpath
   check-patches.py         структурная валидация дерева патчей
 build-data/
@@ -1182,7 +1182,7 @@ docs/archive/              устаревшие документы, оставл
 
 ## 14. Как добавить исправление
 
-Слой совместимости — не набор случайных правок, а упорядоченный список **плоскостей** в
+Слой совместимости устроен как упорядоченный список **плоскостей** в
 `scripts/apply_compat_layer.py`, каждая из которых одна функция:
 
 ```python
@@ -1197,11 +1197,11 @@ def install_my_plane():
     )
 ```
 
-`replace()` применяет правку ровно один раз и узнаёт уже применённую — на этом и держится
+`replace()` применяет правку ровно один раз и узнаёт уже применённую, на этом и держится
 повторный запуск. Якорь надо копировать из файла дословно; если он не найден, скрипт громко
 останавливается, а не пропускает правку молча.
 
-Новый файл, положенный в `Folia-Server/src/main/java`, перекрывает декомпилированный ванильный —
+Новый файл, положенный в `Folia-Server/src/main/java`, перекрывает декомпилированный ванильный:
 так в дерево попали `LootContext`, `RecipeBookType`, `RecipeBookSettings`, `BuiltInPackSource` и
 `HangingEntity`, то есть классы, в которые NeoForge добавляет методы, отсутствующие в копии Folia.
 
@@ -1212,15 +1212,15 @@ def install_my_plane():
 
 ## 15. Апстрим и лицензия
 
-Этот репозиторий — форк [`eturnercus/Core`](https://github.com/eturnercus/Core). История общая: всё
+Этот репозиторий форкнут от [`eturnercus/Core`](https://github.com/eturnercus/Core). История общая: всё
 до `4e166a6` пришло оттуда. Репозиторий заведён отдельно, а не кнопкой Fork, поэтому GitHub не
-рисует связь сам — она заявлена здесь, в описании репозитория и в
-[заявке в апстрим](https://github.com/eturnercus/Core/issues/31). Сам апстрим — форк
+рисует связь сам. Она заявлена здесь, в описании репозитория и в
+[заявке в апстрим](https://github.com/eturnercus/Core/issues/31). Сам апстрим это форк
 [PaperMC/Folia](https://github.com/PaperMC/Folia) с загрузчиком
 [NeoForge](https://github.com/neoforged/NeoForge) 21.1.248 / FancyModLoader 4.0.43.
 
-**Лицензия намеренно жёсткая.** Всё, что написано в этом репозитории — слой совместимости, лаунчер,
-инструменты, документация и любые собранные из этого бинарники — проприетарно: без письменного
+**Лицензия намеренно жёсткая.** Всё, что написано в этом репозитории (слой совместимости, лаунчер,
+инструменты, документация и любые собранные из этого бинарники), проприетарно: без письменного
 разрешения запрещены распространение, производные работы, хостинг для третьих лиц, коммерческое
 использование и повторная публикация. Прочитайте [`LICENSE`](LICENSE) прежде, чем делать с этим кодом
 что-либо кроме чтения.

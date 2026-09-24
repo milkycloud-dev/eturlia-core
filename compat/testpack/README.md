@@ -1,4 +1,4 @@
-# Testpack — Compatibility Manifest
+# Testpack compatibility manifest
 
 > **Superseded.** The pack this project is measured against is listed 1:1 in
 > [`../../README.md`](../../README.md), read straight off the test server.

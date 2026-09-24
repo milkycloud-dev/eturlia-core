@@ -79,22 +79,22 @@ eturlia.lod.voxy-support=true
 ## Compatibility Notes by Mod
 
 ### Create 0.5.1.f
-- **Region threading impact:** HIGH — kinetic networks and contraptions span multiple regions
+- **Region threading impact:** HIGH (kinetic networks and contraptions span multiple regions)
 - **Compat module:** `eturlia-compat-create` patches cross-region kinetic propagation, contraption fragmentation, and projectile handling
 - **Known issues:** Large contraptions (trains, aerial) spanning 3+ regions may have slight position desync at region boundaries
 
 ### Create Big Cannons (CBC)
-- **Region threading impact:** HIGH — cannon projectiles travel at extreme velocity crossing regions rapidly
+- **Region threading impact:** HIGH (cannon projectiles travel at extreme velocity crossing regions rapidly)
 - **Compat module:** Handled by `eturlia-compat-create` via `RegionizedProjectileHandler`
 - **Known issues:** Explosion damage must be fanned out to all affected region threads, introducing up to 1 tick of damage aggregation delay
 
 ### Sable
-- **Region threading impact:** CRITICAL — JNI physics runs on a separate thread; must not access Minecraft state from physics thread
+- **Region threading impact:** CRITICAL (JNI physics runs on a separate thread; must not access Minecraft state from physics thread)
 - **Compat module:** `eturlia-compat-sable` bridges physics thread to region threads via async message queues
 - **Known issues:** The JNI thread safety auditor adds ~2% overhead to physics calls; can be disabled in dev mode
 
 ### Create Aeronautics
-- **Region threading impact:** HIGH — aircraft move fast enough to cross multiple regions per tick
+- **Region threading impact:** HIGH (aircraft move fast enough to cross multiple regions per tick)
 - **Compat module:** Handled by `eturlia-compat-sable` via `VehicleAssemblyRegionHandler`
 - **Known issues:** Emergency block scatter on crash requires cross-region coordination; debris may appear to pop in on distant regions
 
@@ -104,28 +104,28 @@ eturlia.lod.voxy-support=true
 - **Notes:** SERVER_ASSISTED mode generates LOD data on the server. Ensure adequate CPU headroom; LOD generation runs at lower priority than region ticking.
 
 ### Voxy
-- **Region threading impact:** NONE — purely client-side
+- **Region threading impact:** NONE (purely client-side)
 - **Server config:** Set `eturlia.lod.mode=CLIENT_ONLY` and `eturlia.lod.voxy-support=true`
 - **Notes:** The server-side flag only sets a Voxy compatibility marker in the handshake. No server-side code changes.
 
 ### Radium Reforged
-- **Region threading impact:** NONE — client-side rendering only
+- **Region threading impact:** NONE (client-side rendering only)
 - **Notes:** Safe to use on any Eturlia server. Does not require server-side installation for NeoForge 21.1.x (client-side mod).
 
 ### ServerCore
-- **Region threading impact:** NONE — entity/tick optimizations are per-tick, no threading model changes
+- **Region threading impact:** NONE (entity/tick optimizations are per-tick, no threading model changes)
 - **Notes:** Compatible. Some ServerCore features (entity activation range) work even better on Folia due to per-region tick isolation.
 
 ### Chunky
-- **Region threading impact:** NONE during normal operation — pregen runs before region threads are active
+- **Region threading impact:** NONE during normal operation (pregen runs before region threads are active)
 - **Notes:** Use Chunky for world pre-generation before opening to players. Pregen on a Folia server uses the global region thread.
 
 ### FerriteCore
-- **Region threading impact:** NONE — memory optimization only
+- **Region threading impact:** NONE (memory optimization only)
 - **Notes:** Reduces memory footprint of block entity and entity NBT. Works identically on regionized servers.
 
 ### Lithium Reforged
-- **Region threading impact:** NONE — all optimizations are per-tick and single-threaded within a region
+- **Region threading impact:** NONE (all optimizations are per-tick and single-threaded within a region)
 - **Notes:** Best results when combined with FerriteCore. The physics, AI, and redstone optimizations are particularly effective on Eturlia.
 
 ## Download

@@ -1,7 +1,7 @@
 # Archive
 
 Documents that described an earlier state of the project. They are kept because they record what was
-measured at the time and why decisions were made — **not** because they are still accurate. Nothing
+measured at the time and why decisions were made, **not** because they are still accurate. Nothing
 here should be used to answer a question about the current core.
 
 Current documents: [`../../README.md`](../../README.md), [`../FIXES.md`](../FIXES.md),

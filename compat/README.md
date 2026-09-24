@@ -1,6 +1,6 @@
-# Eturlia Compat — Compatibility Modules
+# Eturlia Compat: compatibility modules
 
-> **Superseded approach — kept for the record.**
+> **Superseded approach, kept for the record.**
 >
 > This directory is what the project looked like when it still fixed incompatibility *per mod*.
 > Since 2026-08-11 the rule is the opposite: the core absorbs the incompatibility and no mod is
@@ -36,7 +36,7 @@ on Folia's regionized threading model.
                     │  Region Thread A  Region Thread B  │
                     │  ┌───────────┐  ┌───────────────┐  │
                     │  │ Region A  │  │   Region B    │  │
-                    │  │ Chunks,   │←→│  Chunks,      │  │
+                    │  │ Chunks,   │<>│  Chunks,      │  │
                     │  │ Entities  │  │  Entities     │  │
                     │  └─────┬─────┘  └──────┬────────┘  │
                     │        │               │           │
@@ -94,13 +94,13 @@ Bridges Sable's Rapier physics engine (JNI) to Folia's region threads:
 On a Folia server, the world is divided into `RegionizedWorldSection`s (typically 3×3 chunk
 groups). Each section is ticked by a dedicated region thread. The key rules are:
 
-1. **No cross-region access** — A region thread must not directly access block entities,
+1. **No cross-region access.** A region thread must not directly access block entities,
    entities, or chunk data owned by another region.
-2. **Use RegionizedTaskQueue** — Cross-region operations must be scheduled via
+2. **Use RegionizedTaskQueue.** Cross-region operations must be scheduled via
    `RegionizedTaskQueue`, which submits work to the target region's thread.
-3. **Use EntityScheduler** — Entity operations (tick, damage, remove) must happen on the
+3. **Use EntityScheduler.** Entity operations (tick, damage, remove) must happen on the
    entity's owning region thread via `EntityScheduler`.
-4. **No synchronous blocking** — Region threads must not block waiting for other regions,
+4. **No synchronous blocking.** Region threads must not block waiting for other regions,
    as this can deadlock the server.
 
 ## Current build status
