@@ -595,11 +595,7 @@ often a case of one already solved.
 
 ## 15. Upstream, and the licence
 
-This repository is a fork of [`eturnercus/Core`](https://github.com/eturnercus/Core). The history is
-shared: everything up to `4e166a6` comes from there. It was created as a separate repository rather
-than with the Fork button, so GitHub does not draw the connection itself; it is declared here, in the
-repository description, and in [the upstream notice](https://github.com/eturnercus/Core/issues/31).
-Upstream is itself a fork of [PaperMC/Folia](https://github.com/PaperMC/Folia) carrying
+Eturlia is built on [PaperMC/Folia](https://github.com/PaperMC/Folia) with
 [NeoForge](https://github.com/neoforged/NeoForge) 21.1.248 / FancyModLoader 4.0.43.
 
 **The licence is deliberately restrictive.** Everything authored in this repository (the
@@ -1212,11 +1208,7 @@ def install_my_plane():
 
 ## 15. Апстрим и лицензия
 
-Этот репозиторий форкнут от [`eturnercus/Core`](https://github.com/eturnercus/Core). История общая: всё
-до `4e166a6` пришло оттуда. Репозиторий заведён отдельно, а не кнопкой Fork, поэтому GitHub не
-рисует связь сам. Она заявлена здесь, в описании репозитория и в
-[заявке в апстрим](https://github.com/eturnercus/Core/issues/31). Сам апстрим это форк
-[PaperMC/Folia](https://github.com/PaperMC/Folia) с загрузчиком
+Eturlia построена на [PaperMC/Folia](https://github.com/PaperMC/Folia) с загрузчиком
 [NeoForge](https://github.com/neoforged/NeoForge) 21.1.248 / FancyModLoader 4.0.43.
 
 **Лицензия намеренно жёсткая.** Всё, что написано в этом репозитории (слой совместимости, лаунчер,
